@@ -24,20 +24,22 @@ export default {
             return new Response("OK", { headers: corsHeaders });
         }
 
-        // 2. Security Check (except for public GET if you want public access, but let's secure everything for now)
+        // 2. Security Check
         // If you want "public" view for files, allow GET without secret.
-        const clientSecret = request.headers.get("x-worker-secret");
+        const user = await getUser(request, env);
 
-        // Check Secret (Skip for basic GET if you want public links, but user app uses secret for listFiles too)
-        // We allow GET /get/* without secret to let browser load PDFs directly if needed,
-        // assuming the link is known.
+        // Check Auth (Skip for basic GET if you want public links)
         if (!url.pathname.startsWith('/get/')) {
-            // Enforce Secret for LIST, UPLOAD, DELETE
-            // The frontend config.js uses 2026, so we default to that if env.SECRET_KEY is missing
-            const expectedSecret = env.SECRET_KEY || "POUCHAIN_SECURE_KEY_2026";
-
-            if (clientSecret !== expectedSecret) {
+            if (!user) {
                 return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+            }
+
+            // Check Admin for /admin/ routes
+            if (url.pathname.includes('/admin/')) {
+                const admin = await isAdmin(user, env);
+                if (!admin) {
+                    return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
+                }
             }
         }
 
@@ -531,3 +533,33 @@ export default {
         }
     }
 };
+
+async function getUser(request, env) {
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader) return null;
+    const token = authHeader.replace("Bearer ", "");
+
+    const response = await fetch(`${env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co"}/auth/v1/user`, {
+        headers: {
+            "apikey": env.SUPABASE_SERVICE_KEY,
+            "Authorization": `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) return null;
+    return await response.json();
+}
+
+async function isAdmin(user, env) {
+    if (!user) return false;
+    // Verify against profiles table
+    const res = await fetch(`${env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co"}/rest/v1/profiles?id=eq.${user.id}&select=role`, {
+        headers: {
+            "apikey": env.SUPABASE_SERVICE_KEY,
+            "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`
+        }
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.length > 0 && data[0].role === 'admin';
+}

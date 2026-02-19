@@ -1,11 +1,21 @@
 import config from './config.js';
+import { auth } from './auth.js';
+
+const getAuthHeaders = async () => {
+    const session = await auth.getSession();
+    const token = session ? session.access_token : '';
+    return {
+        'Authorization': `Bearer ${token}`
+    };
+};
 
 export const api = {
     // List all files (moved below)
 
 
     // Upload a file (Admin only)
-    uploadFile(file, pathPrefix = '', onProgress) {
+    async uploadFile(file, pathPrefix = '', onProgress) {
+        const authHeaders = await getAuthHeaders();
         return new Promise((resolve, reject) => {
             const formData = new FormData();
             formData.append('file', file);
@@ -13,7 +23,7 @@ export const api = {
 
             const xhr = new XMLHttpRequest();
             xhr.open('PUT', `${config.api.workerUrl}/upload`);
-            xhr.setRequestHeader('x-worker-secret', config.api.workerSecret);
+            xhr.setRequestHeader('Authorization', authHeaders.Authorization);
 
             // Track progress
             if (xhr.upload && onProgress) {
@@ -48,7 +58,7 @@ export const api = {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ key })
         });
@@ -66,7 +76,7 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ oldKey, newKey })
         });
@@ -84,7 +94,7 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ oldPrefix, newPrefix })
         });
@@ -104,7 +114,7 @@ export const api = {
         }
 
         const response = await fetch(url, {
-            headers: { 'x-worker-secret': config.api.workerSecret }
+            headers: { ...(await getAuthHeaders()) }
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -113,7 +123,7 @@ export const api = {
     async getFileAccess(path) {
         const url = `${config.api.workerUrl}/admin/access/get?path=${encodeURIComponent(path)}`;
         const response = await fetch(url, {
-            headers: { 'x-worker-secret': config.api.workerSecret }
+            headers: { ...(await getAuthHeaders()) }
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json(); // Returns array of user_ids
@@ -124,7 +134,7 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ path, userIds })
         });
@@ -135,7 +145,7 @@ export const api = {
     // --- User Management (Admin) ---
     async listUsers() {
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
-            headers: { 'x-worker-secret': config.api.workerSecret }
+            headers: { ...(await getAuthHeaders()) }
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -146,7 +156,7 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ email, password, role })
         });
@@ -159,7 +169,7 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ email, role, redirectTo })
         });
@@ -172,7 +182,7 @@ export const api = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ email, redirectTo })
         });
@@ -185,7 +195,7 @@ export const api = {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
-                'x-worker-secret': config.api.workerSecret
+                ...(await getAuthHeaders())
             },
             body: JSON.stringify({ id })
         });
