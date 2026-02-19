@@ -1,0 +1,595 @@
+:root {
+    /* iOS Inspired Color Palette */
+    --primary-color: #2da140;
+    /* iOS Blue */
+    --background-color: #F2F2F7;
+    /* iOS Light Gray Background */
+    --card-background: #FFFFFF;
+    --text-primary: #000000;
+    --text-secondary: #8E8E93;
+    --danger-color: #FF3B30;
+    --success-color: #34C759;
+    --border-color: #C6C6C8;
+
+    /* Category Colors */
+    --cat-fds: #FF9500;
+    /* Orange */
+    --cat-habilitation: #AF52DE;
+    /* Purple */
+    --cat-schema: #34C759;
+    /* Indigo */
+    --cat-epi: #FF2D55;
+    /* Pink */
+    --cat-manutention: #34C759;
+    /* Light Blue */
+    --cat-materiel: #34C759;
+    /* Green */
+    --cat-consignation: #FF3B30;
+    /* Red */
+    --cat-amelioratif: #FFCC00;
+    /* Yellow */
+
+    /* Spacing & Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-xl: 30px;
+    /* For pill buttons */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+
+    /* Shadows */
+    --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-primary);
+    line-height: 1.5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+}
+
+/* Utilities */
+.hidden {
+    display: none !important;
+}
+
+.container {
+    padding: var(--spacing-md);
+    max-width: 600px;
+    margin: 0 auto;
+    width: 100%;
+    flex: 1;
+}
+
+/* Typography */
+h1 {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: var(--spacing-sm);
+}
+
+h2 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: var(--spacing-sm);
+}
+
+p {
+    font-size: 17px;
+    color: var(--text-secondary);
+}
+
+/* Buttons */
+.btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: var(--radius-md);
+    background-color: var(--primary-color);
+    color: white;
+    font-size: 17px;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn:active {
+    background-color: #258535;
+    transform: scale(0.98);
+}
+
+/* Inputs */
+.input-group {
+    background-color: var(--card-background);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: var(--spacing-lg);
+}
+
+.input-row {
+    position: relative;
+    border-bottom: 0.5px solid var(--border-color);
+}
+
+.input-row:last-child {
+    border-bottom: none;
+}
+
+.input-row input {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    font-size: 17px;
+    outline: none;
+}
+
+/* Login Page Specifics */
+.login-page {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    /* Fallback */
+    min-height: 100dvh;
+    /* Mobile viewport fix */
+    width: 100%;
+    text-align: center;
+    padding: var(--spacing-lg);
+}
+
+.app-logo {
+    width: 280px;
+    /* Increased by 100% from 140px */
+    max-width: 100%;
+    /* Ensure it doesn't overflow on very small screens */
+    height: auto;
+    margin-bottom: var(--spacing-sm);
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.login-header {
+    margin-bottom: 40px;
+}
+
+/* Dashboard Specifics */
+.dashboard-header {
+    padding-top: var(--spacing-lg);
+    background-color: var(--background-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding-bottom: var(--spacing-sm);
+}
+
+/* Search Bar */
+.search-container {
+    padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.search-bar {
+    background-color: rgba(118, 118, 128, 0.12);
+    border-radius: 10px;
+    padding: 8px 8px 8px 36px;
+    /* Space for icon */
+    width: 100%;
+    border: none;
+    font-size: 17px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%238E8E93' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 8px center;
+}
+
+.search-bar:focus {
+    outline: none;
+    background-color: rgba(118, 118, 128, 0.18);
+}
+
+/* Categories Grid */
+.categories-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+}
+
+.category-card {
+    background-color: var(--card-background);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    height: 120px;
+    box-shadow: var(--shadow-card);
+    transition: transform 0.2s;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--text-primary);
+    position: relative;
+    overflow: hidden;
+}
+
+.category-card:active {
+    transform: scale(0.96);
+}
+
+.category-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 20px;
+    margin-bottom: var(--spacing-sm);
+}
+
+.category-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+/* Document List */
+.document-list {
+    background-color: var(--card-background);
+    border-radius: var(--radius-md);
+    margin: var(--spacing-md);
+    display: none;
+    /* Hidden by default */
+}
+
+.document-item {
+    padding: var(--spacing-md);
+    border-bottom: 0.5px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.document-item:last-child {
+    border-bottom: none;
+}
+
+.document-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.document-name {
+    font-size: 17px;
+    font-weight: 500;
+}
+
+.document-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.doc-download-icon {
+    color: var(--primary-color);
+}
+
+/* --- Added Missing Styles for Tab Bar & Nav --- */
+
+/* Bottom Navigation Bar - iOS Style */
+/* --- Mobile Redesign --- */
+
+/* --- Mobile Redesign --- */
+
+.mobile-top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    z-index: 1000;
+    padding-top: env(safe-area-inset-top);
+}
+
+.mobile-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    height: 60px;
+}
+
+.app-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.5px;
+}
+
+.header-btn {
+    background: rgba(0, 0, 0, 0.05);
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--danger-color);
+}
+
+.mobile-bottom-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    z-index: 1000;
+}
+
+.mobile-bottom-bar .search-bar {
+    background-color: #E3E3E8;
+    border: none;
+    color: var(--text-primary);
+    font-size: 17px;
+    height: 48px;
+    /* Taller */
+    width: 100%;
+    padding-left: 44px;
+    /* Space for icon */
+    border-radius: 12px;
+}
+
+/* Force full width and correct background */
+.dashboard-content {
+    padding-top: 60px;
+    /* Reduced from 140px/100px - Base padding for Top Bar */
+    padding-bottom: 100px;
+    min-height: 100vh;
+    width: 100%;
+    background-color: var(--background-color);
+}
+
+/* Fix Body Alignment override from dashboard.html */
+body {
+    align-items: stretch !important;
+}
+
+/* Hide Scrollbar for cleaner look */
+::-webkit-scrollbar {
+    width: 0px;
+    background: transparent;
+}
+
+/* Animation for views */
+.view-transition {
+    animation: fadeIn 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Remove old styles if conflicting */
+.dashboard-header {
+    display: none;
+}
+
+.tab-bar {
+    display: none !important;
+}
+
+/* Category List (was Grid) */
+/* Category List (was Grid) */
+/* Mobile Search Container */
+.mobile-search-container {
+    padding: 0 20px 15px 20px;
+    /* Extended bottom padding */
+    width: 100%;
+}
+
+/* Category List (was Grid) */
+.categories-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    margin-top: 90px;
+    /* Increased for taller header */
+    width: 100%;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
+    max-width: none;
+}
+
+.category-card {
+    width: 100%;
+    aspect-ratio: auto;
+    height: 80px;
+    /* Fixed height for list item */
+    background-color: #FFFFFF;
+    border-radius: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.02);
+    padding: 0 20px;
+    display: flex;
+    flex-direction: row;
+    /* Horizontal layout */
+    align-items: center;
+    justify-content: flex-start;
+    /* Left align */
+    text-align: left;
+    text-decoration: none;
+    color: var(--text-primary);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.1s, background-color 0.2s;
+}
+
+.category-card:active {
+    transform: scale(0.98);
+    background-color: #F2F2F7;
+}
+
+.category-icon {
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+    margin-bottom: 0;
+    /* Remove bottom margin */
+    margin-right: 16px;
+    /* Add right margin */
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    flex-shrink: 0;
+}
+
+.category-title {
+    font-size: 17px;
+    font-weight: 600;
+    line-height: normal;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* Single line */
+    display: block;
+}
+
+.document-item {
+    background: white;
+    margin: 12px 20px;
+    /* Align with padding */
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+    padding: 16px;
+}
+
+/* Navigation Header (Folder View) */
+.nav-header {
+    padding: 10px 20px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: sticky;
+    top: 90px;
+    /* Sits below the fixed search header */
+    background-color: var(--background-color);
+    /* Hide scrolling content */
+    z-index: 900;
+    margin: -140px -20px 0 -20px;
+    /* Negative margin to pull it up into the padding area */
+    padding-top: 140px;
+    /* Compensate for the pull */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    /* Optional alignment line */
+}
+
+/* Specific fix for sticky behavior inside padded container */
+.nav-header {
+    position: fixed;
+    top: 50px;
+    /* Sits below the main header (search is hidden) */
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 10px 20px;
+    background: rgba(249, 249, 249, 0.98);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: row;
+    /* Inline layout */
+    align-items: center;
+    gap: 12px;
+}
+
+/* Push the list down so it doesn't hide behind the fixed header */
+#list-content {
+    padding-top: 60px;
+    /* Space for the fixed nav-header */
+}
+
+.back-button {
+    display: inline-flex;
+    align-items: center;
+    color: var(--primary-color);
+    font-size: 17px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px 0;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+}
+
+.back-button:active {
+    opacity: 0.6;
+}
+
+.back-button svg {
+    margin-right: 4px;
+    width: 22px;
+    height: 22px;
+}
+
+.nav-title {
+    font-size: 18px;
+    /* Smaller, inline title */
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
+/* Search Results Spacing */
+#search-results-list {
+    margin-top: 110px;
+    /* Add spacing below fixed search bar */
+    padding: 0 20px;
+}

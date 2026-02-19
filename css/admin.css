@@ -1,0 +1,560 @@
+/* Admin Dashboard Styles - Modern & Responsive */
+:root {
+    box-sizing: border-box;
+}
+
+*,
+::before,
+::after {
+    box-sizing: inherit;
+}
+
+:root {
+    --primary: #2da140;
+    --primary-hover: #258535;
+    --danger: #FF3B30;
+    --success: #34C759;
+    --bg: #F2F2F7;
+    /* iOS grouped background */
+    --card-bg: #FFFFFF;
+    --text-primary: #1C1C1E;
+    --text-secondary: #8E8E93;
+    --border: #E5E5EA;
+    --sidebar-bg: #1C1C1E;
+    /* Dark sidebar */
+    --sidebar-text: #FFFFFF;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    display: block;
+    /* Override dashboard.html flex/center */
+}
+
+.admin-layout {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    /* Prevent body scroll */
+}
+
+/* ... Main Content ... */
+
+.categories-grid {
+    display: grid;
+    /* Increased min-width to 200px and gap to 30px to prevent cramping/overlapping */
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 30px;
+    padding-bottom: 40px;
+}
+
+/* Ensure cards don't stretch indefinitely */
+.category-card {
+    background-color: var(--card-bg);
+    border-radius: 20px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1 / 1;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--text-primary);
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+    border: 2px solid transparent;
+
+    /* FIX: Prevent huge cards - REMOVED to fix flexible grid overlap */
+    /* max-width: 220px; */
+    width: 100%;
+    margin: 0 auto;
+    /* Center in grid cell if smaller */
+}
+
+.category-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+}
+
+.category-card.drag-over {
+    border-color: var(--primary);
+    background-color: #EBF5FF;
+    transform: scale(1.05);
+}
+
+.category-card:active {
+    transform: scale(0.96);
+}
+
+.delete-folder-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    display: none;
+    /* Hidden by default */
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+    font-size: 14px;
+    transition: all 0.2s;
+    z-index: 10;
+}
+
+.category-card:hover .delete-folder-btn {
+    display: flex;
+}
+
+.delete-folder-btn:hover {
+    background: #FFE5E5;
+    color: var(--danger);
+}
+
+.category-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 24px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.category-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    /* Limit lines */
+    -webkit-box-orient: vertical;
+}
+
+/* --- Sidebar --- */
+.sidebar {
+    width: 260px;
+    background-color: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    transition: width 0.3s ease;
+    flex-shrink: 0;
+}
+
+.sidebar h2 {
+    margin-top: 0;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 40px;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidebar h2 span {
+    color: var(--primary);
+}
+
+.sidebar nav a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.sidebar nav a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+    transform: translateX(4px);
+}
+
+.sidebar nav a.active {
+    background-color: var(--primary);
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+}
+
+.logout-btn {
+    margin-top: auto;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 12px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.logout-btn:hover {
+    background-color: rgba(255, 59, 48, 0.1);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* --- Main Content --- */
+.content {
+    flex: 1;
+    padding: 32px 40px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+}
+
+header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.actions {
+    display: flex;
+    gap: 12px;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 24px;
+    /* Pill shape */
+    cursor: pointer;
+    font-weight: 600;
+    box-shadow: var(--shadow-md);
+    transition: transform 0.1s, background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.btn-primary:active {
+    transform: scale(0.98);
+}
+
+/* --- Table / File List --- */
+.table-container {
+    background: var(--card-bg);
+    border-radius: var(--radius-md);
+    padding: 0;
+    /* Full bleed table */
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    /* For rounded corners */
+    border: 1px solid var(--border);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 16px 24px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+th {
+    background-color: #FAFAFA;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+td {
+    font-size: 15px;
+    color: var(--text-primary);
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover td {
+    background-color: #F9F9F9;
+}
+
+/* Badges */
+.badge {
+    display: inline-block;
+    background: #EBF5FF;
+    color: var(--primary);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* Actions in Table */
+td:last-child {
+    white-space: nowrap;
+    width: 1px;
+    /* Shrink to fit */
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-view {
+    background: #F2F2F7;
+    color: var(--primary);
+    margin-right: 8px;
+}
+
+.btn-view:hover {
+    background: #E5E5EA;
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 24px;
+    /* Pill shape to match btn-primary */
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
+    transition: transform 0.1s, background-color 0.2s;
+}
+
+.btn-danger:hover {
+    background: #D73229;
+    /* Slightly darker red */
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(255, 59, 48, 0.4);
+}
+
+.btn-danger:active {
+    transform: scale(0.98);
+}
+
+/* Restore small size for table buttons */
+.btn-sm.btn-danger {
+    padding: 6px 12px;
+    border-radius: 6px;
+    box-shadow: none;
+    font-weight: 500;
+}
+
+
+/* --- Responsive / Adaptive --- */
+@media (max-width: 1024px) {
+    .sidebar {
+        width: 80px;
+        /* Collapsed sidebar */
+        padding: 20px 10px;
+        align-items: center;
+    }
+
+    .sidebar h2 span,
+    .sidebar nav a span,
+    .logout-btn span {
+        display: none;
+        /* Hide text */
+    }
+
+    .sidebar h2 {
+        justify-content: center;
+        margin-bottom: 30px;
+    }
+
+    .sidebar nav a {
+        justify-content: center;
+        padding: 14px;
+    }
+}
+
+@media (max-width: 768px) {
+
+    /* Shouldn't happen often as 768px triggers Mobile View, but for window resizing on PC */
+    .admin-layout {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 16px;
+        box-sizing: border-box;
+    }
+
+    .sidebar nav {
+        display: flex;
+        gap: 10px;
+    }
+
+    .content {
+        padding: 20px;
+    }
+}
+
+
+/* ... Progress Modal (existing) ... */
+.progress-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3000;
+    /* Higher than modal */
+}
+
+.progress-box {
+    border: none;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* New Folder Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.modal-box {
+    background: white;
+    padding: 32px;
+    border-radius: 20px;
+    width: 400px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 24px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 16px;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.color-grid {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.color-option {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.2s;
+}
+
+.color-option:hover {
+    transform: scale(1.1);
+}
+
+.color-option.selected {
+    border-color: var(--text-primary);
+    transform: scale(1.1);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 32px;
+}
+
+.btn-secondary {
+    background: #E5E5EA;
+    color: var(--text-primary);
+    border: none;
+    padding: 12px 24px;
+    border-radius: 24px;
+    cursor: pointer;
+    font-weight: 600;
+}

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion - PouchainApp</title>
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: #F2F2F7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-page">
+        <div class="login-header">
+            <img src="logo-pouchain.svg" alt="Pouchain" class="app-logo">
+            <p>Documents Entreprise</p>
+        </div>
+
+        <div class="container">
+            <form id="login-form">
+                <div class="input-group">
+                    <div class="input-row">
+                        <input type="email" id="email" placeholder="Email" required>
+                    </div>
+                    <div class="input-row">
+                        <input type="password" id="password" placeholder="Mot de passe" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">Se connecter</button>
+            </form>
+            <p id="msg" style="margin-top: 15px; color: var(--danger-color); text-align: center; font-size: 14px;"></p>
+        </div>
+
+        <div style="margin-top: 20px; font-size: 14px; color: #8E8E93;">
+            <p>Accès sécurisé via Supabase</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { auth } from './js/auth.js';
+
+        // --- Redirect Check ---
+        // If we land here with a recovery token (because Supabase redirect failed or defaulted)
+        // we should manually redirect to the reset page.
+        if (window.location.hash && (window.location.hash.includes('type=recovery') || window.location.hash.includes('access_token'))) {
+            // Check if it's a recovery flow or invite flow
+            console.log("Recovery/Invite token detected, redirecting to reset password page...");
+            window.location.href = 'reset-password.html' + window.location.hash;
+        }
+        // -----------------------
+
+        const loginForm = document.getElementById('login-form');
+        const msg = document.getElementById('msg');
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const btn = document.querySelector('button[type="submit"]');
+
+            try {
+                btn.disabled = true;
+                btn.innerText = "Connexion...";
+                msg.innerText = "";
+
+                const { user, role } = await auth.login(email, password);
+
+                // Store info for dashboard
+                localStorage.setItem('pouchain_role', role);
+
+                // Redirect
+                window.location.href = 'dashboard.html';
+
+            } catch (error) {
+                console.error(error);
+                msg.innerText = "Erreur : " + (error.message || "Identifiants incorrects");
+                btn.disabled = false;
+                btn.innerText = "Se connecter";
+            }
+        });
+    </script>
+</body>
+
+</html>
