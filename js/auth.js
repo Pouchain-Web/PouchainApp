@@ -63,5 +63,13 @@ export const auth = {
             console.error("Auth Exception:", err);
             return 'user';
         }
+    },
+
+    // Update password for logged in user
+    async updatePassword(newPassword) {
+        const { error } = await supabase.auth.updateUser({
+            password: newPassword
+        });
+        if (error) throw error;
     }
 };

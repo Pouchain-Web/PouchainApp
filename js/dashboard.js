@@ -452,10 +452,11 @@ window.renderAdminUsers = async function () {
                                 <td>${new Date(u.created_at).toLocaleDateString()}</td>
                                 <td>
                                     <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${(u.first_name || '').replace(/'/g, "\\'")}', '${(u.last_name || '').replace(/'/g, "\\'")}')" title="Modifier le nom">✏️ Editer</button>
-                                    <button class="btn-sm btn-view" onclick="resetUserPassword('${u.email}')" title="Envoyer mail de réinitialisation">🔑 Reset</button>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
-                ? `<span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
-                : `<button class="btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.email}')">Supprimer</button>`
+                ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
+                                           <span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
+                : `<button class="btn-sm btn-view" onclick="resetUserPassword('${u.email}')" title="Envoyer mail de réinitialisation">🔑 Reset</button>
+                                           <button class="btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.email}')">Supprimer</button>`
             }
                                 </td>
                             </tr>
@@ -739,6 +740,42 @@ window.updateUserProfileName = async function (id) {
         }
     } catch (e) {
         alert("Erreur lors de la mise à jour du profil : " + e.message);
+    }
+};
+
+window.openChangePasswordModal = function () {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'change-password-modal';
+
+    overlay.innerHTML = `
+        <div class="modal-box">
+            <div class="modal-header">Changer mon mot de passe</div>
+            <div class="form-group">
+                <label>Nouveau mot de passe</label>
+                <input type="password" class="form-input" id="new-password-input" placeholder="Minimum 6 caractères">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModal('change-password-modal')">Annuler</button>
+                <button class="btn-primary" onclick="submitChangePassword()">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+};
+
+window.submitChangePassword = async function () {
+    const newPassword = document.getElementById('new-password-input').value;
+    if (!newPassword || newPassword.length < 6) {
+        return alert("Veuillez entrer un mot de passe d'au moins 6 caractères.");
+    }
+
+    try {
+        await auth.updatePassword(newPassword);
+        showSuccessModal("Mot de passe mis à jour avec succès.");
+        closeModal('change-password-modal');
+    } catch (e) {
+        alert("Erreur lors du changement de mot de passe : " + e.message);
     }
 };
 
