@@ -525,7 +525,7 @@ export default {
             if (method === "PUT" && url.pathname.endsWith("/admin/users/profile")) {
                 const body = await request.json();
                 const { id, firstName, lastName } = body;
-                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                if (!id) return new Response("Missing aid", { status: 400, headers: corsHeaders });
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;

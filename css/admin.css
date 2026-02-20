@@ -27,6 +27,38 @@
     --radius-sm: 8px;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+    --hover-bg: #F9F9F9;
+    --th-bg: #FAFAFA;
+    --btn-view-bg: #F2F2F7;
+    --btn-view-hover: #E5E5EA;
+    --modal-bg: #FFFFFF;
+    --input-bg: #FFFFFF;
+    --badge-admin-bg: #EBF5FF;
+    --badge-admin-text: #007AFF;
+    --badge-user-bg: #F2F2F7;
+    --badge-user-text: #8E8E93;
+}
+
+:root[data-theme="dark"] {
+    --bg: #121212;
+    --card-bg: #1E1E1E;
+    --text-primary: #E5E5EA;
+    --text-secondary: #A0A0A5;
+    --border: #333333;
+    --sidebar-bg: #000000;
+    --hover-bg: #2C2C2E;
+    --th-bg: #1E1E1E;
+    --btn-view-bg: #2C2C2E;
+    --btn-view-hover: #3A3A3C;
+    --modal-bg: #1E1E1E;
+    --input-bg: #2C2C2E;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.8);
+    --badge-admin-bg: rgba(0, 122, 255, 0.2);
+    --badge-admin-text: #66B2FF;
+    --badge-user-bg: #2C2C2E;
+    --badge-user-text: #A0A0A5;
 }
 
 body {
@@ -105,7 +137,7 @@ body {
     position: absolute;
     top: 8px;
     right: 8px;
-    background: white;
+    background: var(--card-bg);
     border: none;
     border-radius: 50%;
     width: 24px;
@@ -308,7 +340,7 @@ td {
 }
 
 th {
-    background-color: #FAFAFA;
+    background-color: var(--th-bg);
     color: var(--text-secondary);
     font-weight: 600;
     font-size: 13px;
@@ -331,7 +363,7 @@ tr:last-child td {
 }
 
 tr:hover td {
-    background-color: #F9F9F9;
+    background-color: var(--hover-bg);
 }
 
 /* Badges */
@@ -363,13 +395,13 @@ td:last-child {
 }
 
 .btn-view {
-    background: #F2F2F7;
+    background: var(--btn-view-bg);
     color: var(--primary);
     margin-right: 8px;
 }
 
 .btn-view:hover {
-    background: #E5E5EA;
+    background: var(--btn-view-hover);
 }
 
 .btn-danger {
@@ -496,7 +528,7 @@ td:last-child {
 }
 
 .modal-box {
-    background: white;
+    background: var(--modal-bg);
     padding: 32px;
     border-radius: 20px;
     width: 400px;
@@ -529,6 +561,8 @@ td:last-child {
     font-size: 16px;
     box-sizing: border-box;
     font-family: inherit;
+    background: var(--input-bg);
+    color: var(--text-primary);
 }
 
 .color-grid {
@@ -563,7 +597,7 @@ td:last-child {
 }
 
 .btn-secondary {
-    background: #E5E5EA;
+    background: var(--btn-view-bg);
     color: var(--text-primary);
     border: none;
     padding: 12px 24px;
@@ -577,7 +611,7 @@ td:last-child {
     bottom: 20px;
     right: 20px;
     width: 360px;
-    background: white;
+    background: var(--card-bg);
     border-radius: 12px;
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
     z-index: 10000;
@@ -613,15 +647,15 @@ td:last-child {
 .upload-queue-list {
     max-height: 250px;
     overflow-y: auto;
-    background: #F9F9F9;
+    background: var(--bg);
 }
 
 .upload-queue-item {
     display: flex;
     align-items: center;
     padding: 10px 16px;
-    border-bottom: 1px solid #E5E5EA;
-    background: white;
+    border-bottom: 1px solid var(--border);
+    background: var(--card-bg);
 }
 
 .upload-queue-item:last-child {
@@ -663,7 +697,7 @@ td:last-child {
 
 .upload-queue-item .file-status {
     font-size: 11px;
-    color: #8E8E93;
+    color: var(--text-secondary);
     margin-top: 2px;
     display: flex;
     justify-content: space-between;

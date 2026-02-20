@@ -347,6 +347,10 @@ async function renderAdminView(session) {
         document.head.appendChild(link);
     }
 
+    // Apply saved theme
+    const savedTheme = localStorage.getItem('admin-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
     document.body.innerHTML = `
     <div class="admin-layout">
         <aside class="sidebar">
@@ -361,7 +365,13 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
             </nav>
-            <button id="logout-btn" class="logout-btn">Déconnexion</button>
+            <div style="margin-top: auto;">
+                <button onclick="toggleAdminTheme()" class="logout-btn" style="width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span id="theme-icon">${savedTheme === 'dark' ? '☀️' : '🌙'}</span> 
+                    <span id="theme-text">Mode ${savedTheme === 'dark' ? 'Clair' : 'Sombre'}</span>
+                </button>
+                <button id="logout-btn" class="logout-btn" style="width: 100%;">Déconnexion</button>
+            </div>
         </aside>
         
         <main class="content" id="admin-content">
@@ -432,7 +442,7 @@ window.renderAdminUsers = async function () {
                                 <td>${u.email}</td>
                                 <td>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
-                ? `<span class="badge" style="background:${u.role === 'admin' ? '#EBF5FF' : '#F2F2F7'}; color:${u.role === 'admin' ? '#007AFF' : '#8E8E93'}">${u.role}</span>`
+                ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : 'var(--badge-user-bg)'}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'var(--badge-user-text)'}">${u.role}</span>`
                 : `<select class="form-input" style="padding: 4px 8px; font-size: 13px; width: auto;" onchange="changeUserRole('${u.id}', this.value)">
                                             <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
                                             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
@@ -741,6 +751,22 @@ window.changeUserRole = async function (id, newRole) {
     } catch (e) {
         alert("Erreur lors du changement de rôle : " + e.message);
         renderAdminUsers(); // reset UI
+    }
+};
+
+window.toggleAdminTheme = function () {
+    const root = document.documentElement;
+    const currentTheme = root.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+    root.setAttribute('data-theme', newTheme);
+    localStorage.setItem('admin-theme', newTheme);
+
+    const icon = document.getElementById('theme-icon');
+    const text = document.getElementById('theme-text');
+    if (icon && text) {
+        icon.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+        text.textContent = `Mode ${newTheme === 'dark' ? 'Clair' : 'Sombre'}`;
     }
 };
 
