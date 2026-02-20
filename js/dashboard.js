@@ -349,9 +349,12 @@ async function renderAdminView() {
     <div class="admin-layout">
         <aside class="sidebar">
             <h2>Pouchain <span>Admin</span></h2>
+            <div style="margin-bottom: 24px;">
+                <input type="text" id="admin-global-search" class="form-input" placeholder="🔍 Rechercher un document..." style="width:100%; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);" oninput="handleAdminGlobalSearch(this.value)">
+            </div>
             <nav id="admin-nav">
-                <a href="#" onclick="renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
-                <a href="#" onclick="renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
             </nav>
             <button id="logout-btn" class="logout-btn">Déconnexion</button>
         </aside>
@@ -1478,5 +1481,120 @@ window.saveFileAccess = async function (path) {
     }
 };
 
+window.handleAdminGlobalSearch = function (query) {
+    const term = query.toLowerCase().trim();
+    if (!term) {
+        // Restore previous view
+        if (adminCurrentFolder === null) {
+            renderAdminFolders();
+        } else {
+            renderAdminFiles(adminCurrentFolder);
+        }
+        return;
+    }
+
+    // Unselect nav
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+
+    // Global Search Algorithm
+    // For Folders
+    const matchedFolders = new Set();
+    // For Files
+    const matchedFiles = [];
+
+    adminFilesCache.forEach(file => {
+        const parts = file.key.split('/');
+        const name = parts[parts.length - 1];
+        if (name && !name.startsWith('.meta_color_') && !name.endsWith('.keep')) {
+            if (name.toLowerCase().includes(term)) {
+                matchedFiles.push(file);
+            }
+        }
+
+        if (parts.length > 1) {
+            const folderName = parts[0];
+            if (folderName.toLowerCase().includes(term)) {
+                matchedFolders.add(folderName);
+            }
+        }
+    });
+
+    // Render results
+    const content = document.getElementById('admin-content');
+
+    let html = `
+        <header>
+            <div style="display:flex; align-items:center; gap:16px;">
+                <h1 style="margin:0;">Résultats pour "${query}"</h1>
+            </div>
+            <div class="actions">
+                <button class="btn-danger" id="deleteSelectedBtn" style="display:none; align-items:center; gap:8px;" onclick="deleteSelectedItems()">🗑️ Supprimer la sélection (<span id="selectedCount">0</span>)</button>
+            </div>
+        </header>
+        
+        <div class="table-container" style="flex:1;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:40px; text-align:center;"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)" style="cursor:pointer; transform: scale(1.2);"></th>
+                        <th style="width:40px"></th>
+                        <th>Nom</th>
+                        <th>Chemin</th>
+                        <th>Taille</th>
+                        <th style="text-align: right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    Array.from(matchedFolders).sort().forEach(folder => {
+        html += `
+            <tr class="folder-row" onclick="renderAdminFiles('${folder}'); document.getElementById('admin-global-search').value='';" style="cursor:pointer">
+                <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${folder}" data-type="folder" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
+                <td style="font-size:20px; text-align:center;">📁</td>
+                <td style="font-weight:600">${folder}</td>
+                <td style="color:#888; font-size:13px;">Dossier</td>
+                <td>-</td>
+                <td style="text-align: right">
+                    <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFolder('${folder}')">Supprimer</button>
+                </td>
+            </tr>
+        `;
+    });
+
+    matchedFiles.forEach(file => {
+        const name = file.key.split('/').pop();
+        const ext = name.split('.').pop().toLowerCase();
+        let icon = '📄';
+        if (['pdf'].includes(ext)) icon = '📕';
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) icon = '🖼️';
+        if (['doc', 'docx'].includes(ext)) icon = '📘';
+        if (['xls', 'xlsx', 'csv'].includes(ext)) icon = '📊';
+
+        const parentPath = file.key.substring(0, file.key.lastIndexOf('/')) || "Racine";
+
+        html += `
+            <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/"/g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s;">
+                <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/"/g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
+                <td style="font-size:20px; text-align:center;">${icon}</td>
+                <td>${name}</td>
+                <td style="color:#888; font-size:13px;">${parentPath}</td>
+                <td>${(file.size / 1024).toFixed(1)} KB</td>
+                <td style="text-align: right">
+                    <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('${file.key.replace(/'/g, "\\'")}')">Supprimer</button>
+                </td>
+            </tr>
+        `;
+    });
+
+    if (matchedFolders.size === 0 && matchedFiles.length === 0) {
+        html += `<tr><td colspan="6" style="text-align:center; padding:50px; color:#888;">Aucun résultat trouvé.</td></tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+    content.innerHTML = html;
+};
+
 // Start
 initDashboard();
+
