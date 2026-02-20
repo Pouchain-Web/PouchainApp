@@ -1067,12 +1067,181 @@ window.createNewFolder = async function () {
     openNewFolderModal();
 };
 
+// --- Upload Queue System ---
+const uploadQueue = []; // Items: { id, file, prefix, status: 'pending'|'uploading'|'success'|'error', progress: 0, error: null }
+let isQueueProcessing = false;
+let isQueueMinimized = false;
+
+window.addToUploadQueue = function (files, prefix) {
+    // 1. Add to queue
+    Array.from(files).forEach(file => {
+        uploadQueue.push({
+            id: Date.now() + Math.random().toString(36).substr(2, 9),
+            file: file,
+            prefix: prefix, // Destination folder at moment of drop
+            status: 'pending',
+            progress: 0
+        });
+    });
+
+    // 2. Render & Open UI
+    isQueueMinimized = false;
+    renderUploadQueue();
+
+    // 3. Start processing if not already
+    if (!isQueueProcessing) {
+        processUploadQueue();
+    }
+};
+
+async function processUploadQueue() {
+    if (isQueueProcessing) return;
+    isQueueProcessing = true;
+
+    while (true) {
+        // Find next pending
+        const item = uploadQueue.find(i => i.status === 'pending');
+        if (!item) break; // All done
+
+        // Update Status
+        item.status = 'uploading';
+        renderUploadQueue();
+
+        try {
+            await api.uploadFile(item.file, item.prefix, (p) => {
+                item.progress = p;
+                renderUploadQueue(); // Update UI on progress
+            });
+            item.status = 'success';
+            item.progress = 100;
+
+            // Usage: Refresh ONLY if we are currently looking at that folder
+            // This prevents "ghost" refreshes if user navigated away
+            // adminCurrentFolder can be null (root) or string
+            // item.prefix usually ends with slash "Folder/" or is empty ""
+
+            const targetFolder = item.prefix ? item.prefix.slice(0, -1) : null;
+            // logic check: if item.prefix is "", target is null. adminCurrentFolder is null. Match!
+            // if item.prefix is "A/", target is "A". adminCurrentFolder is "A". Match!
+
+            if (adminCurrentFolder === targetFolder) {
+                await refreshAdminData();
+            }
+
+        } catch (e) {
+            console.error("Upload error", e);
+            item.status = 'error';
+            item.error = e.message;
+        }
+
+        renderUploadQueue();
+    }
+
+    isQueueProcessing = false;
+
+    // Auto-hide or keep open? 
+    // Usually keep open to show success, maybe minimize after delay
+    // For now keep open.
+}
+
+window.toggleQueueMinimize = function () {
+    isQueueMinimized = !isQueueMinimized;
+    renderUploadQueue();
+};
+
+window.closeUploadQueue = function () {
+    // Remove completed items
+    // Or just clear all? Let's clear connected items or hide
+    // For simplicity: Clear completed/error, keep pending? 
+    // Usually "Close" means "I've seen it".
+    // Let's clear the queue array of finished items
+    for (let i = uploadQueue.length - 1; i >= 0; i--) {
+        if (['success', 'error'].includes(uploadQueue[i].status)) {
+            uploadQueue.splice(i, 1);
+        }
+    }
+    renderUploadQueue();
+};
+
+function renderUploadQueue() {
+    let container = document.getElementById('upload-queue-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'upload-queue-container';
+        container.className = 'upload-queue-container hidden';
+        document.body.appendChild(container);
+    }
+
+    // Visibility
+    const activeCount = uploadQueue.length;
+    if (activeCount === 0) {
+        container.classList.add('hidden');
+        return;
+    }
+    container.classList.remove('hidden');
+
+    // Minimized State
+    if (isQueueMinimized) {
+        container.classList.add('minimized');
+    } else {
+        container.classList.remove('minimized');
+    }
+
+    // Header Stats
+    const pending = uploadQueue.filter(i => ['pending', 'uploading'].includes(i.status)).length;
+    const title = pending > 0 ? `Envoi de ${pending} fichier(s)...` : `Uploads terminés`;
+    const icon = pending > 0 ? '⏳' : '✅';
+
+    container.innerHTML = `
+        <div class="upload-queue-header" onclick="toggleQueueMinimize()">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span>${icon}</span>
+                <span>${title}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span style="font-size:18px;">${isQueueMinimized ? '🔼' : '🔽'}</span>
+                <span onclick="event.stopPropagation(); closeUploadQueue()" style="font-size:18px;" title="Fermer">✖️</span>
+            </div>
+        </div>
+        <div class="upload-queue-list">
+            ${uploadQueue.map(item => {
+        let statusIcon = '⏳';
+        let statusText = `${item.progress}%`;
+        let statusClass = '';
+
+        if (item.status === 'pending') { statusText = 'En attente...'; statusIcon = '✋'; }
+        if (item.status === 'uploading') { statusClass = 'uploading'; } // could animate
+        if (item.status === 'success') { statusText = 'OK'; statusIcon = '✅'; statusClass = 'success'; }
+        if (item.status === 'error') { statusText = 'Erreur'; statusIcon = '⚠️'; statusClass = 'error'; }
+
+        return `
+                <div class="upload-queue-item ${statusClass}">
+                    <div class="file-icon">📄</div>
+                    <div class="file-info">
+                        <div class="file-name" title="${item.file.name}">${item.file.name}</div>
+                        <div class="file-progress-bar">
+                            <div class="file-progress-fill" style="width: ${item.progress}%"></div>
+                        </div>
+                        <div class="file-status">
+                            <span>${statusText}</span>
+                            ${item.error ? `<span style="color:var(--danger)" title="${item.error}">Info</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                `;
+    }).join('')}
+        </div>
+    `;
+}
+
+// Redirect triggers to new Queue
 window.triggerUpload = function (folder) {
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true;
     input.onchange = (e) => {
         if (e.target.files.length > 0) {
-            handleUpload(e.target.files[0], folder ? folder + "/" : "");
+            addToUploadQueue(e.target.files, folder ? folder + "/" : "");
         }
     };
     input.click();
@@ -1097,7 +1266,7 @@ window.handleDrop = function (e, folder) {
     e.currentTarget.classList.remove('drag-over');
 
     if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-        handleUpload(e.dataTransfer.files[0], folder + "/");
+        addToUploadQueue(e.dataTransfer.files, folder + "/");
     }
 };
 
@@ -1110,45 +1279,6 @@ window.addEventListener("drop", function (e) {
     e = e || event;
     e.preventDefault();
 }, false);
-
-async function handleUpload(file, prefix) {
-    // Show Overlay with better design
-    const overlay = document.createElement('div');
-    overlay.className = 'progress-overlay'; // styles updated in css/admin.css
-    overlay.id = 'upload-overlay';
-    overlay.innerHTML = `
-        <div class="modal-box" style="text-align: center; width: 320px;">
-            <h3 style="margin-top:0;">Upload en cours...</h3>
-            <p style="color:#666; margin-bottom:16px; font-size:14px;">${file.name}</p>
-            
-            <div class="progress-bar-container" style="background:#E5E5EA; border-radius:10px; height:10px; overflow:hidden; margin-bottom:8px;">
-                <div class="progress-bar-fill" id="pb-fill" style="background:var(--primary); height:100%; width:0%; transition:width 0.2s;"></div>
-            </div>
-            <div class="progress-text" id="pb-text" style="font-size:12px; font-weight:600; color:var(--text-secondary);">0%</div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-
-    try {
-        await api.uploadFile(file, prefix, (p) => {
-            const fill = document.getElementById('pb-fill');
-            const text = document.getElementById('pb-text');
-            if (fill) fill.style.width = p + '%';
-            if (text) text.innerText = p + '%';
-        });
-
-        if (document.getElementById('upload-overlay')) document.body.removeChild(overlay);
-
-        // Show success - maybe small toast? 
-        // Or just refresh. User asked for popup.
-        showSuccessModal("Fichier uploadé avec succès !");
-
-        await refreshAdminData();
-    } catch (e) {
-        if (document.getElementById('upload-overlay')) document.body.removeChild(overlay);
-        alert("Erreur upload: " + e.message);
-    }
-}
 
 window.deleteFile = function (key) {
     showConfirmModal(
