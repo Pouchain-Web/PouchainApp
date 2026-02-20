@@ -332,8 +332,13 @@ function renderMobileDocItem(doc, container) {
     item.onclick = () => window.open(`${config.api.workerUrl}/get/${doc.key}`, '_blank');
 
     const fullName = doc.key.split('/').pop();
-    const displayName = fullName.length > 35 ? fullName.substring(0, 32) + '...' : fullName;
-    const ext = fullName.split('.').pop().toLowerCase();
+    const extDot = fullName.includes('.') ? '.' + fullName.split('.').pop() : '';
+    const baseName = fullName.includes('.') ? fullName.slice(0, fullName.lastIndexOf('.')) : fullName;
+    const maxBase = 25 - 3 - extDot.length; // 25 total − '...' − extension
+    const displayName = fullName.length > 25
+        ? baseName.substring(0, Math.max(maxBase, 1)) + '...' + extDot
+        : fullName;
+    const ext = extDot.replace('.', '').toLowerCase();
     let icon = '📄';
     if (['pdf'].includes(ext)) icon = '📕';
     if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) icon = '🖼️';
