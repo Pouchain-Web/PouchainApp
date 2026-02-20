@@ -34,8 +34,10 @@ window.openFile = function (key) {
 // --- Mobile View (User / Mobile) ---
 let mobileFilesCache = []; // Cache for search
 let mobileCurrentPath = null; // Track current folder path
+let isMobileView = false; // Flag to know which view is active
 
 async function renderMobileView() {
+    isMobileView = true;
     // Load CSS
     if (!document.getElementById('mobile-css')) {
         const link = document.createElement('link');
@@ -1491,6 +1493,91 @@ window.createNewFolder = async function () {
 const uploadQueue = []; // Items: {id, file, prefix, status: 'pending'|'uploading'|'success'|'error', progress: 0, error: null }
 let isQueueProcessing = false;
 let isQueueMinimized = false;
+let mobileUploadActive = false; // Track mobile upload state
+
+// --- Prevent page close during mobile upload ---
+window.addEventListener('beforeunload', (e) => {
+    if (isMobileView && mobileUploadActive) {
+        e.preventDefault();
+        e.returnValue = 'Un upload est en cours. Quitter la page pourrait corrompre vos fichiers.';
+        return e.returnValue;
+    }
+});
+
+// Mobile blocking overlay functions
+function showMobileUploadOverlay() {
+    let overlay = document.getElementById('mobile-upload-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'mobile-upload-overlay';
+        overlay.style.cssText = `
+            position: fixed; inset: 0; z-index: 99999;
+            background: rgba(0,0,0,0.85);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 32px 24px; gap: 20px;
+        `;
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+    updateMobileUploadOverlay();
+}
+
+function updateMobileUploadOverlay() {
+    const overlay = document.getElementById('mobile-upload-overlay');
+    if (!overlay) return;
+
+    const pending = uploadQueue.filter(i => i.status === 'pending').length;
+    const uploading = uploadQueue.filter(i => i.status === 'uploading').length;
+    const success = uploadQueue.filter(i => i.status === 'success').length;
+    const errors = uploadQueue.filter(i => i.status === 'error').length;
+    const total = uploadQueue.length;
+    const done = success + errors;
+    const globalProgress = total > 0 ? Math.round((done / total) * 100) : 0;
+    const isAllDone = done === total && total > 0;
+
+    overlay.innerHTML = `
+        <div style="text-align:center; color:white;">
+            <div style="font-size:48px; margin-bottom:12px;">${isAllDone ? (errors > 0 ? '⚠️' : '✅') : '📤'}</div>
+            <div style="font-size:20px; font-weight:700; margin-bottom:6px;">
+                ${isAllDone ? (errors > 0 ? 'Upload terminé avec des erreurs' : 'Upload terminé !') : 'Upload en cours...'}
+            </div>
+            ${!isAllDone ? `<div style="font-size:13px; color:rgba(255,255,255,0.7); margin-bottom:20px;">⚠️ Veuillez ne pas quitter cette page</div>` : ''}
+        </div>
+
+        <div style="width:100%; max-width:400px; background:rgba(255,255,255,0.15); border-radius:12px; height:10px; overflow:hidden;">
+            <div style="height:100%; width:${globalProgress}%; background:var(--primary-color, #2da140); border-radius:12px; transition:width 0.3s ease;"></div>
+        </div>
+        <div style="font-size:13px; color:rgba(255,255,255,0.8);">${done} / ${total} fichier(s)</div>
+
+        <div style="width:100%; max-width:400px; display:flex; flex-direction:column; gap:10px; max-height:40vh; overflow-y:auto;">
+            ${uploadQueue.map(item => {
+        const statusIcon = item.status === 'success' ? '✅' : item.status === 'error' ? '❌' : item.status === 'uploading' ? '⏳' : '🕐';
+        const progressBar = item.status === 'uploading'
+            ? `<div style="background:rgba(255,255,255,0.2); border-radius:6px; height:6px; margin-top:5px;"><div style="height:100%; width:${item.progress}%; background:white; border-radius:6px; transition:width 0.2s;"></div></div>`
+            : '';
+        return `
+                <div style="background:rgba(255,255,255,0.12); border-radius:10px; padding:10px 14px;">
+                    <div style="display:flex; gap:8px; align-items:center; color:white; font-size:13px;">
+                        <span>${statusIcon}</span>
+                        <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.file.name}</span>
+                        <span style="font-size:11px; opacity:0.7;">${item.progress}%</span>
+                    </div>
+                    ${progressBar}
+                    ${item.error ? `<div style="font-size:11px; color:#FF6B6B; margin-top:4px;">${item.error}</div>` : ''}
+                </div>`;
+    }).join('')}
+        </div>
+
+        ${isAllDone ? `<button onclick="closeMobileUploadOverlay()" style="margin-top:8px; padding:14px 40px; background:var(--primary-color, #2da140); color:white; border:none; border-radius:24px; font-size:16px; font-weight:700; cursor:pointer;">Fermer</button>` : ''}
+    `;
+}
+
+window.closeMobileUploadOverlay = function () {
+    const overlay = document.getElementById('mobile-upload-overlay');
+    if (overlay) overlay.style.display = 'none';
+    mobileUploadActive = false;
+};
 
 window.addToUploadQueue = function (files, prefix) {
     // 1. Add to queue
@@ -1498,15 +1585,20 @@ window.addToUploadQueue = function (files, prefix) {
         uploadQueue.push({
             id: Date.now() + Math.random().toString(36).substr(2, 9),
             file: file,
-            prefix: prefix, // Destination folder at moment of drop
+            prefix: prefix,
             status: 'pending',
             progress: 0
         });
     });
 
-    // 2. Render & Open UI
-    isQueueMinimized = false;
-    renderUploadQueue();
+    // 2. On mobile: show blocking overlay. On desktop: show regular queue widget.
+    if (isMobileView) {
+        mobileUploadActive = true;
+        showMobileUploadOverlay();
+    } else {
+        isQueueMinimized = false;
+        renderUploadQueue();
+    }
 
     // 3. Start processing if not already
     if (!isQueueProcessing) {
@@ -1530,15 +1622,14 @@ async function processUploadQueue() {
         try {
             await api.uploadFile(item.file, item.prefix, (p) => {
                 item.progress = p;
-                renderUploadQueue(); // Update UI on progress
+                if (isMobileView) {
+                    updateMobileUploadOverlay();
+                } else {
+                    renderUploadQueue();
+                }
             });
             item.status = 'success';
             item.progress = 100;
-
-            // Usage: Refresh ONLY if we are currently looking at that folder
-            // This prevents "ghost" refreshes if user navigated away
-            // adminCurrentFolder can be null (root) or string
-            // item.prefix usually ends with slash "Folder/" or is empty ""
 
             const targetFolder = item.prefix ? item.prefix.slice(0, -1) : null;
 
@@ -1549,11 +1640,15 @@ async function processUploadQueue() {
 
             // Refresh mobile view if on the right folder
             if (mobileCurrentPath && mobileCurrentPath === targetFolder) {
-                const session = await auth.getSession();
-                const userId = session ? session.user.id : null;
-                const files = await api.listFiles(userId);
-                mobileFilesCache = files;
-                openMobileFolder(mobileCurrentPath);
+                try {
+                    const session = await auth.getSession();
+                    const userId = session ? session.user.id : null;
+                    const freshFiles = await api.listFiles(userId);
+                    mobileFilesCache = freshFiles;
+                    openMobileFolder(mobileCurrentPath);
+                } catch (refreshErr) {
+                    console.warn('Mobile folder refresh failed:', refreshErr);
+                }
             }
 
         } catch (e) {
@@ -1562,7 +1657,11 @@ async function processUploadQueue() {
             item.error = e.message;
         }
 
-        renderUploadQueue();
+        if (isMobileView) {
+            updateMobileUploadOverlay();
+        } else {
+            renderUploadQueue();
+        }
     }
 
     isQueueProcessing = false;
