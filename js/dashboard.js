@@ -163,8 +163,14 @@ function handleMobileSearch(query) {
     docListView.classList.add('hidden');
     searchView.classList.remove('hidden');
 
-    // Filter
-    const results = mobileFilesCache.filter(f => f.key.toLowerCase().includes(normalizedQuery));
+    // Filter — exclude internal config files (.keep, .meta_color_*)
+    const isInternalFile = (key) => {
+        const name = key.split('/').pop();
+        return name.endsWith('.keep') || name.startsWith('.meta_color_') || name.startsWith('.');
+    };
+    const results = mobileFilesCache.filter(f =>
+        !isInternalFile(f.key) && f.key.toLowerCase().includes(normalizedQuery)
+    );
     const container = document.getElementById('search-results-list');
     container.innerHTML = '';
 
