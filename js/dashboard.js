@@ -38,6 +38,15 @@ let isMobileView = false; // Flag to know which view is active
 
 async function renderMobileView() {
     isMobileView = true;
+    // Ensure favicon is present (survives body rewrite)
+    if (!document.getElementById('app-favicon')) {
+        const favicon = document.createElement('link');
+        favicon.id = 'app-favicon';
+        favicon.rel = 'icon';
+        favicon.type = 'image/png';
+        favicon.href = 'favicon.png';
+        document.head.appendChild(favicon);
+    }
     // Load CSS
     if (!document.getElementById('mobile-css')) {
         const link = document.createElement('link');
@@ -377,6 +386,15 @@ let currentAdminSession = null;
 
 async function renderAdminView(session) {
     currentAdminSession = session;
+    // Ensure favicon is present (survives body rewrite)
+    if (!document.getElementById('app-favicon')) {
+        const favicon = document.createElement('link');
+        favicon.id = 'app-favicon';
+        favicon.rel = 'icon';
+        favicon.type = 'image/png';
+        favicon.href = 'favicon.png';
+        document.head.appendChild(favicon);
+    }
     // Load CSS
     if (!document.getElementById('admin-css')) {
         const link = document.createElement('link');
