@@ -797,6 +797,7 @@ window.renderAdminFiles = function (folder) {
                 <h1 style="margin:0;">${title}</h1>
             </div>
             <div class="actions">
+                <button class="btn-danger" id="deleteSelectedBtn" style="display:none; align-items:center; gap:8px;" onclick="deleteSelectedItems()">🗑️ Supprimer la sélection (<span id="selectedCount">0</span>)</button>
                 <button class="btn-primary" onclick="openNewFolderModal()">+ Nouveau Dossier</button>
                 <button class="btn-primary" onclick="triggerUpload('${folder}')">📤 Upload ici</button>
                 <input type="file" id="file-input-${folder || 'root'}" hidden>
@@ -810,6 +811,7 @@ window.renderAdminFiles = function (folder) {
             <table>
                 <thead>
                     <tr>
+                        <th style="width:40px; text-align:center;"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)" style="cursor:pointer; transform: scale(1.2);"></th>
                         <th style="width:40px"></th> <!-- Icon -->
                         <th>Nom</th>
                         <th>Taille</th>
@@ -822,6 +824,7 @@ window.renderAdminFiles = function (folder) {
         const fullPath = currentPrefix + sub;
         return `
                         <tr class="folder-row" onclick="renderAdminFiles('${fullPath}')" style="cursor:pointer">
+                            <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${fullPath}" data-type="folder" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
                             <td style="font-size:20px; text-align:center;">📁</td>
                             <td style="font-weight:600">${sub}</td>
                             <td>-</td>
@@ -846,6 +849,7 @@ window.renderAdminFiles = function (folder) {
 
         return `
                         <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/"/g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s;">
+                            <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/"/g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
                             <td style="font-size:20px; text-align:center;">${icon}</td>
                             <td>${name}</td>
                             <td>${(file.size / 1024).toFixed(1)} KB</td>
@@ -858,13 +862,93 @@ window.renderAdminFiles = function (folder) {
                         `;
     }).join('')}
                     ${(sortedSubfolders.length === 0 && distinctFiles.length === 0) ?
-            '<tr><td colspan="4" style="text-align:center; padding:50px; color:#888; border: 2px dashed #E5E5EA; border-radius: 12px;">📂 Dossier vide<br><small>Glissez des fichiers ici pour uploader</small></td></tr>'
+            '<tr><td colspan="5" style="text-align:center; padding:50px; color:#888; border: 2px dashed #E5E5EA; border-radius: 12px;">📂 Dossier vide<br><small>Glissez des fichiers ici pour uploader</small></td></tr>'
             : ''}
                 </tbody>
             </table>
         </div>
     `;
 }
+
+window.toggleSelectAll = function (source) {
+    const checkboxes = document.querySelectorAll('.item-checkbox');
+    checkboxes.forEach(cb => cb.checked = source.checked);
+    updateSelectedCount();
+};
+
+window.updateSelectedCount = function () {
+    const checked = document.querySelectorAll('.item-checkbox:checked');
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    const countSpan = document.getElementById('selectedCount');
+    if (checked.length > 0) {
+        deleteBtn.style.display = 'inline-flex';
+        countSpan.textContent = checked.length;
+    } else {
+        deleteBtn.style.display = 'none';
+        countSpan.textContent = '0';
+    }
+
+    const selectAllCb = document.getElementById('selectAllCheckbox');
+    const allCb = document.querySelectorAll('.item-checkbox');
+    if (selectAllCb && allCb.length > 0) {
+        selectAllCb.checked = (checked.length === allCb.length);
+    }
+};
+
+window.deleteSelectedItems = function () {
+    const checked = document.querySelectorAll('.item-checkbox:checked');
+    if (checked.length === 0) return;
+
+    showConfirmModal(
+        "Supprimer la sélection ?",
+        `Voulez-vous vraiment supprimer les <b>${checked.length}</b> éléments sélectionnés ?<br>Les dossiers sélectionnés et tout leur contenu seront supprimés.<br><br>Cette action est irréversible.`,
+        async () => {
+            let count = 0;
+            const overlays = document.createElement('div');
+            overlays.className = 'modal-overlay';
+            overlays.id = 'delete-loading';
+            overlays.innerHTML = `<div class="modal-box" style="text-align:center"><h3>Suppression en cours...</h3><p>Veuillez patienter.</p></div>`;
+            document.body.appendChild(overlays);
+
+            for (let i = 0; i < checked.length; i++) {
+                const item = checked[i];
+                const type = item.getAttribute('data-type');
+                const path = item.getAttribute('data-path');
+
+                if (type === 'file') {
+                    try {
+                        await api.deleteFile(path);
+                        count++;
+                    } catch (e) {
+                        console.error("Error deleting " + path, e);
+                    }
+                } else if (type === 'folder') {
+                    const filesToDelete = adminFilesCache.filter(f => f.key.startsWith(path + '/'));
+                    const metaFiles = adminFilesCache.filter(f => {
+                        const parts = f.key.split('/');
+                        return parts.length > 1 && parts[0] === path && parts[1].startsWith('.meta_color_');
+                    });
+                    const allKeys = new Set();
+                    filesToDelete.forEach(f => allKeys.add(f.key));
+                    metaFiles.forEach(f => allKeys.add(f.key));
+
+                    for (const key of allKeys) {
+                        try {
+                            await api.deleteFile(key);
+                            count++;
+                        } catch (e) {
+                            console.error("Error deleting " + key, e);
+                        }
+                    }
+                }
+            }
+
+            if (document.getElementById('delete-loading')) document.body.removeChild(document.getElementById('delete-loading'));
+            showSuccessModal(`${count} éléments supprimés avec succès.`);
+            await refreshAdminData();
+        }
+    );
+};
 
 window.renameFile = function (key, currentName) {
     const extIndex = currentName.lastIndexOf('.');
@@ -917,13 +1001,13 @@ window.renameFolder = function (oldPath, currentName) {
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             overlay.id = 'rename-loading';
-            overlay.innerHTML = `<div class="modal-box" style="text-align:center"><h3>Renommage en cours...</h3><p>Veuillez patienter.</p></div>`;
+            overlay.innerHTML = `< div class="modal-box" style = "text-align:center" ><h3>Renommage en cours...</h3><p>Veuillez patienter.</p></div > `;
             document.body.appendChild(overlay);
 
             const res = await api.renameFolder(oldPrefix, newPrefix);
 
             document.body.removeChild(overlay);
-            showSuccessModal(`${res.count} éléments déplacés. Dossier renommé.`);
+            showSuccessModal(`${res.count} éléments déplacés.Dossier renommé.`);
             await refreshAdminData();
         } catch (e) {
             if (document.getElementById('rename-loading')) document.body.removeChild(document.getElementById('rename-loading'));
@@ -937,7 +1021,7 @@ window.renameFolder = function (oldPath, currentName) {
 window.deleteFolder = function (folder) {
     showConfirmModal(
         "Supprimer le dossier ?",
-        `Cela va supprimer le dossier "<b>${folder}</b>" et <b>TOUS</b> les fichiers qu'il contient.<br><br>Cette action est irréversible.`,
+        `Cela va supprimer le dossier "<b>${folder}</b>" et < b > TOUS</b > les fichiers qu'il contient.<br><br>Cette action est irréversible.`,
         async () => {
             // Find all files in folder
             const filesToDelete = adminFilesCache.filter(f => f.key.startsWith(folder + '/'));

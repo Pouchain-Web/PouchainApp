@@ -54,6 +54,9 @@ body {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 30px;
     padding-bottom: 40px;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 /* Ensure cards don't stretch indefinitely */
@@ -227,9 +230,11 @@ body {
 .content {
     flex: 1;
     padding: 32px 40px;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: hidden;
 }
 
 header {
@@ -237,6 +242,7 @@ header {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 32px;
+    flex-shrink: 0;
 }
 
 header h1 {
@@ -282,9 +288,11 @@ header h1 {
     padding: 0;
     /* Full bleed table */
     box-shadow: var(--shadow-sm);
-    overflow: hidden;
-    /* For rounded corners */
+    overflow-y: auto;
+    /* For rounded corners and scrolling */
     border: 1px solid var(--border);
+    flex: 1;
+    min-height: 0;
 }
 
 table {
@@ -306,6 +314,11 @@ th {
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    /* Ensures border shows correctly under sticky header */
+    box-shadow: 0 1px 0 var(--border);
 }
 
 td {
