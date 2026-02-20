@@ -88,6 +88,11 @@ async function renderMobileView() {
                     Retour
                 </div>
                 <div class="nav-title" id="selected-category-title">Catégorie</div>
+                <!-- Mobile Upload Button (shown only inside a folder) -->
+                <button id="mobile-upload-btn" onclick="mobileTriggerUpload()" title="Uploader un fichier"
+                    style="display:none; align-items:center; gap:6px; padding:8px 14px; background:var(--primary-color,#2da140); color:white; border:none; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+                    📤 Upload
+                </button>
             </div>
             <div id="list-content" class="view-transition"></div>
         </div>
@@ -266,14 +271,29 @@ function renderMobileList(title, subfolders, files) {
     // Update Title
     document.getElementById('selected-category-title').innerText = title;
 
+    // Show upload button if inside a real folder (not the fake 'Autres' view)
+    const uploadBtn = document.getElementById('mobile-upload-btn');
+    if (uploadBtn) {
+        uploadBtn.style.display = mobileCurrentPath && mobileCurrentPath !== 'Autres' ? 'flex' : 'none';
+    }
+
     const container = document.getElementById('list-content');
     container.innerHTML = '';
+
+    // Drag & Drop zone on container
+    container.ondragover = (e) => { e.preventDefault(); container.style.outline = '2px dashed var(--primary-color, #2da140)'; };
+    container.ondragleave = () => { container.style.outline = ''; };
+    container.ondrop = (e) => {
+        e.preventDefault();
+        container.style.outline = '';
+        if (e.dataTransfer.files.length > 0 && mobileCurrentPath && mobileCurrentPath !== 'Autres') {
+            addToUploadQueue(e.dataTransfer.files, mobileCurrentPath + '/');
+        }
+    };
 
     // Render Subfolders
     subfolders.forEach(sub => {
         const item = document.createElement('div');
-        item.className = 'category-card'; // Reuse styled card but smaller? Or use document-item style?
-        // Let's use document-item style but with folder icon for consistency in list view
         item.className = 'document-item';
         item.style.cursor = 'pointer';
         item.innerHTML = `
@@ -295,7 +315,12 @@ function renderMobileList(title, subfolders, files) {
     });
 
     if (subfolders.length === 0 && files.length === 0) {
-        container.innerHTML = `<div style="text-align:center; padding:40px; color:#8E8E93">Dossier vide</div>`;
+        container.innerHTML = `
+            <div style="text-align:center; padding:40px; color:#8E8E93">
+                <div style="font-size:48px; margin-bottom:12px;">📂</div>
+                <div style="font-weight:600; margin-bottom:8px;">Dossier vide</div>
+                <div style="font-size:13px; margin-bottom:20px;">Appuyez sur "Upload" ou glissez des fichiers ici</div>
+            </div>`;
     }
 }
 
@@ -1516,11 +1541,19 @@ async function processUploadQueue() {
             // item.prefix usually ends with slash "Folder/" or is empty ""
 
             const targetFolder = item.prefix ? item.prefix.slice(0, -1) : null;
-            // logic check: if item.prefix is "", target is null. adminCurrentFolder is null. Match!
-            // if item.prefix is "A/", target is "A". adminCurrentFolder is "A". Match!
 
+            // Refresh admin view if on the right folder
             if (adminCurrentFolder === targetFolder) {
                 await refreshAdminData();
+            }
+
+            // Refresh mobile view if on the right folder
+            if (mobileCurrentPath && mobileCurrentPath === targetFolder) {
+                const session = await auth.getSession();
+                const userId = session ? session.user.id : null;
+                const files = await api.listFiles(userId);
+                mobileFilesCache = files;
+                openMobileFolder(mobileCurrentPath);
             }
 
         } catch (e) {
@@ -1637,6 +1670,20 @@ window.triggerUpload = function (folder) {
     input.onchange = (e) => {
         if (e.target.files.length > 0) {
             addToUploadQueue(e.target.files, folder ? folder + "/" : "");
+        }
+    };
+    input.click();
+};
+
+// Mobile upload trigger — uses mobileCurrentPath as the folder
+window.mobileTriggerUpload = function () {
+    if (!mobileCurrentPath || mobileCurrentPath === 'Autres') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = (e) => {
+        if (e.target.files.length > 0) {
+            addToUploadQueue(e.target.files, mobileCurrentPath + "/");
         }
     };
     input.click();
