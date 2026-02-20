@@ -55,8 +55,10 @@ export default {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                // 2. Check if the calling user is an admin — admins see everything
-                const callerIsAdmin = user ? await isAdmin(user, env) : false;
+                // 2. Admin desktop (no userId param) bypasses access control and sees everything.
+                //    Mobile view always passes userId — access control is enforced for everyone there,
+                //    even if the caller is an admin.
+                const callerIsAdmin = !userId && user ? await isAdmin(user, env) : false;
 
                 if (!callerIsAdmin && serviceKey) {
                     try {
