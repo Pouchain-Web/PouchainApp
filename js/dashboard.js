@@ -331,8 +331,9 @@ function renderMobileDocItem(doc, container) {
     item.className = 'document-item';
     item.onclick = () => window.open(`${config.api.workerUrl}/get/${doc.key}`, '_blank');
 
-    const name = doc.key.split('/').pop();
-    const ext = name.split('.').pop().toLowerCase();
+    const fullName = doc.key.split('/').pop();
+    const displayName = fullName.length > 35 ? fullName.substring(0, 32) + '...' : fullName;
+    const ext = fullName.split('.').pop().toLowerCase();
     let icon = '📄';
     if (['pdf'].includes(ext)) icon = '📕';
     if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) icon = '🖼️';
@@ -343,7 +344,7 @@ function renderMobileDocItem(doc, container) {
         <div style="display:flex; align-items:center;">
             <div style="font-size:24px; margin-right:12px;">${icon}</div>
             <div class="document-info">
-                <span class="document-name">${name}</span>
+                <span class="document-name" title="${fullName}">${displayName}</span>
                 <span class="document-meta">${(doc.size / 1024).toFixed(1)} KB</span>
             </div>
         </div>
@@ -1617,7 +1618,11 @@ async function processUploadQueue() {
 
         // Update Status
         item.status = 'uploading';
-        renderUploadQueue();
+        if (isMobileView) {
+            updateMobileUploadOverlay();
+        } else {
+            renderUploadQueue();
+        }
 
         try {
             await api.uploadFile(item.file, item.prefix, (p) => {
@@ -1691,6 +1696,9 @@ window.closeUploadQueue = function () {
 };
 
 function renderUploadQueue() {
+    // Never show the desktop widget on mobile — we have the overlay instead
+    if (isMobileView) return;
+
     let container = document.getElementById('upload-queue-container');
     if (!container) {
         container = document.createElement('div');
