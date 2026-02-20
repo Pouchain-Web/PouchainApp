@@ -547,6 +547,31 @@ export default {
                 return new Response(JSON.stringify({ message: "Profile updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // 2f. Update User Theme (PUT /admin/users/theme)
+            if (method === "PUT" && url.pathname.endsWith("/admin/users/theme")) {
+                const body = await request.json();
+                const { id, theme } = body;
+                if (!id || !theme) return new Response("Missing id or theme", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const updateRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${id}`, {
+                    method: "PATCH",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal"
+                    },
+                    body: JSON.stringify({ theme })
+                });
+
+                if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
+
+                return new Response(JSON.stringify({ message: "Theme updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // 3. Delete User (DELETE /admin/users)
             if (method === "DELETE" && url.pathname.endsWith("/admin/users")) {
                 const body = await request.json();

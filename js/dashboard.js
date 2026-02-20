@@ -386,16 +386,31 @@ async function renderAdminView(session) {
     // Default View
     await refreshAdminData();
 
-    // Fetch user profile to get first and last name
+    // Fetch user profile to get first and last name, and theme!
     try {
         const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
             .from('profiles')
-            .select('first_name, last_name')
+            .select('first_name, last_name, theme')
             .eq('id', session.user.id)
             .single();
 
-        if (profile && profile.first_name && profile.last_name) {
-            document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
+        if (profile) {
+            if (profile.first_name && profile.last_name) {
+                document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
+            }
+            if (profile.theme) {
+                // Override local storage with DB value if present
+                document.documentElement.setAttribute('data-theme', profile.theme);
+                localStorage.setItem('admin-theme', profile.theme);
+
+                // Update button texts
+                const icon = document.getElementById('theme-icon');
+                const text = document.getElementById('theme-text');
+                if (icon && text) {
+                    icon.textContent = profile.theme === 'dark' ? '☀️' : '🌙';
+                    text.textContent = `Mode ${profile.theme === 'dark' ? 'Clair' : 'Sombre'}`;
+                }
+            }
         }
     } catch (e) {
         console.warn("Could not fetch user profile details", e);
@@ -791,7 +806,7 @@ window.changeUserRole = async function (id, newRole) {
     }
 };
 
-window.toggleAdminTheme = function () {
+window.toggleAdminTheme = async function () {
     const root = document.documentElement;
     const currentTheme = root.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
@@ -804,6 +819,14 @@ window.toggleAdminTheme = function () {
     if (icon && text) {
         icon.textContent = newTheme === 'dark' ? '☀️' : '🌙';
         text.textContent = `Mode ${newTheme === 'dark' ? 'Clair' : 'Sombre'}`;
+    }
+
+    try {
+        if (currentAdminSession) {
+            await api.updateUserTheme(currentAdminSession.user.id, newTheme);
+        }
+    } catch (e) {
+        console.warn("Could not save theme to database", e);
     }
 };
 

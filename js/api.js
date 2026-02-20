@@ -227,5 +227,18 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async updateUserTheme(id, theme) {
+        const response = await fetch(`${config.api.workerUrl}/admin/users/theme`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, theme })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };
