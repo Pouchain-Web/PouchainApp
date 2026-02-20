@@ -365,7 +365,6 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
             </nav>
-            </nav>
             <div style="margin-top: auto;">
                 <button onclick="openCustomizeModal()" class="logout-btn" style="width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
                     <span>🎨</span> 
@@ -813,23 +812,35 @@ window.applyAdminPreferences = function (prefs) {
     // Primary Color
     if (prefs.primaryColor) {
         document.documentElement.style.setProperty('--primary', prefs.primaryColor);
-        // compute hover (slightly darker/lighter) - simple approach: just use it or rely on existing opacity tricks if any
-        // For simplicity, we just set the main one securely
         localStorage.setItem('admin-primary-color', prefs.primaryColor);
     } else {
         document.documentElement.style.removeProperty('--primary');
         localStorage.removeItem('admin-primary-color');
     }
+
+    // Text Color
+    if (prefs.textColor) {
+        document.documentElement.style.setProperty('--text-primary', prefs.textColor);
+        localStorage.setItem('admin-text-color', prefs.textColor);
+    } else {
+        document.documentElement.style.removeProperty('--text-primary');
+        localStorage.removeItem('admin-text-color');
+    }
 };
 
-// Also apply primary color on load if available in LS
+// Also apply colors on load if available in LS
 const savedPrimary = localStorage.getItem('admin-primary-color');
 if (savedPrimary) document.documentElement.style.setProperty('--primary', savedPrimary);
+
+const savedText = localStorage.getItem('admin-text-color');
+if (savedText) document.documentElement.style.setProperty('--text-primary', savedText);
 
 window.openCustomizeModal = function () {
     const root = document.documentElement;
     const currentTheme = root.getAttribute('data-theme') || 'light';
     const currentPrimary = root.style.getPropertyValue('--primary').trim() || '#2da140';
+    let currentText = root.style.getPropertyValue('--text-primary').trim();
+    if (!currentText) currentText = currentTheme === 'dark' ? '#E5E5EA' : '#1C1C1E';
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -924,7 +935,7 @@ async function refreshAdminData() {
             renderAdminFolders();
         }
     } catch (e) {
-        document.getElementById('admin-content').innerHTML = `< div style = "color:red" > Erreur chargement: ${e.message}</div > `;
+        document.getElementById('admin-content').innerHTML = `<div style="color:red">Erreur chargement: ${e.message}</div>`;
     }
 }
 
@@ -967,12 +978,12 @@ window.renderAdminFolders = function () {
 
     const content = document.getElementById('admin-content');
     let html = `
-    < header >
+        <header>
             <h1>Dossiers</h1>
             <div class="actions">
                 <button class="btn-primary" onclick="openNewFolderModal()">+ Nouveau Dossier</button>
             </div>
-        </header >
+        </header>
         <div class="categories-grid">
             `;
 
@@ -1074,7 +1085,7 @@ window.renderAdminFiles = function (folder) {
 
     const content = document.getElementById('admin-content');
     content.innerHTML = `
-    < header >
+        <header>
             <div style="display:flex; align-items:center; gap:16px;">
                 <button class="btn-primary" style="padding: 8px 16px; background: #E5E5EA; color: #000;" onclick="${backAction}">
                     ← Retour
@@ -1087,7 +1098,7 @@ window.renderAdminFiles = function (folder) {
                 <button class="btn-primary" onclick="triggerUpload('${folder}')">📤 Upload ici</button>
                 <input type="file" id="file-input-${folder || 'root'}" hidden>
             </div>
-        </header >
+        </header>
 
         <div class="table-container"
             ondragover="handleDragOver(event)"
