@@ -996,6 +996,26 @@ async function refreshAdminData() {
     }
 }
 
+// Helper: build an owner badge supporting 1 or N owners.
+// owners: string[] | null  —  tag: 'div' (folder cards) or 'span' (table rows)
+function makeOwnerBadge(owners, tag) {
+    if (!owners || (Array.isArray(owners) && owners.length === 0)) return '';
+    const list = Array.isArray(owners) ? owners : [owners];
+    const baseStyle = `font-size:11px; color:var(--primary); background:color-mix(in srgb, var(--primary) 15%, transparent); border-radius:6px; cursor:default;`;
+    if (list.length === 1) {
+        const inlineStyle = tag === 'span'
+            ? `${baseStyle} padding:2px 7px; margin-left:8px; white-space:nowrap;`
+            : `${baseStyle} padding:3px 6px; margin-top:6px; display:inline-flex; align-items:center; gap:4px;`;
+        return `<${tag} style="${inlineStyle}" title="${list[0]}">\uD83D\uDC64 ${list[0]}</${tag}>`;
+    }
+    // Multiple owners
+    const tooltip = list.join('\n');
+    const inlineStyle = tag === 'span'
+        ? `${baseStyle} padding:2px 7px; margin-left:8px; white-space:nowrap;`
+        : `${baseStyle} padding:3px 6px; margin-top:6px; display:inline-flex; align-items:center; gap:4px;`;
+    return `<${tag} style="${inlineStyle}" title="${tooltip}">\uD83D\uDC65 ${list.length} utilisateurs</${tag}>`;
+}
+
 // 1. Render Folders Grid
 window.renderAdminFolders = async function () {
     adminCurrentFolder = null;
@@ -1050,10 +1070,8 @@ window.renderAdminFolders = async function () {
     categories.forEach((data, cat) => {
         const color = data.color || palette[idx % palette.length];
         // Look for owner by folder path (with or without trailing slash)
-        const ownerName = ownerMap[cat] || ownerMap[cat + '/'] || null;
-        const ownerBadge = ownerName
-            ? `<div style="font-size:11px; color:var(--primary); background:color-mix(in srgb, var(--primary) 15%, transparent); border-radius:6px; padding:3px 6px; margin-top:6px; display:inline-flex; align-items:center; gap:4px;">👤 ${ownerName}</div>`
-            : '';
+        const owners = ownerMap[cat] || ownerMap[cat + '/'] || null;
+        const ownerBadge = makeOwnerBadge(owners, 'div');
 
         html += `
             <div class="category-card"
@@ -1184,10 +1202,8 @@ window.renderAdminFiles = async function (folder) {
                     ${/* Render Subfolders */ ''}
                     ${sortedSubfolders.map(sub => {
         const fullPath = currentPrefix + sub;
-        const ownerName = ownerMap[fullPath] || ownerMap[fullPath + '/'] || null;
-        const ownerBadge = ownerName
-            ? `<span style="font-size:11px; color:var(--primary); background:color-mix(in srgb, var(--primary) 15%, transparent); border-radius:6px; padding:2px 7px; margin-left:8px; white-space:nowrap;">👤 ${ownerName}</span>`
-            : '';
+        const owners = ownerMap[fullPath] || ownerMap[fullPath + '/'] || null;
+        const ownerBadge = makeOwnerBadge(owners, 'span');
         return `
                         <tr class="folder-row" onclick="renderAdminFiles('${fullPath}')" style="cursor:pointer">
                             <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${fullPath}" data-type="folder" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
@@ -1211,10 +1227,9 @@ window.renderAdminFiles = async function (folder) {
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) icon = '🖼️';
         if (['doc', 'docx'].includes(ext)) icon = '📘';
         if (['xls', 'xlsx', 'csv'].includes(ext)) icon = '📊';
-        const ownerName = ownerMap[file.key] || null;
-        const ownerBadge = ownerName
-            ? `<span style="font-size:11px; color:#007AFF; background:rgba(0,122,255,0.1); border-radius:6px; padding:2px 7px; margin-left:8px; white-space:nowrap;">👤 ${ownerName}</span>`
-            : '';
+        const owners = ownerMap[file.key] || null;
+        const ownerBadge = makeOwnerBadge(owners, 'span');
+
         return `
                         <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/"/g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s;">
                             <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/"/g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
@@ -1963,6 +1978,12 @@ window.saveFileAccess = async function (path) {
         await api.setFileAccess(path, userIds);
         showSuccessModal("Permissions mises à jour avec succès.");
         closeModal('access-modal');
+        // Refresh badges without full reload
+        if (adminCurrentFolder === null) {
+            renderAdminFolders();
+        } else {
+            renderAdminFiles(adminCurrentFolder);
+        }
     } catch (e) {
         alert("Erreur enregistrement : " + e.message);
         if (btn) {

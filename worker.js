@@ -140,12 +140,14 @@ export default {
                 if (!rulesRes.ok) return new Response(await rulesRes.text(), { status: rulesRes.status, headers: corsHeaders });
                 const rules = await rulesRes.json();
 
-                // Build summary: path -> owner display name (first rule wins per path)
+                // Build summary: path -> [ownerName, ...] (all owners)
                 const summary = {};
                 for (const rule of rules) {
-                    if (!summary[rule.path] && rule.profiles) {
+                    if (rule.profiles) {
                         const { first_name, last_name } = rule.profiles;
-                        summary[rule.path] = [first_name, last_name].filter(Boolean).join(' ') || 'Utilisateur inconnu';
+                        const name = [first_name, last_name].filter(Boolean).join(' ') || 'Utilisateur inconnu';
+                        if (!summary[rule.path]) summary[rule.path] = [];
+                        summary[rule.path].push(name);
                     }
                 }
 
