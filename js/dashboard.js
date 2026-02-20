@@ -1204,7 +1204,8 @@ window.confirmNewFolder = async function () {
     try {
         // Upload both (Marker first to ensure color is there)
         await api.uploadFile(markerFile, fullPath);
-        await handleUpload(dummyFile, fullPath); // This will refresh UI at the end
+        await api.uploadFile(dummyFile, fullPath);
+        await refreshAdminData(); // This will refresh UI at the end
     } catch (e) {
         alert("Erreur création dossier: " + e.message);
     }
