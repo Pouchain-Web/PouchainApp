@@ -866,7 +866,7 @@ window.openCustomizeModal = function () {
 
             <div style="display: flex; gap: 16px;">
                 <div class="form-group" style="flex: 1;">
-                    <label>Couleur d'accent (Boutons, icônes)</label>
+                    <label>Couleur d'accent </label>
                     <input type="color" id="custom-primary-color" value="${currentPrimary}" style="width:100%; height:50px; padding:0; border:1px solid var(--border); border-radius:8px; cursor:pointer; background:none;">
                 </div>
                 <div class="form-group" style="flex: 1;">
@@ -940,13 +940,17 @@ async function refreshAdminData() {
 }
 
 // 1. Render Folders Grid
-window.renderAdminFolders = function () {
+window.renderAdminFolders = async function () {
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('nav-docs').classList.add('active');
 
+    // Fetch ownership map { path -> 'Prénom Nom' }
+    let ownerMap = {};
+    try { ownerMap = await api.getAccessSummary(); } catch (e) { /* silently ignore */ }
+
     // Extract Categories and Colors
-    const categories = new Map(); // Name -> Color
+    const categories = new Map(); // Name -> { color, count }
 
     // Default Colors
     const palette = ['#FF9500', '#AF52DE', '#5856D6', '#FF2D55', '#5AC8FA', '#34C759', '#FF3B30', '#FFCC00'];
@@ -956,18 +960,14 @@ window.renderAdminFolders = function () {
         if (parts.length > 1) {
             const folderName = parts[0];
 
-            // Check if this is a color marker file?
-            // Convention: FolderName/.meta_color_HEXCODE
             if (parts[1].startsWith('.meta_color_')) {
                 const colorCode = parts[1].replace('.meta_color_', '#');
-                // Store/Update color for this folder
                 if (categories.has(folderName)) {
                     categories.get(folderName).color = colorCode;
                 } else {
                     categories.set(folderName, { color: colorCode, count: 0 });
                 }
             } else if (!file.key.endsWith('.keep')) {
-                // Regular file
                 if (!categories.has(folderName)) {
                     categories.set(folderName, { color: null, count: 0 });
                 }
@@ -991,8 +991,12 @@ window.renderAdminFolders = function () {
     let idx = 0;
 
     categories.forEach((data, cat) => {
-        // Use stored color OR fallback to palette
         const color = data.color || palette[idx % palette.length];
+        // Look for owner by folder path (with or without trailing slash)
+        const ownerName = ownerMap[cat] || ownerMap[cat + '/'] || null;
+        const ownerBadge = ownerName
+            ? `<div style="font-size:11px; color:#007AFF; background:rgba(0,122,255,0.1); border-radius:6px; padding:3px 6px; margin-top:6px; display:inline-flex; align-items:center; gap:4px;">👤 ${ownerName}</div>`
+            : '';
 
         html += `
             <div class="category-card"
@@ -1004,6 +1008,7 @@ window.renderAdminFolders = function () {
                 <div class="category-icon" style="background-color: ${color}">📁</div>
                 <div class="category-title" title="${cat}">${cat}</div>
                 <div style="font-size:12px; color:#888; margin-top:4px;">${data.count} fichiers</div>
+                ${ownerBadge}
             </div>
             `;
         idx++;
@@ -1026,10 +1031,14 @@ window.renderAdminFolders = function () {
 }
 
 // 2. Render File List (Inside a Folder)
-window.renderAdminFiles = function (folder) {
+window.renderAdminFiles = async function (folder) {
     adminCurrentFolder = folder;
     const title = folder || "Divers (Racine)";
     const currentPrefix = folder ? folder + '/' : '';
+
+    // Fetch ownership map { path -> 'Prénom Nom' }
+    let ownerMap = {};
+    try { ownerMap = await api.getAccessSummary(); } catch (e) { /* silently ignore */ }
 
     const subfolders = new Set();
     const distinctFiles = [];
@@ -1118,19 +1127,22 @@ window.renderAdminFiles = function (folder) {
                     ${/* Render Subfolders */ ''}
                     ${sortedSubfolders.map(sub => {
         const fullPath = currentPrefix + sub;
+        const ownerName = ownerMap[fullPath] || ownerMap[fullPath + '/'] || null;
+        const ownerBadge = ownerName
+            ? `<span style="font-size:11px; color:#007AFF; background:rgba(0,122,255,0.1); border-radius:6px; padding:2px 7px; margin-left:8px; white-space:nowrap;">👤 ${ownerName}</span>`
+            : '';
         return `
                         <tr class="folder-row" onclick="renderAdminFiles('${fullPath}')" style="cursor:pointer">
                             <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${fullPath}" data-type="folder" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
                             <td style="font-size:20px; text-align:center;">📁</td>
-                            <td style="font-weight:600">${sub}</td>
+                            <td style="font-weight:600">${sub}${ownerBadge}</td>
                             <td>-</td>
                             <td style="text-align: right">
                                 <button class="btn-sm btn-view" onclick="event.stopPropagation(); openAccessModal('${fullPath}')" title="Gérer l'accès">👁️</button>
                                 <button class="btn-sm btn-view" onclick="event.stopPropagation(); renameFolder('${fullPath}', '${sub}')" title="Renommer">✏️</button>
                                 <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFolder('${fullPath}')">Supprimer</button>
                             </td>
-                        </tr>
-                        `;
+                        </tr>`;
     }).join('')}
 
                     ${/* Render Files */ ''}
@@ -1142,20 +1154,22 @@ window.renderAdminFiles = function (folder) {
         if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) icon = '🖼️';
         if (['doc', 'docx'].includes(ext)) icon = '📘';
         if (['xls', 'xlsx', 'csv'].includes(ext)) icon = '📊';
-
+        const ownerName = ownerMap[file.key] || null;
+        const ownerBadge = ownerName
+            ? `<span style="font-size:11px; color:#007AFF; background:rgba(0,122,255,0.1); border-radius:6px; padding:2px 7px; margin-left:8px; white-space:nowrap;">👤 ${ownerName}</span>`
+            : '';
         return `
                         <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/"/g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s;">
                             <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/"/g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
                             <td style="font-size:20px; text-align:center;">${icon}</td>
-                            <td>${name}</td>
+                            <td>${name}${ownerBadge}</td>
                             <td>${(file.size / 1024).toFixed(1)} KB</td>
                             <td style="text-align: right">
                                 <button class="btn-sm btn-view" onclick="event.stopPropagation(); openAccessModal('${file.key.replace(/'/g, "\\'")}')" title="Gérer l'accès">👁️</button>
                                 <button class="btn-sm btn-view" onclick="event.stopPropagation(); renameFile('${file.key.replace(/'/g, "\\'")}', '${name.replace(/'/g, "\\'")}')" title="Renommer">✏️</button>
                                 <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('${file.key.replace(/'/g, "\\'")}')">Supprimer</button>
                             </td>
-                        </tr>
-                        `;
+                        </tr>`;
     }).join('')}
                     ${(sortedSubfolders.length === 0 && distinctFiles.length === 0) ?
             '<tr><td colspan="5" style="text-align:center; padding:50px; color:#888; border: 2px dashed #E5E5EA; border-radius: 12px;">📂 Dossier vide<br><small>Glissez des fichiers ici pour uploader</small></td></tr>'

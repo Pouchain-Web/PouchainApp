@@ -52,13 +52,13 @@ export default {
                 const listing = await env.MY_BUCKET.list();
                 let objects = listing.objects;
 
-                // 2. Apply Access Control if userId provided (or strictly enforce if we want)
-                // If no userId, and we have restrictions, we should probably hide restricted files (Public View)
-
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                if (serviceKey) {
+                // 2. Check if the calling user is an admin — admins see everything
+                const callerIsAdmin = user ? await isAdmin(user, env) : false;
+
+                if (!callerIsAdmin && serviceKey) {
                     try {
                         // Fetch all rules
                         const rulesRes = await fetch(`${supabaseUrl}/rest/v1/user_file_visibility?select=path,user_id`, {
@@ -72,7 +72,6 @@ export default {
                             const rules = await rulesRes.json();
                             if (rules.length > 0) {
                                 const restrictedPaths = new Set(rules.map(r => r.path));
-                                // allowedPaths are paths this user is explicitly granted
                                 const userAllowed = new Set(
                                     userId ? rules.filter(r => r.user_id === userId).map(r => r.path) : []
                                 );
@@ -84,10 +83,8 @@ export default {
                                         if (i > 0) currentPath += "/";
                                         currentPath += parts[i];
 
-                                        // Check strict path (file or folder w/o slash if stored that way)
                                         if (restrictedPaths.has(currentPath) && !userAllowed.has(currentPath)) return false;
 
-                                        // Check folder path (with slash)
                                         if (i < parts.length - 1) {
                                             const folderPath = currentPath + "/";
                                             if (restrictedPaths.has(folderPath) && !userAllowed.has(folderPath)) return false;
@@ -98,8 +95,6 @@ export default {
                             }
                         }
                     } catch (e) {
-                        // If DB fails, default to showing content? Or hiding?
-                        // For now logging and proceeding (fail open or closed? Safe is closed, but maybe confusing)
                         console.error("Access Control Error:", e);
                     }
                 }
@@ -126,6 +121,33 @@ export default {
                 const userIds = data.map(r => r.user_id);
 
                 return new Response(JSON.stringify(userIds), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: ACCESS SUMMARY (Admin) ---
+            // Returns [{ path, ownerName }] for all restricted paths
+            if (method === "GET" && url.pathname.endsWith("/admin/access/summary")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // Fetch all access rules joined with profiles
+                const rulesRes = await fetch(
+                    `${supabaseUrl}/rest/v1/user_file_visibility?select=path,profiles(first_name,last_name)`,
+                    { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } }
+                );
+
+                if (!rulesRes.ok) return new Response(await rulesRes.text(), { status: rulesRes.status, headers: corsHeaders });
+                const rules = await rulesRes.json();
+
+                // Build summary: path -> owner display name (first rule wins per path)
+                const summary = {};
+                for (const rule of rules) {
+                    if (!summary[rule.path] && rule.profiles) {
+                        const { first_name, last_name } = rule.profiles;
+                        summary[rule.path] = [first_name, last_name].filter(Boolean).join(' ') || 'Utilisateur inconnu';
+                    }
+                }
+
+                return new Response(JSON.stringify(summary), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: SET ACCESS (Admin) ---

@@ -240,5 +240,13 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async getAccessSummary() {
+        const response = await fetch(`${config.api.workerUrl}/admin/access/summary`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };
