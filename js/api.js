@@ -151,27 +151,27 @@ export const api = {
         return await response.json();
     },
 
-    async createUser(email, password, role) {
+    async createUser(email, password, role, firstName, lastName) {
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ email, password, role })
+            body: JSON.stringify({ email, password, role, firstName, lastName })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
-    async inviteUser(email, role, redirectTo) {
+    async inviteUser(email, role, redirectTo, firstName, lastName) {
         const response = await fetch(`${config.api.workerUrl}/admin/users/invite`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ email, role, redirectTo })
+            body: JSON.stringify({ email, role, redirectTo, firstName, lastName })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

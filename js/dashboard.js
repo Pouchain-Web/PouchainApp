@@ -352,7 +352,7 @@ async function renderAdminView(session) {
         <aside class="sidebar">
             <h2>Pouchain <span>Admin</span></h2>
             <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; margin-bottom: 24px;">
-                Bienvenue <br><span style="color: white; font-weight: 600;">${session.user.email}</span>
+                Bienvenue <br><span id="admin-welcome-name" style="color: white; font-weight: 600;">${session.user.email}</span>
             </div>
             <div style="margin-bottom: 24px;">
                 <input type="text" id="admin-global-search" class="form-input" placeholder="🔍 Rechercher un document..." style="width:100%; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);" oninput="handleAdminGlobalSearch(this.value)">
@@ -375,6 +375,21 @@ async function renderAdminView(session) {
 
     // Default View
     await refreshAdminData();
+
+    // Fetch user profile to get first and last name
+    try {
+        const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
+            .from('profiles')
+            .select('first_name, last_name')
+            .eq('id', session.user.id)
+            .single();
+
+        if (profile && profile.first_name && profile.last_name) {
+            document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
+        }
+    } catch (e) {
+        console.warn("Could not fetch user profile details", e);
+    }
 }
 
 // Global scope for admin functions
@@ -401,6 +416,8 @@ window.renderAdminUsers = async function () {
                 <table>
                     <thead>
                         <tr>
+                            <th>Prénom</th>
+                            <th>Nom</th>
                             <th>Email</th>
                             <th>Rôle</th>
                             <th>Date Création</th>
@@ -410,6 +427,8 @@ window.renderAdminUsers = async function () {
                     <tbody>
                         ${users.map(u => `
                             <tr>
+                                <td>${u.first_name || '-'}</td>
+                                <td>${u.last_name || '-'}</td>
                                 <td>${u.email}</td>
                                 <td>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
@@ -450,6 +469,17 @@ window.openNewUserModal = function () {
             <div class="tabs" style="display:flex; border-bottom:1px solid #e5e5ea; margin-bottom:16px;">
                 <div class="tab-item active" id="tab-manual" onclick="switchUserTab('manual')" style="padding:8px 16px; cursor:pointer; border-bottom:2px solid #007AFF;">Manuel</div>
                 <div class="tab-item" id="tab-invite" onclick="switchUserTab('invite')" style="padding:8px 16px; cursor:pointer; border-bottom:2px solid transparent;">Invitation</div>
+            </div>
+
+            <div style="display: flex; gap: 16px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Prénom</label>
+                    <input type="text" class="form-input" id="new-user-firstname" placeholder="Jean">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Nom</label>
+                    <input type="text" class="form-input" id="new-user-lastname" placeholder="Dupont">
+                </div>
             </div>
 
             <div class="form-group">
@@ -503,11 +533,14 @@ window.switchUserTab = function (mode) {
 };
 
 window.createNewUser = async function () {
-    const email = document.getElementById('new-user-email').value;
+    const firstName = document.getElementById('new-user-firstname').value.trim();
+    const lastName = document.getElementById('new-user-lastname').value.trim();
+    const email = document.getElementById('new-user-email').value.trim();
     const role = document.getElementById('new-user-role').value;
     const mode = document.getElementById('new-user-modal').getAttribute('data-mode') || 'manual';
 
     if (!email) return alert("Veuillez remplir l'email.");
+    if (!firstName || !lastName) return alert("Veuillez remplir le prénom et le nom.");
 
 
     try {
@@ -520,10 +553,10 @@ window.createNewUser = async function () {
             if (!password) return alert("Veuillez remplir le mot de passe.");
             if (password.length < 6) return alert("Mot de passe trop court (min 6).");
 
-            await api.createUser(email, password, role);
+            await api.createUser(email, password, role, firstName, lastName);
             showSuccessModal("Utilisateur créé avec succès !");
         } else {
-            await api.inviteUser(email, role, redirectTo);
+            await api.inviteUser(email, role, redirectTo, firstName, lastName);
             showSuccessModal("Invitation envoyée avec succès !");
         }
 

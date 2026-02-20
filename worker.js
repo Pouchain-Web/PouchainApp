@@ -346,7 +346,9 @@ export default {
                         id: u.id,
                         email: u.email,
                         created_at: u.created_at,
-                        role: profile ? profile.role : 'user' // Default to user
+                        role: profile ? profile.role : 'user',
+                        first_name: profile ? profile.first_name : null,
+                        last_name: profile ? profile.last_name : null
                     };
                 });
 
@@ -356,7 +358,7 @@ export default {
             // 2. Create User (POST /admin/users)
             if (method === "POST" && url.pathname.endsWith("/admin/users")) {
                 const body = await request.json();
-                const { email, password, role } = body;
+                const { email, password, role, firstName, lastName } = body;
 
                 if (!email || !password) return new Response("Missing email or password", { status: 400, headers: corsHeaders });
 
@@ -395,7 +397,9 @@ export default {
                     },
                     body: JSON.stringify({
                         id: userId,
-                        role: role || 'user'
+                        role: role || 'user',
+                        first_name: firstName || null,
+                        last_name: lastName || null
                     })
                 });
 
@@ -411,7 +415,7 @@ export default {
             // 2b. Invite User (POST /admin/users/invite)
             if (method === "POST" && url.pathname.endsWith("/admin/users/invite")) {
                 const body = await request.json();
-                const { email, role, redirectTo } = body;
+                const { email, role, redirectTo, firstName, lastName } = body;
 
                 if (!email) return new Response("Missing email", { status: 400, headers: corsHeaders });
 
@@ -449,7 +453,9 @@ export default {
                     },
                     body: JSON.stringify({
                         id: userId,
-                        role: role || 'user'
+                        role: role || 'user',
+                        first_name: firstName || null,
+                        last_name: lastName || null
                     })
                 });
 
