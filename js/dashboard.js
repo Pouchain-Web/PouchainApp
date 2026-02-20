@@ -18,7 +18,7 @@ async function initDashboard() {
 
     // 3. Render View
     if (role === 'admin' && !isMobile) {
-        await renderAdminView();
+        await renderAdminView(session);
     } else {
         await renderMobileView();
     }
@@ -334,8 +334,10 @@ function renderMobileDocItem(doc, container) {
 // --- Admin View (Desktop) ---
 let adminCurrentFolder = null; // Track current view
 let adminFilesCache = []; // Cache files to avoid re-fetching
+let currentAdminSession = null;
 
-async function renderAdminView() {
+async function renderAdminView(session) {
+    currentAdminSession = session;
     // Load CSS
     if (!document.getElementById('admin-css')) {
         const link = document.createElement('link');
@@ -349,6 +351,9 @@ async function renderAdminView() {
     <div class="admin-layout">
         <aside class="sidebar">
             <h2>Pouchain <span>Admin</span></h2>
+            <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; margin-bottom: 24px;">
+                Bienvenue <br><span style="color: white; font-weight: 600;">${session.user.email}</span>
+            </div>
             <div style="margin-bottom: 24px;">
                 <input type="text" id="admin-global-search" class="form-input" placeholder="🔍 Rechercher un document..." style="width:100%; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);" oninput="handleAdminGlobalSearch(this.value)">
             </div>
@@ -406,11 +411,22 @@ window.renderAdminUsers = async function () {
                         ${users.map(u => `
                             <tr>
                                 <td>${u.email}</td>
-                                <td><span class="badge" style="background:${u.role === 'admin' ? '#EBF5FF' : '#F2F2F7'}; color:${u.role === 'admin' ? '#007AFF' : '#8E8E93'}">${u.role}</span></td>
+                                <td>
+                                    ${currentAdminSession && currentAdminSession.user.email === u.email
+                ? `<span class="badge" style="background:${u.role === 'admin' ? '#EBF5FF' : '#F2F2F7'}; color:${u.role === 'admin' ? '#007AFF' : '#8E8E93'}">${u.role}</span>`
+                : `<select class="form-input" style="padding: 4px 8px; font-size: 13px; width: auto;" onchange="changeUserRole('${u.id}', this.value)">
+                                            <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
+                                            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+                                           </select>`
+            }
+                                </td>
                                 <td>${new Date(u.created_at).toLocaleDateString()}</td>
                                 <td>
                                     <button class="btn-sm btn-view" onclick="resetUserPassword('${u.email}')" title="Envoyer mail de réinitialisation">🔑 Reset</button>
-                                    <button class="btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.email}')">Supprimer</button>
+                                    ${currentAdminSession && currentAdminSession.user.email === u.email
+                ? `<span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
+                : `<button class="btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.email}')">Supprimer</button>`
+            }
                                 </td>
                             </tr>
                         `).join('')}
@@ -631,6 +647,18 @@ window.deleteUser = function (id, email) {
             }
         }
     );
+};
+
+window.changeUserRole = async function (id, newRole) {
+    try {
+        await api.changeUserRole(id, newRole);
+        showSuccessModal("Rôle mis à jour avec succès.");
+        // Non-blocking refresh
+        renderAdminUsers();
+    } catch (e) {
+        alert("Erreur lors du changement de rôle : " + e.message);
+        renderAdminUsers(); // reset UI
+    }
 };
 
 async function refreshAdminData() {

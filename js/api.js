@@ -201,5 +201,18 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async changeUserRole(id, role) {
+        const response = await fetch(`${config.api.workerUrl}/admin/users/role`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, role })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };
