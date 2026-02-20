@@ -995,7 +995,7 @@ window.renderAdminFolders = async function () {
         // Look for owner by folder path (with or without trailing slash)
         const ownerName = ownerMap[cat] || ownerMap[cat + '/'] || null;
         const ownerBadge = ownerName
-            ? `<div style="font-size:11px; color:#007AFF; background:rgba(0,122,255,0.1); border-radius:6px; padding:3px 6px; margin-top:6px; display:inline-flex; align-items:center; gap:4px;">👤 ${ownerName}</div>`
+            ? `<div style="font-size:11px; color:var(--primary); background:color-mix(in srgb, var(--primary) 15%, transparent); border-radius:6px; padding:3px 6px; margin-top:6px; display:inline-flex; align-items:center; gap:4px;">👤 ${ownerName}</div>`
             : '';
 
         html += `
@@ -1129,7 +1129,7 @@ window.renderAdminFiles = async function (folder) {
         const fullPath = currentPrefix + sub;
         const ownerName = ownerMap[fullPath] || ownerMap[fullPath + '/'] || null;
         const ownerBadge = ownerName
-            ? `<span style="font-size:11px; color:#007AFF; background:rgba(0,122,255,0.1); border-radius:6px; padding:2px 7px; margin-left:8px; white-space:nowrap;">👤 ${ownerName}</span>`
+            ? `<span style="font-size:11px; color:var(--primary); background:color-mix(in srgb, var(--primary) 15%, transparent); border-radius:6px; padding:2px 7px; margin-left:8px; white-space:nowrap;">👤 ${ownerName}</span>`
             : '';
         return `
                         <tr class="folder-row" onclick="renderAdminFiles('${fullPath}')" style="cursor:pointer">
