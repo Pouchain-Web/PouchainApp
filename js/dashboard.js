@@ -365,10 +365,11 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
             </nav>
+            </nav>
             <div style="margin-top: auto;">
-                <button onclick="toggleAdminTheme()" class="logout-btn" style="width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <span id="theme-icon">${savedTheme === 'dark' ? '☀️' : '🌙'}</span> 
-                    <span id="theme-text">Mode ${savedTheme === 'dark' ? 'Clair' : 'Sombre'}</span>
+                <button onclick="openCustomizeModal()" class="logout-btn" style="width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span>🎨</span> 
+                    <span>Personnaliser l'interface</span>
                 </button>
                 <button id="logout-btn" class="logout-btn" style="width: 100%;">Déconnexion</button>
             </div>
@@ -386,11 +387,11 @@ async function renderAdminView(session) {
     // Default View
     await refreshAdminData();
 
-    // Fetch user profile to get first and last name, and theme!
+    // Fetch user profile to get first and last name, and preferences!
     try {
         const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
             .from('profiles')
-            .select('first_name, last_name, theme')
+            .select('first_name, last_name, preferences')
             .eq('id', session.user.id)
             .single();
 
@@ -398,22 +399,16 @@ async function renderAdminView(session) {
             if (profile.first_name && profile.last_name) {
                 document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
             }
-            if (profile.theme) {
-                // Override local storage with DB value if present
-                document.documentElement.setAttribute('data-theme', profile.theme);
-                localStorage.setItem('admin-theme', profile.theme);
-
-                // Update button texts
-                const icon = document.getElementById('theme-icon');
-                const text = document.getElementById('theme-text');
-                if (icon && text) {
-                    icon.textContent = profile.theme === 'dark' ? '☀️' : '🌙';
-                    text.textContent = `Mode ${profile.theme === 'dark' ? 'Clair' : 'Sombre'}`;
-                }
+            if (profile.preferences) {
+                applyAdminPreferences(profile.preferences);
+            } else {
+                // Apply defaults or local if no profile pref
+                applyAdminPreferences({ theme: savedTheme });
             }
         }
     } catch (e) {
         console.warn("Could not fetch user profile details", e);
+        applyAdminPreferences({ theme: savedTheme });
     }
 }
 
@@ -806,27 +801,117 @@ window.changeUserRole = async function (id, newRole) {
     }
 };
 
-window.toggleAdminTheme = async function () {
-    const root = document.documentElement;
-    const currentTheme = root.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+window.applyAdminPreferences = function (prefs) {
+    if (!prefs) return;
 
-    root.setAttribute('data-theme', newTheme);
-    localStorage.setItem('admin-theme', newTheme);
-
-    const icon = document.getElementById('theme-icon');
-    const text = document.getElementById('theme-text');
-    if (icon && text) {
-        icon.textContent = newTheme === 'dark' ? '☀️' : '🌙';
-        text.textContent = `Mode ${newTheme === 'dark' ? 'Clair' : 'Sombre'}`;
+    // Theme
+    if (prefs.theme) {
+        document.documentElement.setAttribute('data-theme', prefs.theme);
+        localStorage.setItem('admin-theme', prefs.theme);
     }
+
+    // Primary Color
+    if (prefs.primaryColor) {
+        document.documentElement.style.setProperty('--primary', prefs.primaryColor);
+        // compute hover (slightly darker/lighter) - simple approach: just use it or rely on existing opacity tricks if any
+        // For simplicity, we just set the main one securely
+        localStorage.setItem('admin-primary-color', prefs.primaryColor);
+    } else {
+        document.documentElement.style.removeProperty('--primary');
+        localStorage.removeItem('admin-primary-color');
+    }
+};
+
+// Also apply primary color on load if available in LS
+const savedPrimary = localStorage.getItem('admin-primary-color');
+if (savedPrimary) document.documentElement.style.setProperty('--primary', savedPrimary);
+
+window.openCustomizeModal = function () {
+    const root = document.documentElement;
+    const currentTheme = root.getAttribute('data-theme') || 'light';
+    const currentPrimary = root.style.getPropertyValue('--primary').trim() || '#2da140';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'customize-modal';
+
+    overlay.innerHTML = `
+        <div class="modal-box" style="width: 500px;">
+            <div class="modal-header">🎨 Personnaliser l'interface</div>
+            
+            <div class="form-group">
+                <label>Thème Base</label>
+                <div style="display:flex; gap:12px;">
+                    <label style="flex:1; display:flex; gap:8px; align-items:center; background: var(--card-bg); padding:12px; border:1px solid var(--border); border-radius:8px; cursor:pointer;" onclick="document.getElementById('custom-text-color').value='#1C1C1E'">
+                        <input type="radio" name="custom-theme" value="light" ${currentTheme === 'light' ? 'checked' : ''} style="width:18px;height:18px;">
+                        <span>☀️ Clair</span>
+                    </label>
+                    <label style="flex:1; display:flex; gap:8px; align-items:center; background: var(--card-bg); padding:12px; border:1px solid var(--border); border-radius:8px; cursor:pointer;" onclick="document.getElementById('custom-text-color').value='#E5E5EA'">
+                        <input type="radio" name="custom-theme" value="dark" ${currentTheme === 'dark' ? 'checked' : ''} style="width:18px;height:18px;">
+                        <span>🌙 Sombre</span>
+                    </label>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 16px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Couleur d'accent (Boutons, icônes)</label>
+                    <input type="color" id="custom-primary-color" value="${currentPrimary}" style="width:100%; height:50px; padding:0; border:1px solid var(--border); border-radius:8px; cursor:pointer; background:none;">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Couleur du texte principal</label>
+                    <input type="color" id="custom-text-color" value="${currentText}" style="width:100%; height:50px; padding:0; border:1px solid var(--border); border-radius:8px; cursor:pointer; background:none;">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Modes prédéfinis 🪄</label>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn-sm btn-view" onclick="applyPreset('light', '#2da140', '#1C1C1E')">Par Défaut (Clair)</button>
+                    <button class="btn-sm btn-view" onclick="applyPreset('dark', '#2da140', '#E5E5EA')">Par Défaut (Sombre)</button>
+                    <button class="btn-sm btn-view" onclick="applyPreset('light', '#007AFF', '#1e3a8a')">🌊 Océan</button>
+                    <button class="btn-sm btn-view" onclick="applyPreset('dark', '#FF2D55', '#FDDC5C')">⚡ Cyberpunk</button>
+                    <button class="btn-sm btn-view" onclick="applyPreset('light', '#D97706', '#451A03')">🍂 Automne</button>
+                    <button class="btn-sm btn-view" onclick="applyPreset('dark', '#10B981', '#D1FAE5')">🌲 Forêt Noire</button>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:24px;">
+                <button class="btn-secondary" onclick="closeModal('customize-modal')">Annuler</button>
+                <button class="btn-primary" onclick="saveCustomizePreferences()">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+};
+
+window.applyPreset = function (theme, primaryColor, textColor) {
+    document.querySelector(`input[name="custom-theme"][value="${theme}"]`).checked = true;
+    document.getElementById('custom-primary-color').value = primaryColor;
+    document.getElementById('custom-text-color').value = textColor;
+};
+
+window.saveCustomizePreferences = async function () {
+    const theme = document.querySelector('input[name="custom-theme"]:checked').value;
+    const primaryColor = document.getElementById('custom-primary-color').value;
+    const textColor = document.getElementById('custom-text-color').value;
+
+    const prefs = {
+        theme,
+        primaryColor,
+        textColor
+    };
+
+    applyAdminPreferences(prefs);
+    closeModal('customize-modal');
 
     try {
         if (currentAdminSession) {
-            await api.updateUserTheme(currentAdminSession.user.id, newTheme);
+            await api.updateUserPreferences(currentAdminSession.user.id, prefs);
         }
     } catch (e) {
-        console.warn("Could not save theme to database", e);
+        console.warn("Could not save preferences to database", e);
+        // Show silent error toast or something if needed
     }
 };
 
@@ -839,7 +924,7 @@ async function refreshAdminData() {
             renderAdminFolders();
         }
     } catch (e) {
-        document.getElementById('admin-content').innerHTML = `<div style="color:red">Erreur chargement: ${e.message}</div>`;
+        document.getElementById('admin-content').innerHTML = `< div style = "color:red" > Erreur chargement: ${e.message}</div > `;
     }
 }
 
@@ -882,14 +967,14 @@ window.renderAdminFolders = function () {
 
     const content = document.getElementById('admin-content');
     let html = `
-        <header>
+    < header >
             <h1>Dossiers</h1>
             <div class="actions">
                 <button class="btn-primary" onclick="openNewFolderModal()">+ Nouveau Dossier</button>
             </div>
-        </header>
+        </header >
         <div class="categories-grid">
-    `;
+            `;
 
     // Folder Cards
     let idx = 0;
@@ -899,17 +984,17 @@ window.renderAdminFolders = function () {
         const color = data.color || palette[idx % palette.length];
 
         html += `
-            <div class="category-card" 
-                 onclick="renderAdminFiles('${cat}')"
-                 ondragover="handleDragOver(event)"
-                 ondragleave="handleDragLeave(event)"
-                 ondrop="handleDrop(event, '${cat}')">
+            <div class="category-card"
+                onclick="renderAdminFiles('${cat}')"
+                ondragover="handleDragOver(event)"
+                ondragleave="handleDragLeave(event)"
+                ondrop="handleDrop(event, '${cat}')">
                 <button class="delete-folder-btn" onclick="event.stopPropagation(); deleteFolder('${cat}')" title="Supprimer le dossier">🗑️</button>
                 <div class="category-icon" style="background-color: ${color}">📁</div>
                 <div class="category-title" title="${cat}">${cat}</div>
                 <div style="font-size:12px; color:#888; margin-top:4px;">${data.count} fichiers</div>
             </div>
-        `;
+            `;
         idx++;
     });
 
@@ -989,7 +1074,7 @@ window.renderAdminFiles = function (folder) {
 
     const content = document.getElementById('admin-content');
     content.innerHTML = `
-        <header>
+    < header >
             <div style="display:flex; align-items:center; gap:16px;">
                 <button class="btn-primary" style="padding: 8px 16px; background: #E5E5EA; color: #000;" onclick="${backAction}">
                     ← Retour
@@ -1002,12 +1087,12 @@ window.renderAdminFiles = function (folder) {
                 <button class="btn-primary" onclick="triggerUpload('${folder}')">📤 Upload ici</button>
                 <input type="file" id="file-input-${folder || 'root'}" hidden>
             </div>
-        </header>
+        </header >
 
         <div class="table-container"
-             ondragover="handleDragOver(event)"
-             ondragleave="handleDragLeave(event)"
-             ondrop="handleDrop(event, '${folder || ''}')">
+            ondragover="handleDragOver(event)"
+            ondragleave="handleDragLeave(event)"
+            ondrop="handleDrop(event, '${folder || ''}')">
             <table>
                 <thead>
                     <tr>
@@ -1101,7 +1186,7 @@ window.deleteSelectedItems = function () {
 
     showConfirmModal(
         "Supprimer la sélection ?",
-        `Voulez-vous vraiment supprimer les <b>${checked.length}</b> éléments sélectionnés ?<br>Les dossiers sélectionnés et tout leur contenu seront supprimés.<br><br>Cette action est irréversible.`,
+        `Voulez - vous vraiment supprimer les < b > ${checked.length}</b > éléments sélectionnés ? <br>Les dossiers sélectionnés et tout leur contenu seront supprimés.<br><br>Cette action est irréversible.`,
         async () => {
             let count = 0;
             const overlays = document.createElement('div');
@@ -1277,7 +1362,7 @@ window.openNewFolderModal = function () {
     overlay.innerHTML = `
         <div class="modal-box">
             <div class="modal-header">Nouveau Dossier ${adminCurrentFolder ? `<br><small style="font-weight:normal; font-size:14px; color:#888">dans ${adminCurrentFolder}</small>` : ''}</div>
-            
+
             <div class="form-group">
                 <label>Nom du dossier</label>
                 <input type="text" class="form-input" id="folder-name-input" placeholder="Ex: FDS, Clients..." autofocus>
@@ -1297,7 +1382,7 @@ window.openNewFolderModal = function () {
                 <button class="btn-primary" onclick="confirmNewFolder()">Créer</button>
             </div>
         </div>
-    `;
+        `;
     document.body.appendChild(overlay);
 
     // Select first color by default visually
@@ -1353,7 +1438,7 @@ window.createNewFolder = async function () {
 };
 
 // --- Upload Queue System ---
-const uploadQueue = []; // Items: { id, file, prefix, status: 'pending'|'uploading'|'success'|'error', progress: 0, error: null }
+const uploadQueue = []; // Items: {id, file, prefix, status: 'pending'|'uploading'|'success'|'error', progress: 0, error: null }
 let isQueueProcessing = false;
 let isQueueMinimized = false;
 
@@ -1516,7 +1601,7 @@ function renderUploadQueue() {
                 `;
     }).join('')}
         </div>
-    `;
+        `;
 }
 
 // Redirect triggers to new Queue
@@ -1597,7 +1682,7 @@ window.openAccessModal = async function (path) {
             api.getFileAccess(path)
         ]);
 
-        // usersData might be { users: [], ... } or array depending on worker response
+        // usersData might be {users: [], ... } or array depending on worker response
         // My worker currently returns array of local user objects (lines 240 in worker.js)
         const users = Array.isArray(usersData) ? usersData : (usersData.users || []);
 
@@ -1612,13 +1697,13 @@ window.openAccessModal = async function (path) {
         const displayPath = path.split('/').pop() || path;
 
         let html = `
-            <div class="modal-header">Gérer l'accès : ${displayPath}</div>
-            <p style="color:#666; font-size:14px; margin-bottom:16px;">
-                Sélectionnez les utilisateurs qui peuvent voir ce fichier/dossier.<br>
+        <div class="modal-header">Gérer l'accès : ${displayPath}</div>
+        <p style="color:#666; font-size:14px; margin-bottom:16px;">
+            Sélectionnez les utilisateurs qui peuvent voir ce fichier/dossier.<br>
                 <small>Si aucun utilisateur n'est sélectionné, l'élément est visible par tous.</small>
-            </p>
-            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #E5E5EA; border-radius: 8px; padding: 0;">
-        `;
+        </p>
+        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #E5E5EA; border-radius: 8px; padding: 0;">
+            `;
 
         if (users.length === 0) {
             html += `<div style="padding:16px; color:#888; text-align:center;">Aucun utilisateur trouvé.</div>`;
@@ -1639,11 +1724,11 @@ window.openAccessModal = async function (path) {
         }
 
         html += `
-            </div>
-            <div class="modal-actions" style="margin-top:20px;">
-                <button class="btn-secondary" onclick="closeModal('access-modal')">Annuler</button>
-                <button class="btn-primary" onclick="saveFileAccess('${path.replace(/'/g, "\\'")}')">Enregistrer</button>
-            </div>
+        </div>
+        <div class="modal-actions" style="margin-top:20px;">
+            <button class="btn-secondary" onclick="closeModal('access-modal')">Annuler</button>
+            <button class="btn-primary" onclick="saveFileAccess('${path.replace(/'/g, "\\'")}')">Enregistrer</button>
+    </div>
         `;
 
         modalBox.innerHTML = html;
@@ -1729,7 +1814,7 @@ window.handleAdminGlobalSearch = function (query) {
                 <button class="btn-danger" id="deleteSelectedBtn" style="display:none; align-items:center; gap:8px;" onclick="deleteSelectedItems()">🗑️ Supprimer la sélection (<span id="selectedCount">0</span>)</button>
             </div>
         </header>
-        
+
         <div class="table-container" style="flex:1;">
             <table>
                 <thead>
@@ -1743,7 +1828,7 @@ window.handleAdminGlobalSearch = function (query) {
                     </tr>
                 </thead>
                 <tbody>
-    `;
+                    `;
 
     Array.from(matchedFolders).sort().forEach(folder => {
         html += `
@@ -1772,17 +1857,17 @@ window.handleAdminGlobalSearch = function (query) {
         const parentPath = file.key.substring(0, file.key.lastIndexOf('/')) || "Racine";
 
         html += `
-            <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/"/g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s;">
-                <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/"/g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
-                <td style="font-size:20px; text-align:center;">${icon}</td>
-                <td>${name}</td>
-                <td style="color:#888; font-size:13px;">${parentPath}</td>
-                <td>${(file.size / 1024).toFixed(1)} KB</td>
-                <td style="text-align: right">
-                    <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('${file.key.replace(/'/g, "\\'")}')">Supprimer</button>
+                    <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/" /g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s;">
+                    <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/" /g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
+                    <td style="font-size:20px; text-align:center;">${icon}</td>
+                    <td>${name}</td>
+                    <td style="color:#888; font-size:13px;">${parentPath}</td>
+                    <td>${(file.size / 1024).toFixed(1)} KB</td>
+                    <td style="text-align: right">
+                        <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('${file.key.replace(/'/g, "\\'")}')">Supprimer</button>
                 </td>
             </tr>
-        `;
+            `;
     });
 
     if (matchedFolders.size === 0 && matchedFiles.length === 0) {

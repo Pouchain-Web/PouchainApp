@@ -229,14 +229,14 @@ export const api = {
         return await response.json();
     },
 
-    async updateUserTheme(id, theme) {
-        const response = await fetch(`${config.api.workerUrl}/admin/users/theme`, {
+    async updateUserPreferences(id, preferences) {
+        const response = await fetch(`${config.api.workerUrl}/admin/users/preferences`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, theme })
+            body: JSON.stringify({ id, preferences })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

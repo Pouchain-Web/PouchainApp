@@ -547,11 +547,11 @@ export default {
                 return new Response(JSON.stringify({ message: "Profile updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            // 2f. Update User Theme (PUT /admin/users/theme)
-            if (method === "PUT" && url.pathname.endsWith("/admin/users/theme")) {
+            // 2f. Update User Preferences (PUT /admin/users/preferences)
+            if (method === "PUT" && url.pathname.endsWith("/admin/users/preferences")) {
                 const body = await request.json();
-                const { id, theme } = body;
-                if (!id || !theme) return new Response("Missing id or theme", { status: 400, headers: corsHeaders });
+                const { id, preferences } = body;
+                if (!id || !preferences) return new Response("Missing id or preferences", { status: 400, headers: corsHeaders });
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
@@ -564,12 +564,12 @@ export default {
                         "Content-Type": "application/json",
                         "Prefer": "return=minimal"
                     },
-                    body: JSON.stringify({ theme })
+                    body: JSON.stringify({ preferences }) // Update the preferences JSONB column
                 });
 
                 if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
 
-                return new Response(JSON.stringify({ message: "Theme updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                return new Response(JSON.stringify({ message: "Preferences updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // 3. Delete User (DELETE /admin/users)
