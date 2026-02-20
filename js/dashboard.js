@@ -441,6 +441,7 @@ window.renderAdminUsers = async function () {
                                 </td>
                                 <td>${new Date(u.created_at).toLocaleDateString()}</td>
                                 <td>
+                                    <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${(u.first_name || '').replace(/'/g, "\\'")}', '${(u.last_name || '').replace(/'/g, "\\'")}')" title="Modifier le nom">✏️ Editer</button>
                                     <button class="btn-sm btn-view" onclick="resetUserPassword('${u.email}')" title="Envoyer mail de réinitialisation">🔑 Reset</button>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
                 ? `<span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
@@ -680,6 +681,55 @@ window.deleteUser = function (id, email) {
             }
         }
     );
+};
+
+window.openEditUserModal = function (id, firstName, lastName) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'edit-user-modal';
+
+    // We escape names carefully
+    overlay.innerHTML = `
+        <div class="modal-box">
+            <div class="modal-header">Modifier Profil</div>
+            <div style="display: flex; gap: 16px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Prénom</label>
+                    <input type="text" class="form-input" id="edit-user-firstname" value="${firstName.replace(/"/g, '&quot;')}">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Nom</label>
+                    <input type="text" class="form-input" id="edit-user-lastname" value="${lastName.replace(/"/g, '&quot;')}">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModal('edit-user-modal')">Annuler</button>
+                <button class="btn-primary" onclick="updateUserProfileName('${id}')">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+};
+
+window.updateUserProfileName = async function (id) {
+    const firstName = document.getElementById('edit-user-firstname').value.trim();
+    const lastName = document.getElementById('edit-user-lastname').value.trim();
+
+    try {
+        await api.updateUserProfile(id, firstName, lastName);
+        showSuccessModal("Profil mis à jour avec succès.");
+        closeModal('edit-user-modal');
+        // Non-blocking refresh
+        renderAdminUsers();
+
+        // If it's our own session, let's refresh page to update the Name in sidebar? Or just let it be.
+        // Doing a simple replace is fine. 
+        if (currentAdminSession && currentAdminSession.user.id === id) {
+            document.getElementById('admin-welcome-name').textContent = `${firstName} ${lastName}`;
+        }
+    } catch (e) {
+        alert("Erreur lors de la mise à jour du profil : " + e.message);
+    }
 };
 
 window.changeUserRole = async function (id, newRole) {
@@ -1489,13 +1539,13 @@ window.openAccessModal = async function (path) {
         } else {
             users.forEach(u => {
                 const isChecked = currentAccess.includes(u.id) ? 'checked' : '';
-                // Simple email display
+                const displayName = u.first_name || u.last_name ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : u.email;
                 html += `
                     <label style="display:flex; align-items:center; padding:12px; cursor:pointer; border-bottom:1px solid #f0f0f0;">
                         <input type="checkbox" class="access-checkbox" value="${u.id}" ${isChecked} style="margin-right:12px; width:18px; height:18px; accent-color:#007AFF;">
                         <div>
-                            <div style="font-weight:500; font-size:15px;">${u.email}</div>
-                            <div style="font-size:12px; color:#888;">${u.role}</div>
+                            <div style="font-weight:500; font-size:15px;">${displayName}</div>
+                            <div style="font-size:12px; color:#888;">${u.email} - ${u.role}</div>
                         </div>
                     </label>
                 `;

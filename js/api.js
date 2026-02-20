@@ -214,5 +214,18 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async updateUserProfile(id, firstName, lastName) {
+        const response = await fetch(`${config.api.workerUrl}/admin/users/profile`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, firstName, lastName })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

@@ -521,6 +521,32 @@ export default {
                 return new Response(JSON.stringify({ message: "Role updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // 2e. Update User Profile Name (PUT /admin/users/profile)
+            if (method === "PUT" && url.pathname.endsWith("/admin/users/profile")) {
+                const body = await request.json();
+                const { id, firstName, lastName } = body;
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // Update Name in profiles table
+                const updateRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${id}`, {
+                    method: "PATCH",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal"
+                    },
+                    body: JSON.stringify({ first_name: firstName || null, last_name: lastName || null })
+                });
+
+                if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
+
+                return new Response(JSON.stringify({ message: "Profile updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // 3. Delete User (DELETE /admin/users)
             if (method === "DELETE" && url.pathname.endsWith("/admin/users")) {
                 const body = await request.json();
