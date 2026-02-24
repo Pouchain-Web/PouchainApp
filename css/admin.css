@@ -65,10 +65,18 @@ body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg);
+    background-image: url('../background clair.png');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     display: block;
     /* Override dashboard.html flex/center */
+}
+
+:root[data-theme="dark"] body {
+    background-image: url('../background sombre.png');
 }
 
 .admin-layout {
@@ -111,6 +119,12 @@ body {
     text-align: center;
     border: 2px solid transparent;
 
+    /* Highlight readability against the background image */
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    background-color: rgba(240, 240, 245, 0.9);
+    /* Soft light gray for better contrast */
+
     /* FIX: Prevent huge cards - REMOVED to fix flexible grid overlap */
     /* max-width: 220px; */
     width: 100%;
@@ -118,15 +132,30 @@ body {
     /* Center in grid cell if smaller */
 }
 
+/* Specific override for Category Cards in Dark Mode */
+:root[data-theme="dark"] .category-card {
+    background-color: rgba(30, 30, 30, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .category-card:hover {
     transform: translateY(-3px);
     box-shadow: var(--shadow-md);
+    background-color: rgba(255, 255, 255, 0.95);
+}
+
+:root[data-theme="dark"] .category-card:hover {
+    background-color: rgba(45, 45, 45, 0.9);
 }
 
 .category-card.drag-over {
     border-color: var(--primary);
-    background-color: #EBF5FF;
+    background-color: rgba(235, 245, 255, 0.9);
     transform: scale(1.05);
+}
+
+:root[data-theme="dark"] .category-card.drag-over {
+    background-color: rgba(0, 122, 255, 0.3);
 }
 
 .category-card:active {
@@ -186,6 +215,23 @@ body {
     line-clamp: 2;
     /* Limit lines */
     -webkit-box-orient: vertical;
+
+    /* Add a background pill to make text readable against the background */
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 6px 12px;
+    border-radius: 12px;
+    margin-top: auto;
+    width: 100%;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+:root[data-theme="dark"] .category-title {
+    background-color: rgba(30, 30, 30, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* --- Sidebar --- */
@@ -281,6 +327,18 @@ header h1 {
     font-size: 28px;
     font-weight: 700;
     margin: 0;
+
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 8px 20px;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+:root[data-theme="dark"] header h1 {
+    background-color: rgba(30, 30, 30, 0.85);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .actions {
@@ -315,16 +373,23 @@ header h1 {
 
 /* --- Table / File List --- */
 .table-container {
-    background: var(--card-bg);
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-radius: var(--radius-md);
     padding: 0;
     /* Full bleed table */
     box-shadow: var(--shadow-sm);
     overflow-y: auto;
     /* For rounded corners and scrolling */
-    border: 1px solid var(--border);
+    border: 1px solid rgba(0, 0, 0, 0.05);
     flex: 1;
     min-height: 0;
+}
+
+:root[data-theme="dark"] .table-container {
+    background: rgba(30, 30, 30, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 table {
@@ -340,7 +405,9 @@ td {
 }
 
 th {
-    background-color: var(--th-bg);
+    background-color: rgba(245, 245, 245, 0.9);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     color: var(--text-secondary);
     font-weight: 600;
     font-size: 13px;
@@ -351,6 +418,10 @@ th {
     z-index: 10;
     /* Ensures border shows correctly under sticky header */
     box-shadow: 0 1px 0 var(--border);
+}
+
+:root[data-theme="dark"] th {
+    background-color: rgba(40, 40, 40, 0.9);
 }
 
 td {

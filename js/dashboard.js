@@ -143,6 +143,26 @@ async function renderMobileView() {
     try {
         const session = await auth.getSession();
         const userId = session ? session.user.id : null;
+
+        // Fetch user profile to get preferences
+        if (session) {
+            try {
+                const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
+                    .from('profiles')
+                    .select('preferences')
+                    .eq('id', session.user.id)
+                    .single();
+                if (profile && profile.preferences) {
+                    applyAdminPreferences(profile.preferences);
+                } else {
+                    applyAdminPreferences({ theme: localStorage.getItem('admin-theme') || 'light' });
+                }
+            } catch (prefError) {
+                console.warn("Could not fetch user profile details for mobile", prefError);
+                applyAdminPreferences({ theme: localStorage.getItem('admin-theme') || 'light' });
+            }
+        }
+
         const files = await api.listFiles(userId);
         mobileFilesCache = files;
         generateMobileCategories(files);
@@ -423,6 +443,15 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
             </nav>
             <div style="margin-top: auto;">
+                <div id="cloud-storage-usage" style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: rgba(255,255,255,0.8);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span>Stockage Cloudflare</span>
+                        <span id="cloud-storage-text">Calcul...</span>
+                    </div>
+                    <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden;">
+                        <div id="cloud-storage-bar" style="height: 100%; width: 0%; background: var(--primary, #007AFF); transition: width 0.5s ease;"></div>
+                    </div>
+                </div>
                 <button onclick="openCustomizeModal()" class="logout-btn" style="width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
                     <span>🎨</span> 
                     <span>Personnaliser l'interface</span>
@@ -465,6 +494,28 @@ async function renderAdminView(session) {
     } catch (e) {
         console.warn("Could not fetch user profile details", e);
         applyAdminPreferences({ theme: savedTheme });
+    }
+
+    // Fetch and display Cloudflare storage
+    try {
+        const spaceData = await api.getSpaceUsage();
+        const usedGb = (spaceData.usedBytes / (1024 * 1024 * 1024)).toFixed(2);
+        const totalGb = (spaceData.totalBytes / (1024 * 1024 * 1024)).toFixed(0);
+        const percent = Math.min(100, Math.max(0, (spaceData.usedBytes / spaceData.totalBytes) * 100));
+
+        const bar = document.getElementById('cloud-storage-bar');
+        const text = document.getElementById('cloud-storage-text');
+
+        if (bar && text) {
+            text.innerHTML = `<b>${usedGb} Go</b> / ${totalGb} Go`;
+            bar.style.width = `${percent}%`;
+            if (percent > 90) bar.style.backgroundColor = '#FF3B30';
+            else if (percent > 75) bar.style.backgroundColor = '#FF9500';
+        }
+    } catch (e) {
+        console.warn("Could not fetch storage usage", e);
+        const text = document.getElementById('cloud-storage-text');
+        if (text) text.innerText = 'Erreur';
     }
 }
 

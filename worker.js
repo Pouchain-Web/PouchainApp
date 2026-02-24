@@ -190,6 +190,27 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // --- ROUTE: STORAGE SPACE SUMMARY (Admin) ---
+            if (method === "GET" && url.pathname.endsWith("/admin/space")) {
+                let totalSize = 0;
+                let truncated = true;
+                let cursor = undefined;
+
+                while (truncated) {
+                    const list = await env.MY_BUCKET.list({ cursor });
+                    for (const obj of list.objects) {
+                        totalSize += obj.size;
+                    }
+                    truncated = list.truncated;
+                    cursor = list.cursor;
+                }
+
+                return new Response(JSON.stringify({
+                    usedBytes: totalSize,
+                    totalBytes: 10 * 1024 * 1024 * 1024 // 10 GB limit
+                }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: GET FILE CONTENT ---
             // Usage: /get/FolderName/FileName.pdf
             if (method === "GET" && url.pathname.includes("/get/")) {

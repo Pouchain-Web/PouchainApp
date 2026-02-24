@@ -52,15 +52,31 @@
     -webkit-tap-highlight-color: transparent;
 }
 
+:root[data-theme="dark"] {
+    --background-color: #121212;
+    --card-background: #1E1E1E;
+    --text-primary: #E5E5EA;
+    --text-secondary: #A0A0A5;
+    --border-color: #333333;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--background-color);
+    background-image: url('../background clair.png');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
     color: var(--text-primary);
     line-height: 1.5;
     height: 100vh;
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
+}
+
+:root[data-theme="dark"] body {
+    background-image: url('../background sombre.png');
 }
 
 /* Utilities */
@@ -446,7 +462,10 @@ body {
     aspect-ratio: auto;
     height: 80px;
     /* Fixed height for list item */
-    background-color: #FFFFFF;
+    background-color: rgba(240, 240, 245, 0.9);
+    /* Soft light gray for better contrast */
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-radius: 20px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
     border: 1px solid rgba(0, 0, 0, 0.02);
@@ -465,9 +484,18 @@ body {
     transition: transform 0.1s, background-color 0.2s;
 }
 
+:root[data-theme="dark"] .category-card {
+    background-color: rgba(30, 30, 30, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .category-card:active {
     transform: scale(0.98);
-    background-color: #F2F2F7;
+    background-color: rgba(242, 242, 247, 0.9);
+}
+
+:root[data-theme="dark"] .category-card:active {
+    background-color: rgba(45, 45, 45, 0.9);
 }
 
 .category-icon {
@@ -497,16 +525,36 @@ body {
     white-space: nowrap;
     /* Single line */
     display: block;
+
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 6px 14px;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+:root[data-theme="dark"] .category-title {
+    background-color: rgba(30, 30, 30, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .document-item {
-    background: white;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     margin: 12px 20px;
     /* Align with padding */
     border-radius: 16px;
     border: none;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
     padding: 16px;
+}
+
+:root[data-theme="dark"] .document-item {
+    background: rgba(30, 30, 30, 0.85);
 }
 
 /* Navigation Header (Folder View) */
@@ -518,7 +566,7 @@ body {
     position: sticky;
     top: 90px;
     /* Sits below the fixed search header */
-    background-color: var(--background-color);
+    background-color: transparent;
     /* Hide scrolling content */
     z-index: 900;
     margin: -140px -20px 0 -20px;
@@ -538,7 +586,7 @@ body {
     right: 0;
     margin: 0;
     padding: 10px 20px;
-    background: rgba(249, 249, 249, 0.98);
+    background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
@@ -547,6 +595,11 @@ body {
     /* Inline layout */
     align-items: center;
     gap: 12px;
+}
+
+:root[data-theme="dark"] .nav-header {
+    background: rgba(30, 30, 30, 0.85);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 /* Push the list down so it doesn't hide behind the fixed header */
@@ -585,6 +638,20 @@ body {
     white-space: nowrap;
     text-overflow: ellipsis;
     line-height: 1.2;
+
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 6px 14px;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+:root[data-theme="dark"] .nav-title {
+    background-color: rgba(30, 30, 30, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* Search Results Spacing */
