@@ -162,15 +162,21 @@ body {
     transform: scale(0.96);
 }
 
-.delete-folder-btn {
+.category-emoji-large {
+    font-size: 36px;
+    margin-bottom: 8px;
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+}
+
+.delete-folder-btn,
+.edit-folder-btn {
     position: absolute;
     top: 8px;
-    right: 8px;
     background: var(--card-bg);
     border: none;
     border-radius: 50%;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     cursor: pointer;
     display: none;
     /* Hidden by default */
@@ -182,13 +188,29 @@ body {
     z-index: 10;
 }
 
-.category-card:hover .delete-folder-btn {
+.delete-folder-btn {
+    right: 8px;
+}
+
+.edit-folder-btn {
+    left: 8px;
+}
+
+.category-card:hover .delete-folder-btn,
+.category-card:hover .edit-folder-btn {
     display: flex;
 }
 
 .delete-folder-btn:hover {
     background: #FFE5E5;
     color: var(--danger);
+    transform: scale(1.1);
+}
+
+.edit-folder-btn:hover {
+    background: #E5F1FF;
+    color: var(--primary);
+    transform: scale(1.1);
 }
 
 .category-icon {
@@ -312,7 +334,7 @@ body {
     flex-direction: column;
     min-height: 0;
     min-width: 0;
-    overflow-y: hidden;
+    overflow-y: auto;
 }
 
 header {

@@ -195,7 +195,7 @@ function handleMobileSearch(query) {
     // Filter — exclude internal config files (.keep, .meta_color_*)
     const isInternalFile = (key) => {
         const name = key.split('/').pop();
-        return name.endsWith('.keep') || name.startsWith('.meta_color_') || name.startsWith('.');
+        return name.endsWith('.keep') || name.startsWith('.meta_') || name.startsWith('.');
     };
     const results = mobileFilesCache.filter(f =>
         !isInternalFile(f.key) && f.key.toLowerCase().includes(normalizedQuery)
@@ -217,29 +217,49 @@ function generateMobileCategories(files) {
     const grid = document.getElementById('categories-grid');
     grid.innerHTML = '';
 
-    const categories = {};
+    const categories = new Map();
     const uncategorized = [];
 
     files.forEach(file => {
         const parts = file.key.split('/');
         if (parts.length > 1) {
             const folder = parts[0];
-            if (!categories[folder]) categories[folder] = [];
-            categories[folder].push(file);
+            if (!categories.has(folder)) {
+                categories.set(folder, { files: [], color: null, emoji: '📁', order: 999, row: 1 });
+            }
+            const catData = categories.get(folder);
+
+            if (parts[1].startsWith('.meta_color_')) {
+                catData.color = parts[1].replace('.meta_color_', '#');
+            } else if (parts[1].startsWith('.meta_emoji_')) {
+                catData.emoji = decodeURIComponent(parts[1].replace('.meta_emoji_', ''));
+            } else if (parts[1].startsWith('.meta_order_')) {
+                catData.order = parseInt(parts[1].replace('.meta_order_', ''), 10) || 999;
+            } else if (parts[1].startsWith('.meta_row_')) {
+                catData.row = parseInt(parts[1].replace('.meta_row_', ''), 10) || 1;
+            } else if (!file.key.endsWith('.keep') && !parts[1].startsWith('.meta_')) {
+                catData.files.push(file);
+            }
         } else {
             uncategorized.push(file);
         }
     });
 
-    // ... Colors logic ...
     const colors = ['#FF9500', '#AF52DE', '#5856D6', '#FF2D55', '#5AC8FA', '#34C759', '#FF3B30', '#FFCC00'];
     let colorIdx = 0;
 
-    Object.keys(categories).sort().forEach(catName => {
+    const sortedCategories = Array.from(categories.entries()).sort((a, b) => {
+        if (a[1].row !== b[1].row) return a[1].row - b[1].row;
+        if (a[1].order !== b[1].order) return a[1].order - b[1].order;
+        return a[0].localeCompare(b[0]);
+    });
+
+    sortedCategories.forEach(([catName, data]) => {
         const card = document.createElement('div');
         card.className = 'category-card';
+        const color = data.color || colors[colorIdx % colors.length];
         card.innerHTML = `
-            <div class="category-icon" style="background-color: ${colors[colorIdx % colors.length]}">📁</div>
+            <div class="category-icon" style="background-color: ${color}">${data.emoji}</div>
             <div class="category-title">${catName}</div>
         `;
         // Start navigation from root category
@@ -1078,7 +1098,7 @@ window.renderAdminFolders = async function () {
     try { ownerMap = await api.getAccessSummary(); } catch (e) { /* silently ignore */ }
 
     // Extract Categories and Colors
-    const categories = new Map(); // Name -> { color, count }
+    const categories = new Map(); // Name -> { color, count, emoji, order, row }
 
     // Default Colors
     const palette = ['#FF9500', '#AF52DE', '#5856D6', '#FF2D55', '#5AC8FA', '#34C759', '#FF3B30', '#FFCC00'];
@@ -1088,18 +1108,21 @@ window.renderAdminFolders = async function () {
         if (parts.length > 1) {
             const folderName = parts[0];
 
+            if (!categories.has(folderName)) {
+                categories.set(folderName, { color: null, count: 0, emoji: '📁', order: 999, row: 1 });
+            }
+            const catData = categories.get(folderName);
+
             if (parts[1].startsWith('.meta_color_')) {
-                const colorCode = parts[1].replace('.meta_color_', '#');
-                if (categories.has(folderName)) {
-                    categories.get(folderName).color = colorCode;
-                } else {
-                    categories.set(folderName, { color: colorCode, count: 0 });
-                }
-            } else if (!file.key.endsWith('.keep')) {
-                if (!categories.has(folderName)) {
-                    categories.set(folderName, { color: null, count: 0 });
-                }
-                categories.get(folderName).count++;
+                catData.color = parts[1].replace('.meta_color_', '#');
+            } else if (parts[1].startsWith('.meta_emoji_')) {
+                catData.emoji = decodeURIComponent(parts[1].replace('.meta_emoji_', ''));
+            } else if (parts[1].startsWith('.meta_order_')) {
+                catData.order = parseInt(parts[1].replace('.meta_order_', ''), 10) || 999;
+            } else if (parts[1].startsWith('.meta_row_')) {
+                catData.row = parseInt(parts[1].replace('.meta_row_', ''), 10) || 1;
+            } else if (!file.key.endsWith('.keep') && !parts[1].startsWith('.meta_')) {
+                catData.count++;
             }
         }
     });
@@ -1112,36 +1135,80 @@ window.renderAdminFolders = async function () {
                 <button class="btn-primary" onclick="openNewFolderModal()">+ Nouveau Dossier</button>
             </div>
         </header>
-        <div class="categories-grid">
+        <div class="categories-container" id="admin-categories-container">
             `;
 
     // Folder Cards
     let idx = 0;
 
-    categories.forEach((data, cat) => {
-        const color = data.color || palette[idx % palette.length];
-        // Look for owner by folder path (with or without trailing slash)
-        const owners = ownerMap[cat] || ownerMap[cat + '/'] || null;
-        const ownerBadge = makeOwnerBadge(owners, 'div');
+    const sortedCategories = Array.from(categories.entries()).sort((a, b) => {
+        if (a[1].order !== b[1].order) return a[1].order - b[1].order;
+        return a[0].localeCompare(b[0]);
+    });
 
-        html += `
-            <div class="category-card"
-                onclick="renderAdminFiles('${cat}')"
-                ondragover="handleDragOver(event)"
-                ondragleave="handleDragLeave(event)"
-                ondrop="handleDrop(event, '${cat}')">
-                <button class="delete-folder-btn" onclick="event.stopPropagation(); deleteFolder('${cat}')" title="Supprimer le dossier">🗑️</button>
-                <div class="category-icon" style="background-color: ${color}">📁</div>
-                <div class="category-title" title="${cat}">${cat}</div>
-                <div style="font-size:12px; color:#888; margin-top:4px;">${data.count} fichiers</div>
-                ${ownerBadge}
-            </div>
-            `;
-        idx++;
+    // Group by Row
+    const rows = new Map();
+    sortedCategories.forEach(([cat, data]) => {
+        if (!rows.has(data.row)) rows.set(data.row, []);
+        rows.get(data.row).push([cat, data]);
+    });
+
+    if (rows.size === 0) rows.set(1, []);
+    const maxRow = Math.max(...Array.from(rows.keys()), 0);
+    // Add empty dropzone row
+    rows.set(maxRow + 1, []);
+
+    const sortedRowKeys = Array.from(rows.keys()).sort((a, b) => a - b);
+
+    sortedRowKeys.forEach(rowNum => {
+        html += `<div class="folder-row-divider" style="margin-top:20px; margin-bottom:10px; font-weight:bold; color:#666;">Ligne ${rowNum}</div>`;
+        html += `<div class="categories-grid" data-row="${rowNum}" id="admin-categories-grid-${rowNum}" 
+                    ondragover="handleGridDragOver(event)" 
+                    ondragenter="handleGridDragEnter(event)" 
+                    ondragleave="handleGridDragLeave(event)" 
+                    ondrop="handleGridDrop(event, ${rowNum})"
+                    style="min-height: 120px; border: 2px dashed transparent; border-radius: 12px; padding: 10px; transition: all 0.2s;">`;
+
+        const rowItems = rows.get(rowNum);
+        rowItems.forEach(([cat, data]) => {
+            const color = data.color || palette[idx % palette.length];
+            const owners = ownerMap[cat] || ownerMap[cat + '/'] || null;
+            const ownerBadge = makeOwnerBadge(owners, 'div');
+
+            html += `
+                <div class="category-card"
+                    draggable="true"
+                    data-folder="${cat}"
+                    data-order="${data.order}"
+                    data-row="${data.row}"
+                    onclick="renderAdminFiles('${cat}')"
+                    ondragstart="handleFolderDragStart(event)"
+                    ondragover="handleFolderDragOver(event)"
+                    ondragenter="handleFolderDragEnter(event)"
+                    ondragleave="handleFolderDragLeave(event)"
+                    ondrop="handleFolderDrop(event, '${cat}', ${rowNum})"
+                    ondragend="handleFolderDragEnd(event)">
+                    <button class="edit-folder-btn" onclick="event.stopPropagation(); openEditFolderModal('${cat}', '${color}', '${data.emoji}')" title="Éditer le dossier">✏️</button>
+                    <button class="delete-folder-btn" onclick="event.stopPropagation(); deleteFolder('${cat}')" title="Supprimer le dossier">🗑️</button>
+                    <div class="category-emoji-large">${data.emoji}</div>
+                    <div style="width: 24px; height: 4px; background-color: ${color}; border-radius: 2px; margin-bottom: 12px;"></div>
+                    <div class="category-title" title="${cat}">${cat}</div>
+                    <div style="font-size:12px; color:#888; margin-top:4px;">${data.count} fichiers</div>
+                    ${ownerBadge}
+                </div>
+                `;
+            idx++;
+        });
+
+        if (rowItems.length === 0) {
+            html += `<div class="empty-row-placeholder" style="color:#aaa; text-align:center; flex:1; padding:20px; font-style:italic;">Déposer un dossier ici pour créer une nouvelle ligne</div>`;
+        }
+
+        html += `</div>`;
     });
 
     // Uncategorized Files
-    const rootFiles = adminFilesCache.filter(f => !f.key.includes('/') && !f.key.startsWith('.meta_color_'));
+    const rootFiles = adminFilesCache.filter(f => !f.key.includes('/') && !f.key.startsWith('.meta_'));
     if (rootFiles.length > 0) {
         html += `
             <div class="category-card" onclick="renderAdminFiles('')">
@@ -1184,7 +1251,7 @@ window.renderAdminFiles = async function (folder) {
         } else {
             // It is a file directly in this folder
             const name = parts[0];
-            if (!name.endsWith('.keep') && !name.startsWith('.meta_color_') && name !== "") {
+            if (!name.endsWith('.keep') && !name.startsWith('.meta_') && name !== "") {
                 distinctFiles.push(f);
             }
         }
@@ -1359,7 +1426,7 @@ window.deleteSelectedItems = function () {
                     const filesToDelete = adminFilesCache.filter(f => f.key.startsWith(path + '/'));
                     const metaFiles = adminFilesCache.filter(f => {
                         const parts = f.key.split('/');
-                        return parts.length > 1 && parts[0] === path && parts[1].startsWith('.meta_color_');
+                        return parts.length > 1 && parts[0] === path && parts[1].startsWith('.meta_');
                     });
                     const allKeys = new Set();
                     filesToDelete.forEach(f => allKeys.add(f.key));
@@ -1471,7 +1538,7 @@ window.deleteFolder = function (folder) {
 
             const metaFiles = adminFilesCache.filter(f => {
                 const parts = f.key.split('/');
-                return parts.length > 1 && parts[0] === folder && parts[1].startsWith('.meta_color_');
+                return parts.length > 1 && parts[0] === folder && parts[1].startsWith('.meta_');
             });
             // The first filter likely catches them too unless they are stored differently.
             // If "CRM/.meta..." exists, adminFilesCache has it? Yes listFiles returns all.
@@ -1583,6 +1650,291 @@ window.confirmNewFolder = async function () {
 window.createNewFolder = async function () {
     // Deprecated for openNewFolderModal
     openNewFolderModal();
+};
+
+window.openEditFolderModal = function (folderName, currentColor, currentEmoji) {
+    selectedColor = currentColor || '#007AFF';
+    const colors = ['#FF9500', '#AF52DE', '#5856D6', '#FF2D55', '#5AC8FA', '#34C759', '#FF3B30', '#FFCC00'];
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'edit-folder-modal';
+
+    // Safety for URI decoding if any issues
+    const displayEmoji = currentEmoji === '📁' ? '' : currentEmoji;
+
+    overlay.innerHTML = `
+        <div class="modal-box">
+            <div class="modal-header">Éditer le Dossier <br><small style="font-weight:normal; font-size:14px; color:#888">${folderName}</small></div>
+
+            <div class="form-group">
+                <label>Nom du dossier</label>
+                <input type="text" class="form-input" id="edit-folder-name" value="${folderName}">
+            </div>
+
+            <div class="form-group">
+                <label>Emoji (Optionnel)</label>
+                <input type="text" class="form-input" id="edit-folder-emoji" value="${displayEmoji}" placeholder="Ex: 🔧, 🚛..." maxlength="2">
+            </div>
+
+            <div class="form-group">
+                <label>Couleur</label>
+                <div class="color-grid">
+                    ${colors.map(c => `
+                        <div class="color-option ${c === selectedColor ? 'selected' : ''}" style="background-color: ${c}" onclick="selectColor(this, '${c}')"></div>
+                    `).join('')}
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModal('edit-folder-modal')">Annuler</button>
+                <button class="btn-primary" onclick="confirmEditFolder('${folderName}', '${currentColor}', '${currentEmoji}')">Enregistrer</button>
+            </div>
+        </div>
+        `;
+    document.body.appendChild(overlay);
+};
+
+window.confirmEditFolder = async function (oldName, oldColor, oldEmoji) {
+    const newName = document.getElementById('edit-folder-name').value.trim();
+    let newEmoji = document.getElementById('edit-folder-emoji').value.trim();
+
+    if (!newName) return alert("Veuillez entrer un nom.");
+    window.closeModal('edit-folder-modal');
+
+    // Show loading indicator
+    const content = document.getElementById('admin-categories-grid');
+    if (content) content.style.opacity = '0.5';
+
+    const prefix = adminCurrentFolder ? adminCurrentFolder + "/" : "";
+    let fullOldPath = prefix + oldName + "/";
+    let targetPath = prefix + newName + "/";
+
+    try {
+        let needsRefresh = false;
+
+        // 1. Rename Folder if name changed
+        if (newName !== oldName) {
+            await api.renameFolder(fullOldPath, targetPath);
+            fullOldPath = targetPath; // For subsequent metadata updates
+            needsRefresh = true;
+        }
+
+        // 2. Handle Color Change
+        if (selectedColor !== oldColor) {
+            const oldColorHex = oldColor ? oldColor.replace('#', '') : null;
+            const newColorHex = selectedColor.replace('#', '');
+
+            // Delete old color meta
+            if (oldColorHex) {
+                try { await api.deleteFile(fullOldPath + `.meta_color_${oldColorHex}`); } catch (e) { }
+            }
+            // Upload new
+            const markerFile = new File(["config"], `.meta_color_${newColorHex}`, { type: "text/plain" });
+            await api.uploadFile(markerFile, fullOldPath);
+            needsRefresh = true;
+        }
+
+        // 3. Handle Emoji Change
+        if (newEmoji !== oldEmoji && (newEmoji !== "" || oldEmoji !== '📁')) {
+            // Delete old emoji meta
+            if (oldEmoji && oldEmoji !== '📁') {
+                const encodedOld = encodeURIComponent(oldEmoji);
+                try { await api.deleteFile(fullOldPath + `.meta_emoji_${encodedOld}`); } catch (e) { }
+            }
+
+            // Upload new emoji meta if provided
+            if (newEmoji !== "") {
+                const encodedNew = encodeURIComponent(newEmoji);
+                const emojiFile = new File(["config"], `.meta_emoji_${encodedNew}`, { type: "text/plain" });
+                await api.uploadFile(emojiFile, fullOldPath);
+            }
+            needsRefresh = true;
+        }
+
+        if (needsRefresh) {
+            await refreshAdminData();
+        } else {
+            if (content) content.style.opacity = '1';
+        }
+    } catch (e) {
+        alert("Erreur lors de l'édition : " + e.message);
+        if (content) content.style.opacity = '1';
+    }
+};
+
+// --- Folder Drag and Drop Reordering ---
+let draggedFolder = null;
+
+window.handleFolderDragStart = function (e) {
+    draggedFolder = e.target.closest('.category-card');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedFolder.dataset.folder);
+    setTimeout(() => {
+        draggedFolder.style.opacity = '0.5';
+    }, 0);
+};
+
+window.handleFolderDragOver = function (e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const card = e.target.closest('.category-card');
+    if (card && card !== draggedFolder) {
+        card.classList.add('drag-over');
+    }
+};
+
+window.handleFolderDragEnter = function (e) {
+    e.preventDefault();
+};
+
+window.handleFolderDragLeave = function (e) {
+    const card = e.target.closest('.category-card');
+    if (card) {
+        card.classList.remove('drag-over');
+    }
+};
+
+window.handleFolderDrop = async function (e, targetFolderName, targetRowNum) {
+    e.preventDefault();
+    e.stopPropagation(); // Prevent normal file drop logic
+
+    const card = e.target.closest('.category-card');
+    if (card) card.classList.remove('drag-over');
+
+    const sourceFolderName = e.dataTransfer.getData('text/plain');
+    if (!sourceFolderName || sourceFolderName === targetFolderName) return;
+
+    await moveFolderAndUpdateOrder(sourceFolderName, targetFolderName, targetRowNum);
+};
+
+window.handleGridDragOver = function (e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const grid = e.currentTarget;
+    if (grid) grid.style.borderColor = 'var(--primary)';
+};
+
+window.handleGridDragEnter = function (e) {
+    e.preventDefault();
+};
+
+window.handleGridDragLeave = function (e) {
+    const grid = e.currentTarget;
+    if (grid) grid.style.borderColor = 'transparent';
+};
+
+window.handleGridDrop = async function (e, rowNum) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const grid = e.currentTarget;
+    if (grid) grid.style.borderColor = 'transparent';
+
+    const sourceFolderName = e.dataTransfer.getData('text/plain');
+    if (!sourceFolderName) return;
+
+    await moveFolderAndUpdateOrder(sourceFolderName, null, rowNum);
+};
+
+async function moveFolderAndUpdateOrder(sourceFolderName, targetFolderName, targetRowNum) {
+    const container = document.getElementById('admin-categories-container');
+    const allCards = Array.from(container.querySelectorAll('.category-card[data-folder]'));
+
+    // Build current state: rowNum -> array of folder names
+    const rowMap = new Map();
+    allCards.forEach(c => {
+        const row = parseInt(c.dataset.row, 10);
+        if (!rowMap.has(row)) rowMap.set(row, []);
+        rowMap.get(row).push(c.dataset.folder);
+    });
+
+    // Find where source is currently
+    let sourceRow = -1;
+    for (const [r, fList] of rowMap.entries()) {
+        if (fList.includes(sourceFolderName)) {
+            sourceRow = r;
+            break;
+        }
+    }
+
+    if (sourceRow === -1) return;
+
+    // Remove source from its current row
+    const sourceList = rowMap.get(sourceRow);
+    sourceList.splice(sourceList.indexOf(sourceFolderName), 1);
+
+    // Ensure target row exists
+    if (!rowMap.has(targetRowNum)) rowMap.set(targetRowNum, []);
+    const targetList = rowMap.get(targetRowNum);
+
+    if (targetFolderName) {
+        // Insert before target
+        const targetIdx = targetList.indexOf(targetFolderName);
+        if (targetIdx !== -1) {
+            targetList.splice(targetIdx, 0, sourceFolderName);
+        } else {
+            targetList.push(sourceFolderName);
+        }
+    } else {
+        // Append to the target row
+        targetList.push(sourceFolderName);
+    }
+
+    container.style.opacity = '0.5';
+    const prefix = adminCurrentFolder ? adminCurrentFolder + "/" : "";
+
+    try {
+        for (const [row, folders] of rowMap.entries()) {
+            for (let i = 0; i < folders.length; i++) {
+                const folderName = folders[i];
+                const card = allCards.find(c => c.dataset.folder === folderName);
+                if (!card) continue;
+
+                const oldRow = parseInt(card.dataset.row, 10);
+                const oldOrder = parseInt(card.dataset.order, 10) || 999;
+                const newRow = row;
+                const newOrder = i + 1;
+
+                const fullPath = prefix + folderName + "/";
+                let changedAny = false;
+
+                if (oldRow !== newRow) {
+                    if (oldRow !== 1) {
+                        try { await api.deleteFile(fullPath + `.meta_row_${oldRow}`); } catch (e) { }
+                    }
+                    if (newRow !== 1 || oldRow !== 1) {
+                        const rowFile = new File(["config"], `.meta_row_${newRow}`, { type: "text/plain" });
+                        await api.uploadFile(rowFile, fullPath);
+                    }
+                    changedAny = true;
+                }
+
+                if (oldOrder !== newOrder || changedAny) {
+                    if (oldOrder !== 999) {
+                        try { await api.deleteFile(fullPath + `.meta_order_${oldOrder}`); } catch (e) { }
+                    }
+                    if (newOrder !== 999 || changedAny) {
+                        const orderFile = new File(["config"], `.meta_order_${newOrder}`, { type: "text/plain" });
+                        await api.uploadFile(orderFile, fullPath);
+                    }
+                }
+            }
+        }
+        await refreshAdminData();
+    } catch (err) {
+        alert("Erreur lors de la réorganisation : " + err.message);
+        container.style.opacity = '1';
+    }
+}
+
+window.handleFolderDragEnd = function (e) {
+    if (draggedFolder) {
+        draggedFolder.style.opacity = '1';
+        draggedFolder = null;
+    }
+    document.querySelectorAll('.category-card.drag-over').forEach(c => c.classList.remove('drag-over'));
+    document.querySelectorAll('.categories-grid').forEach(g => g.style.borderColor = 'transparent');
 };
 
 // --- Upload Queue System ---
@@ -2068,7 +2420,7 @@ window.handleAdminGlobalSearch = function (query) {
     adminFilesCache.forEach(file => {
         const parts = file.key.split('/');
         const name = parts[parts.length - 1];
-        if (name && !name.startsWith('.meta_color_') && !name.endsWith('.keep')) {
+        if (name && !name.startsWith('.meta_') && !name.endsWith('.keep')) {
             if (name.toLowerCase().includes(term)) {
                 matchedFiles.push(file);
             }
