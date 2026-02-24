@@ -152,14 +152,9 @@ async function renderMobileView() {
                     .select('preferences')
                     .eq('id', session.user.id)
                     .single();
-                if (profile && profile.preferences) {
-                    applyAdminPreferences(profile.preferences);
-                } else {
-                    applyAdminPreferences({ theme: localStorage.getItem('admin-theme') || 'light' });
-                }
+                // Theme and preferences logic removed
             } catch (prefError) {
                 console.warn("Could not fetch user profile details for mobile", prefError);
-                applyAdminPreferences({ theme: localStorage.getItem('admin-theme') || 'light' });
             }
         }
 
@@ -499,16 +494,10 @@ async function renderAdminView(session) {
             if (profile.first_name && profile.last_name) {
                 document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
             }
-            if (profile.preferences) {
-                applyAdminPreferences(profile.preferences);
-            } else {
-                // Apply defaults or local if no profile pref
-                applyAdminPreferences({ theme: savedTheme });
-            }
+            // Preferences logic removed (always dark mode)
         }
     } catch (e) {
         console.warn("Could not fetch user profile details", e);
-        applyAdminPreferences({ theme: savedTheme });
     }
 
     // Fetch and display Cloudflare storage
