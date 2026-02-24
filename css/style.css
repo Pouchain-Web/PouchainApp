@@ -454,7 +454,7 @@ body {
     aspect-ratio: auto;
     height: 80px;
     /* Fixed height for list item */
-    background-color: rgba(45, 161, 64, 0.262);
+    background-color: rgba(82, 82, 82, 0.63);
     /* Soft light gray for better contrast */
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);

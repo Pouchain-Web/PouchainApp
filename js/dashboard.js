@@ -240,7 +240,7 @@ function generateMobileCategories(files) {
         }
     });
 
-    const colors = ['var(--primary-color)'];
+    const colors = ['rgba(255, 255, 255, 0.2)'];
     let colorIdx = 0;
 
     const sortedCategories = Array.from(categories.entries()).sort((a, b) => {
@@ -267,7 +267,7 @@ function generateMobileCategories(files) {
         const card = document.createElement('div');
         card.className = 'category-card';
         card.innerHTML = `
-            <div class="category-icon" style="background-color: #8E8E93">📄</div>
+            <div class="category-icon" style="background-color: rgba(255, 255, 255, 0.2)">📄</div>
             <div class="category-title">Autres</div>
         `;
         card.onclick = () => openMobileFolder(null); // Special case for root files? Or just list them?
