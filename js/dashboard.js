@@ -61,7 +61,7 @@ async function renderMobileView() {
     <!-- Fixed Top Bar -->
     <div class="mobile-top-bar">
         <div class="mobile-header-content">
-            <img src="logo-pouchain.svg" alt="Pouchain" class="app-logo" style="height: 32px;">
+            <img src="logo-pouchain.svg" alt="Pouchain" class="header-logo" style="height: 32px; width: auto; max-width: 60vw; object-fit: contain;">
             <button id="logout-btn" class="header-btn" title="Déconnexion">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -444,9 +444,8 @@ async function renderAdminView(session) {
         document.head.appendChild(link);
     }
 
-    // Apply saved theme
-    const savedTheme = localStorage.getItem('admin-theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
+    // Force admin theme to dark mode
+    document.documentElement.setAttribute('data-theme', 'dark');
 
     document.body.innerHTML = `
     <div class="admin-layout">
@@ -472,10 +471,6 @@ async function renderAdminView(session) {
                         <div id="cloud-storage-bar" style="height: 100%; width: 0%; background: var(--primary, #007AFF); transition: width 0.5s ease;"></div>
                     </div>
                 </div>
-                <button onclick="openCustomizeModal()" class="logout-btn" style="width: 100%; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <span>🎨</span> 
-                    <span>Personnaliser l'interface</span>
-                </button>
                 <button id="logout-btn" class="logout-btn" style="width: 100%;">Déconnexion</button>
             </div>
         </aside>
@@ -928,131 +923,6 @@ window.changeUserRole = async function (id, newRole) {
     }
 };
 
-window.applyAdminPreferences = function (prefs) {
-    if (!prefs) return;
-
-    // Theme
-    if (prefs.theme) {
-        document.documentElement.setAttribute('data-theme', prefs.theme);
-        localStorage.setItem('admin-theme', prefs.theme);
-    }
-
-    // Primary Color
-    if (prefs.primaryColor) {
-        document.documentElement.style.setProperty('--primary', prefs.primaryColor);
-        localStorage.setItem('admin-primary-color', prefs.primaryColor);
-    } else {
-        document.documentElement.style.removeProperty('--primary');
-        localStorage.removeItem('admin-primary-color');
-    }
-
-    // Text Color
-    if (prefs.textColor) {
-        document.documentElement.style.setProperty('--text-primary', prefs.textColor);
-        localStorage.setItem('admin-text-color', prefs.textColor);
-    } else {
-        document.documentElement.style.removeProperty('--text-primary');
-        localStorage.removeItem('admin-text-color');
-    }
-};
-
-// Also apply colors on load if available in LS
-const savedPrimary = localStorage.getItem('admin-primary-color');
-if (savedPrimary) document.documentElement.style.setProperty('--primary', savedPrimary);
-
-const savedText = localStorage.getItem('admin-text-color');
-if (savedText) document.documentElement.style.setProperty('--text-primary', savedText);
-
-window.openCustomizeModal = function () {
-    const root = document.documentElement;
-    const currentTheme = root.getAttribute('data-theme') || 'light';
-    const currentPrimary = root.style.getPropertyValue('--primary').trim() || '#2da140';
-    let currentText = root.style.getPropertyValue('--text-primary').trim();
-    if (!currentText) currentText = currentTheme === 'dark' ? '#E5E5EA' : '#1C1C1E';
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.id = 'customize-modal';
-
-    overlay.innerHTML = `
-        <div class="modal-box" style="width: 500px;">
-            <div class="modal-header">🎨 Personnaliser l'interface</div>
-            
-            <div class="form-group">
-                <label>Thème Base</label>
-                <div style="display:flex; gap:12px;">
-                    <label style="flex:1; display:flex; gap:8px; align-items:center; background: var(--card-bg); padding:12px; border:1px solid var(--border); border-radius:8px; cursor:pointer;" onclick="document.getElementById('custom-text-color').value='#1C1C1E'">
-                        <input type="radio" name="custom-theme" value="light" ${currentTheme === 'light' ? 'checked' : ''} style="width:18px;height:18px;">
-                        <span>☀️ Clair</span>
-                    </label>
-                    <label style="flex:1; display:flex; gap:8px; align-items:center; background: var(--card-bg); padding:12px; border:1px solid var(--border); border-radius:8px; cursor:pointer;" onclick="document.getElementById('custom-text-color').value='#E5E5EA'">
-                        <input type="radio" name="custom-theme" value="dark" ${currentTheme === 'dark' ? 'checked' : ''} style="width:18px;height:18px;">
-                        <span>🌙 Sombre</span>
-                    </label>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 16px;">
-                <div class="form-group" style="flex: 1;">
-                    <label>Couleur d'accent </label>
-                    <input type="color" id="custom-primary-color" value="${currentPrimary}" style="width:100%; height:50px; padding:0; border:1px solid var(--border); border-radius:8px; cursor:pointer; background:none;">
-                </div>
-                <div class="form-group" style="flex: 1;">
-                    <label>Couleur du texte principal</label>
-                    <input type="color" id="custom-text-color" value="${currentText}" style="width:100%; height:50px; padding:0; border:1px solid var(--border); border-radius:8px; cursor:pointer; background:none;">
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label>Modes prédéfinis 🪄</label>
-                <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <button class="btn-sm btn-view" onclick="applyPreset('light', '#2da140', '#1C1C1E')">Par Défaut (Clair)</button>
-                    <button class="btn-sm btn-view" onclick="applyPreset('dark', '#2da140', '#E5E5EA')">Par Défaut (Sombre)</button>
-                    <button class="btn-sm btn-view" onclick="applyPreset('light', '#007AFF', '#1e3a8a')">🌊 Océan</button>
-                    <button class="btn-sm btn-view" onclick="applyPreset('dark', '#FF2D55', '#FDDC5C')">⚡ Cyberpunk</button>
-                    <button class="btn-sm btn-view" onclick="applyPreset('light', '#D97706', '#451A03')">🍂 Automne</button>
-                    <button class="btn-sm btn-view" onclick="applyPreset('dark', '#10B981', '#D1FAE5')">🌲 Forêt Noire</button>
-                </div>
-            </div>
-
-            <div class="modal-actions" style="margin-top:24px;">
-                <button class="btn-secondary" onclick="closeModal('customize-modal')">Annuler</button>
-                <button class="btn-primary" onclick="saveCustomizePreferences()">Enregistrer</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-};
-
-window.applyPreset = function (theme, primaryColor, textColor) {
-    document.querySelector(`input[name="custom-theme"][value="${theme}"]`).checked = true;
-    document.getElementById('custom-primary-color').value = primaryColor;
-    document.getElementById('custom-text-color').value = textColor;
-};
-
-window.saveCustomizePreferences = async function () {
-    const theme = document.querySelector('input[name="custom-theme"]:checked').value;
-    const primaryColor = document.getElementById('custom-primary-color').value;
-    const textColor = document.getElementById('custom-text-color').value;
-
-    const prefs = {
-        theme,
-        primaryColor,
-        textColor
-    };
-
-    applyAdminPreferences(prefs);
-    closeModal('customize-modal');
-
-    try {
-        if (currentAdminSession) {
-            await api.updateUserPreferences(currentAdminSession.user.id, prefs);
-        }
-    } catch (e) {
-        console.warn("Could not save preferences to database", e);
-        // Show silent error toast or something if needed
-    }
-};
 
 async function refreshAdminData() {
     try {
