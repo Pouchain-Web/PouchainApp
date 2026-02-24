@@ -52,13 +52,7 @@
     -webkit-tap-highlight-color: transparent;
 }
 
-:root[data-theme="dark"] {
-    --background-color: #121212;
-    --card-background: #1E1E1E;
-    --text-primary: #E5E5EA;
-    --text-secondary: #A0A0A5;
-    --border-color: #333333;
-}
+
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -75,9 +69,7 @@ body {
     overflow-x: hidden;
 }
 
-:root[data-theme="dark"] body {
-    background-image: url('../background sombre.png');
-}
+
 
 /* Utilities */
 .hidden {

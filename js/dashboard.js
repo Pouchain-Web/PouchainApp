@@ -61,7 +61,7 @@ async function renderMobileView() {
     <!-- Fixed Top Bar -->
     <div class="mobile-top-bar">
         <div class="mobile-header-content">
-            <span class="app-title">Pouchain <span style="color:var(--primary-color)">Docs</span></span>
+            <img src="logo-pouchain.svg" alt="Pouchain" class="app-logo" style="height: 32px;">
             <button id="logout-btn" class="header-btn" title="Déconnexion">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -245,7 +245,7 @@ function generateMobileCategories(files) {
         }
     });
 
-    const colors = ['#FF9500', '#AF52DE', '#5856D6', '#FF2D55', '#5AC8FA', '#34C759', '#FF3B30', '#FFCC00'];
+    const colors = ['var(--primary-color)'];
     let colorIdx = 0;
 
     const sortedCategories = Array.from(categories.entries()).sort((a, b) => {
