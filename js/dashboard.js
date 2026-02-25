@@ -337,11 +337,12 @@ function renderMobileList(title, subfolders, files) {
     // Drag & Drop zone on container
     container.ondragover = (e) => { e.preventDefault(); container.style.outline = '2px dashed var(--primary-color, #2da140)'; };
     container.ondragleave = () => { container.style.outline = ''; };
-    container.ondrop = (e) => {
+    container.ondrop = async (e) => {
         e.preventDefault();
         container.style.outline = '';
         if (e.dataTransfer.files.length > 0 && mobileCurrentPath && mobileCurrentPath !== 'Autres') {
-            addToUploadQueue(e.dataTransfer.files, mobileCurrentPath + '/');
+            const filesToUpload = await promptForFileNamesAndReturn(e.dataTransfer.files);
+            addToUploadQueue(filesToUpload, mobileCurrentPath + '/');
         }
     };
 
@@ -2098,14 +2099,85 @@ function renderUploadQueue() {
         `;
 }
 
+// Helper to prompt for renaming files before upload
+window.promptForFileNamesAndReturn = async function (files) {
+    let resultFiles = [];
+    const askName = (file) => new Promise(resolve => {
+        const originalName = file.name;
+        const ext = originalName.includes('.') ? "." + originalName.split('.').pop() : "";
+        const baseName = originalName.includes('.') ? originalName.slice(0, originalName.lastIndexOf('.')) : originalName;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.id = 'rename-upload-modal';
+        overlay.innerHTML = `
+            <div class="modal-box">
+                <div class="modal-header">Nom du document</div>
+                <p style="font-size:14px; color:#666; margin-bottom:12px;">Voulez-vous renommer ce document avant l'envoi ?</p>
+                <div class="form-group">
+                    <input type="text" class="form-input" id="rename-upload-input" value="${baseName.replace(/"/g, '&quot;')}" autofocus>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" id="rename-upload-cancel">Garder l'original</button>
+                    <button class="btn-primary" id="rename-upload-confirm">Valider</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const inputEl = document.getElementById('rename-upload-input');
+        inputEl.focus();
+        inputEl.select();
+
+        // Allow Enter key to confirm
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter') document.getElementById('rename-upload-confirm').click();
+        };
+
+        const cleanup = () => {
+            const el = document.getElementById('rename-upload-modal');
+            if (el) el.remove();
+        };
+
+        document.getElementById('rename-upload-cancel').onclick = () => {
+            cleanup();
+            resolve(file); // keep original
+        };
+
+        document.getElementById('rename-upload-confirm').onclick = () => {
+            const newName = inputEl.value.trim();
+            cleanup();
+            if (newName && newName !== baseName) {
+                // Ensure the extension isn't duplicated if user typed it
+                let finalName = newName;
+                if (!finalName.toLowerCase().endsWith(ext.toLowerCase())) {
+                    finalName += ext;
+                }
+                const renamedFile = new File([file], finalName, { type: file.type });
+                resolve(renamedFile);
+            } else {
+                resolve(file);
+            }
+        };
+    });
+
+    for (let i = 0; i < files.length; i++) {
+        const renamed = await askName(files[i]);
+        resultFiles.push(renamed);
+    }
+
+    return resultFiles;
+};
+
 // Redirect triggers to new Queue
 window.triggerUpload = function (folder) {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
         if (e.target.files.length > 0) {
-            addToUploadQueue(e.target.files, folder ? folder + "/" : "");
+            const filesToUpload = await promptForFileNamesAndReturn(e.target.files);
+            addToUploadQueue(filesToUpload, folder ? folder + "/" : "");
         }
     };
     input.click();
@@ -2117,9 +2189,10 @@ window.mobileTriggerUpload = function () {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
         if (e.target.files.length > 0) {
-            addToUploadQueue(e.target.files, mobileCurrentPath + "/");
+            const filesToUpload = await promptForFileNamesAndReturn(e.target.files);
+            addToUploadQueue(filesToUpload, mobileCurrentPath + "/");
         }
     };
     input.click();
@@ -2138,13 +2211,14 @@ window.handleDragLeave = function (e) {
     e.currentTarget.classList.remove('drag-over');
 }
 
-window.handleDrop = function (e, folder) {
+window.handleDrop = async function (e, folder) {
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.classList.remove('drag-over');
 
     if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-        addToUploadQueue(e.dataTransfer.files, folder + "/");
+        const filesToUpload = await promptForFileNamesAndReturn(e.dataTransfer.files);
+        addToUploadQueue(filesToUpload, folder + "/");
     }
 };
 
