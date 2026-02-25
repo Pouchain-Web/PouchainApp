@@ -190,6 +190,19 @@ export const api = {
         return await response.json();
     },
 
+    async changeUserPassword(id, password) {
+        const response = await fetch(`${config.api.workerUrl}/admin/users/password`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, password })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async deleteUser(id) {
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'DELETE',

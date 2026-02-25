@@ -542,7 +542,31 @@ export default {
                 return new Response(JSON.stringify({ message: "Reset email sent" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            // 2d. Update User Role (PUT /admin/users/role)
+            // 2d. Update User Password (PUT /admin/users/password)
+            if (method === "PUT" && url.pathname.endsWith("/admin/users/password")) {
+                const body = await request.json();
+                const { id, password } = body;
+                if (!id || !password) return new Response("Missing id or password", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const updateRes = await fetch(`${supabaseUrl}/auth/v1/admin/users/${id}`, {
+                    method: "PUT",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ password })
+                });
+
+                if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
+
+                return new Response(JSON.stringify({ message: "Password updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // 2e. Update User Role (PUT /admin/users/role)
             if (method === "PUT" && url.pathname.endsWith("/admin/users/role")) {
                 const body = await request.json();
                 const { id, role } = body;

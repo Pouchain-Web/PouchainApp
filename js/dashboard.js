@@ -578,7 +578,7 @@ window.renderAdminUsers = async function () {
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
                 ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
                                            <span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
-                : `<button class="btn-sm btn-view" onclick="resetUserPassword('${u.email}')" title="Envoyer mail de réinitialisation">🔑 Reset</button>
+                : `<button class="btn-sm btn-view" onclick="openAdminChangePasswordModal('${u.id}', '${(u.first_name || '').replace(/'/g, "\\'")}', '${(u.last_name || '').replace(/'/g, "\\'")}', '${u.email}')" title="Changer le mot de passe manuellement">🔑 Changer Mdp</button>
                                            <button class="btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.email}')">Supprimer</button>`
             }
                                 </td>
@@ -718,22 +718,43 @@ window.showSuccessModal = function (message) {
     document.body.appendChild(overlay);
 };
 
-window.resetUserPassword = function (email) {
-    showConfirmModal(
-        "Réinitialiser le mot de passe",
-        `Voulez-vous envoyer un email de réinitialisation de mot de passe à <b>${email}</b> ?`,
-        async () => {
-            try {
-                const redirectTo = window.location.origin + window.location.pathname.replace('dashboard.html', '') + 'reset-password.html';
-                await api.sendPasswordReset(email, redirectTo);
-                showSuccessModal("Email de réinitialisation envoyé.");
-            } catch (e) {
-                alert("Erreur : " + e.message);
-            }
-        },
-        "Réinitialiser",
-        "btn-primary"
-    );
+window.openAdminChangePasswordModal = function (id, firstName, lastName, email) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'admin-change-password-modal';
+
+    const displayName = (firstName && lastName) ? `${firstName} ${lastName}` : email;
+
+    overlay.innerHTML = `
+        <div class="modal-box">
+            <div class="modal-header">Changer le mot de passe</div>
+            <p style="margin-bottom: 16px; color: #666;">Changer le mot de passe pour <b>${displayName}</b></p>
+            <div class="form-group">
+                <label>Nouveau mot de passe</label>
+                <input type="password" class="form-input" id="admin-new-password-input" placeholder="Minimum 6 caractères">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModal('admin-change-password-modal')">Annuler</button>
+                <button class="btn-primary" onclick="submitAdminChangePassword('${id}')">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+};
+
+window.submitAdminChangePassword = async function (id) {
+    const newPassword = document.getElementById('admin-new-password-input').value;
+    if (!newPassword || newPassword.length < 6) {
+        return alert("Veuillez entrer un mot de passe d'au moins 6 caractères.");
+    }
+
+    try {
+        await api.changeUserPassword(id, newPassword);
+        showSuccessModal("Mot de passe mis à jour avec succès.");
+        closeModal('admin-change-password-modal');
+    } catch (e) {
+        alert("Erreur lors du changement de mot de passe : " + e.message);
+    }
 };
 
 window.showConfirmModal = function (title, message, onConfirm, confirmText = 'Supprimer', confirmClass = 'btn-danger') {
