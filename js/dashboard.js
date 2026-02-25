@@ -2101,6 +2101,9 @@ function renderUploadQueue() {
 
 // Helper to prompt for renaming files before upload
 window.promptForFileNamesAndReturn = async function (files) {
+    if (!isMobileView) {
+        return Array.from(files);
+    }
     let resultFiles = [];
     const askName = (file) => new Promise(resolve => {
         const originalName = file.name;
