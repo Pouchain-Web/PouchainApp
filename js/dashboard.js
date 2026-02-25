@@ -2113,6 +2113,7 @@ window.promptForFileNamesAndReturn = async function (files) {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.id = 'rename-upload-modal';
+        overlay.style.zIndex = '100005';
         overlay.innerHTML = `
             <div class="modal-box">
                 <div class="modal-header">Nom du document</div>
