@@ -99,13 +99,15 @@ async function renderMobileView() {
                     Retour
                 </div>
                 <div class="nav-title" id="selected-category-title">Catégorie</div>
-                <!-- Mobile Upload Button (shown only inside a folder) -->
-                <button id="mobile-upload-btn" onclick="mobileTriggerUpload()" title="Uploader un fichier"
-                    style="display:none; align-items:center; gap:6px; padding:8px 14px; background:var(--primary-color,#2da140); color:white; border:none; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
-                    📤 Upload
-                </button>
             </div>
-            <div id="list-content" class="view-transition"></div>
+            
+            <!-- Mobile Upload Button (shown only inside a folder) -->
+            <button id="mobile-upload-btn" onclick="mobileTriggerUpload()" title="Uploader un fichier"
+                style="display:none; position:fixed; bottom:24px; right:24px; z-index:9999; align-items:center; justify-content:center; gap:8px; padding:14px 20px; background:var(--primary-color,#2da140); color:white; border:none; border-radius:30px; font-size:16px; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+                📤 Upload
+            </button>
+
+            <div id="list-content" class="view-transition" style="padding-bottom: 90px;"></div>
         </div>
     </div>
     `;
