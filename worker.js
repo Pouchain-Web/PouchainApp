@@ -685,6 +685,34 @@ export default {
         } catch (err) {
             return new Response(`Error: ${err.message}`, { status: 500, headers: corsHeaders });
         }
+    },
+
+    // Déclencheur CRON planifié pour ping Supabase et garder le projet actif (évite la pause après 1 semaine d'inactivité)
+    async scheduled(event, env, ctx) {
+        const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+        const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+        if (serviceKey) {
+            try {
+                // Requête simple pour maintenir l'activité de la base de données
+                const res = await fetch(`${supabaseUrl}/rest/v1/profiles?limit=1`, {
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`
+                    }
+                });
+
+                if (res.ok) {
+                    console.log("Ping Supabase keep-alive réussi.");
+                } else {
+                    console.error("Ping Supabase keep-alive échoué:", res.status, await res.text());
+                }
+            } catch (err) {
+                console.error("Erreur lors du ping Supabase:", err);
+            }
+        } else {
+            console.error("Aucune clé SUPABASE_SERVICE_KEY trouvée. Impossible de ping Supabase.");
+        }
     }
 };
 

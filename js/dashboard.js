@@ -3,6 +3,17 @@ import { auth } from './auth.js';
 import { api } from './api.js';
 import config from './config.js';
 
+// Utilitaires de sécurité
+window.escapeHTML = function (str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+};
+
 // Controller Logic
 async function initDashboard() {
     // 1. Check Auth
@@ -559,32 +570,39 @@ window.renderAdminUsers = async function () {
                         </tr>
                     </thead>
                     <tbody>
-                        ${users.map(u => `
+                        ${users.map(u => {
+            const safeFirstName = window.escapeHTML(u.first_name || '-');
+            const safeLastName = window.escapeHTML(u.last_name || '-');
+            const safeEmail = window.escapeHTML(u.email);
+            const jsFirstName = (u.first_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const jsLastName = (u.last_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const jsEmail = (u.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            return `
                             <tr>
-                                <td>${u.first_name || '-'}</td>
-                                <td>${u.last_name || '-'}</td>
-                                <td>${u.email}</td>
+                                <td>${safeFirstName}</td>
+                                <td>${safeLastName}</td>
+                                <td>${safeEmail}</td>
                                 <td>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
-                ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : 'var(--badge-user-bg)'}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'var(--badge-user-text)'}">${u.role}</span>`
-                : `<select class="form-input" style="padding: 4px 8px; font-size: 13px; width: auto;" onchange="changeUserRole('${u.id}', this.value)">
+                    ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : 'var(--badge-user-bg)'}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'var(--badge-user-text)'}">${u.role}</span>`
+                    : `<select class="form-input" style="padding: 4px 8px; font-size: 13px; width: auto;" onchange="changeUserRole('${u.id}', this.value)">
                                             <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
                                             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
                                            </select>`
-            }
+                }
                                 </td>
                                 <td>${new Date(u.created_at).toLocaleDateString()}</td>
                                 <td>
-                                    <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${(u.first_name || '').replace(/'/g, "\\'")}', '${(u.last_name || '').replace(/'/g, "\\'")}')" title="Modifier le nom">✏️ Editer</button>
+                                    <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}')" title="Modifier le nom">✏️ Editer</button>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
-                ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
+                    ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
                                            <span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
-                : `<button class="btn-sm btn-view" onclick="openAdminChangePasswordModal('${u.id}', '${(u.first_name || '').replace(/'/g, "\\'")}', '${(u.last_name || '').replace(/'/g, "\\'")}', '${u.email}')" title="Changer le mot de passe manuellement">🔑 Changer Mdp</button>
-                                           <button class="btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.email}')">Supprimer</button>`
-            }
+                    : `<button class="btn-sm btn-view" onclick="openAdminChangePasswordModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${jsEmail}')" title="Changer le mot de passe manuellement">🔑 Changer Mdp</button>
+                                           <button class="btn-sm btn-danger" onclick="deleteUser('${u.id}', '${jsEmail}')">Supprimer</button>`
+                }
                                 </td>
                             </tr>
-                        `).join('')}
+                        `}).join('')}
                     </tbody>
                 </table>
             </div>
