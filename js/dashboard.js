@@ -469,6 +469,7 @@ async function renderAdminView(session) {
             <nav id="admin-nav">
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
                 <div id="cloud-storage-usage" style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: rgba(255,255,255,0.8);">
@@ -538,6 +539,78 @@ async function renderAdminView(session) {
 }
 
 // Global scope for admin functions
+window.renderAdminAbout = async function () {
+    adminCurrentFolder = null;
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('nav-about').classList.add('active');
+
+    const content = document.getElementById('admin-content');
+
+    content.innerHTML = `
+        <header>
+            <h1>À Propos & Assistance</h1>
+        </header>
+        
+        <div style="max-width: 900px; margin: 0 auto; padding: 20px;">
+            
+            <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 30px; margin-bottom: 30px; border: 1px solid rgba(255,255,255,0.1);">
+                <h2 style="margin-top:0; color:var(--primary, #0ca678); font-size: 24px; margin-bottom: 24px;">L'Architecture de Pouchain</h2>
+                <p style="color:rgba(255,255,255,0.8); line-height: 1.6; margin-bottom: 30px;">
+                    Bienvenue dans les coulisses ! L'application Pouchain est propulsée par une architecture moderne, rapide et ultra-sécurisée.<br>
+                    Voici comment la magie opère entre les trois grands piliers :
+                </p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+                    <!-- Frontend -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border-top: 4px solid #f59f00;">
+                        <div style="font-size: 40px; margin-bottom: 10px;">✨</div>
+                        <h3 style="margin-top: 0;">L'Interface (Site Web)</h3>
+                        <p style="color:rgba(255,255,255,0.7); font-size: 14px;">
+                            C'est ce que vous voyez ! Un tableau de bord intelligent qui interagit avec vous de manière fluide. 
+                            Aucune donnée sensible n'y est stockée, c'est uniquement le chef d'orchestre visuel.
+                        </p>
+                    </div>
+                    
+                    <!-- Cloudflare -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border-top: 4px solid #f76707;">
+                        <div style="font-size: 40px; margin-bottom: 10px;">🚀</div>
+                        <h3 style="margin-top: 0;">Cloudflare (Le Transporteur)</h3>
+                        <p style="color:rgba(255,255,255,0.7); font-size: 14px;">
+                            Notre <strong>Worker Cloudflare</strong> agit comme un gardien de sécurité invisible ultra-rapide.<br><br>
+                            Il vérifie qui est connecté et accède aux immenses entrepôts <strong>Cloudflare R2</strong>, l'endroit où tous vos fichiers lourds (PDF, Images) sont stockés sans limite de taille !
+                        </p>
+                    </div>
+                    
+                    <!-- Supabase -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border-top: 4px solid #37b24d;">
+                        <div style="font-size: 40px; margin-bottom: 10px;">🏦</div>
+                        <h3 style="margin-top: 0;">Supabase (Le Coffre-Fort)</h3>
+                        <p style="color:rgba(255,255,255,0.7); font-size: 14px;">
+                            C'est notre coffre-fort blindé. Il gère l'authentification (mots de passe cryptés) et la base de données (rôles, profils).<br><br>
+                            Grâce à <strong>Row Level Security (RLS)</strong>, chaque donnée est verrouillée et accessible uniquement par les bonnes personnes.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div style="background: rgba(55, 178, 77, 0.1); border-radius: 12px; padding: 30px; border: 1px solid rgba(55, 178, 77, 0.3);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="font-size: 50px;">👨‍💻</div>
+                    <div>
+                        <h2 style="margin-top: 0; margin-bottom: 8px; color: #fff;">Assistance Technique</h2>
+                        <p style="margin: 0; color: rgba(255,255,255,0.8);">En cas de question, de bug ou de besoin d'évolution de la plateforme, n'hésitez pas à contacter le technicien en charge :</p>
+                        <div style="margin-top: 15px; font-size: 18px;">
+                            <span style="color: #69db7c; font-weight: bold;">Quentin Vert</span> &nbsp;|&nbsp; 
+                            📞 <a href="tel:0782697265" style="color: #69db7c; text-decoration: none; font-weight: bold;">07 82 69 72 65</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    `;
+};
+
 window.renderAdminUsers = async function () {
     adminCurrentFolder = null; // Clear folder view state
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
