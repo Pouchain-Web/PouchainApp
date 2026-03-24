@@ -641,8 +641,8 @@ window.openNewUserModal = function () {
                 <input type="email" class="form-input" id="new-user-email" placeholder="email@exemple.com">
             </div>
 
-            <div id="manual-fields" style="background:var(--bg-secondary, #f3f4f6); padding:12px; border-radius:6px; margin-bottom:16px; font-size:13px; text-align:left;">
-                <b style="color:var(--text-primary, #333);">Mot de passe par défaut :</b><br>
+            <div id="manual-fields" style="background:var(--bg-secondary, #f3f4f6); color:#333; padding:12px; border-radius:6px; margin-bottom:16px; font-size:13px; text-align:left;">
+                <b>Mot de passe par défaut :</b><br>
                 Le mot de passe généré pour ce compte sera <b>123456</b>.<br>
                 L'utilisateur sera obligé de le changer lors de sa toute première connexion à l'application.
             </div>
