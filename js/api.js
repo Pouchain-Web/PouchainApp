@@ -242,14 +242,14 @@ export const api = {
         return await response.json();
     },
 
-    async updateUserPreferences(id, preferences) {
-        const response = await fetch(`${config.api.workerUrl}/admin/users/preferences`, {
+    async updateUserColor(id, color) {
+        const response = await fetch(`${config.api.workerUrl}/admin/users/color`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, preferences })
+            body: JSON.stringify({ id, color })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -258,6 +258,66 @@ export const api = {
     async getAccessSummary() {
         const response = await fetch(`${config.api.workerUrl}/admin/access/summary`, {
             headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // --- Planning Management ---
+    async getTasks(date = null) {
+        let url = `${config.api.workerUrl}/tasks`;
+        if (date) url += `?date=${encodeURIComponent(date)}`;
+        const response = await fetch(url, { headers: await getAuthHeaders() });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateTask(id, data) {
+        const response = await fetch(`${config.api.workerUrl}/tasks`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, ...data })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminTasks(startDate = null, endDate = null) {
+        let url = `${config.api.workerUrl}/admin/tasks`;
+        if (startDate && endDate) {
+            url += `?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
+        } else if (startDate) {
+            url += `?date=${encodeURIComponent(startDate)}`;
+        }
+        const response = await fetch(url, { headers: await getAuthHeaders() });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveAdminTask(taskData) {
+        const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(taskData)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteAdminTask(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

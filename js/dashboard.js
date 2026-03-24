@@ -283,15 +283,152 @@ function generateMobileCategories(files) {
             <div class="category-icon" style="background-color: rgba(255, 255, 255, 0.2)">📄</div>
             <div class="category-title">Autres</div>
         `;
-        card.onclick = () => openMobileFolder(null); // Special case for root files? Or just list them?
-        // Actually "Autres" usually implies root files. 
-        // Let's treat it as a special render for root files.
         card.onclick = () => {
             showMobileRootFiles(uncategorized);
         };
         grid.appendChild(card);
     }
+
+    // Add Planning Card at the very top (prepend)
+    const planningCard = document.createElement('div');
+    planningCard.className = 'category-card';
+    planningCard.innerHTML = `
+        <div class="category-icon" style="background-color: var(--primary);">📅</div>
+        <div class="category-title" style="font-weight:bold;">Planning</div>
+    `;
+    planningCard.onclick = () => renderMobilePlanning();
+    grid.prepend(planningCard);
 }
+
+window.renderMobilePlanning = async function (dateStr = new Date().toISOString().split('T')[0]) {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Planning";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    mobileCurrentPath = "planning"; // Matches back-button logic
+
+    // Add spinner css specifically for mobile if needed
+    if (!document.getElementById('spin-style')) {
+        const style = document.createElement('style');
+        style.id = 'spin-style';
+        style.innerHTML = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
+        document.head.appendChild(style);
+    }
+
+    document.getElementById('list-content').innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader" style="border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto;"></div></div>`;
+
+    try {
+        const tasks = await api.getTasks(dateStr);
+        const displayDate = new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+        
+        // Helper to change day
+        window.changeMobileDay = (current, offset) => {
+            const d = new Date(current);
+            d.setDate(d.getDate() + offset);
+            renderMobilePlanning(d.toISOString().split('T')[0]);
+        };
+
+        let html = `
+            <div style="background: #f8f9fa; display: flex; flex-direction: column; height: calc(100vh - 60px);">
+                <!-- Fixed Header Block (Navigation arrows + Day Title) -->
+                <div style="position: fixed; top: 110px; left: 0; right: 0; z-index: 150; background: #f8f9fa; padding: 16px 16px 0 16px; border-bottom: 1px solid rgba(0,0,0,0.05); box-shadow: 0 4px 10px rgba(0,0,0,0.02);">
+                    <div style="margin-bottom: 16px; background: #fff; padding: 12px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 10px;">
+                        <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: #f0f0f0; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">◀</button>
+                        <div style="flex:1; position: relative;">
+                            <input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 14px;" value="${dateStr}" onchange="renderMobilePlanning(this.value)">
+                        </div>
+                        <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: #f0f0f0; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">▶</button>
+                    </div>
+
+                    <div style="font-weight: 700; color: #1c1c1e; font-size: 18px; margin-bottom: 15px; text-transform: capitalize; padding-left: 8px;">
+                        ${displayDate}
+                    </div>
+                </div>
+
+                <!-- Scrollable Task List -->
+                <div style="flex: 1; overflow-y: auto; padding: 130px 16px 100px 16px;">
+                    <div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid #e5e5ea; margin-left: 10px;">
+        `;
+
+        if (tasks.length === 0) {
+            html += `<div style="color:#8E8E93; text-align:center; padding: 60px 0; font-size: 16px;">
+                <div style="font-size: 40px; margin-bottom: 12px;">🌟</div>
+                Aucune tâche prévue aujourd'hui
+            </div>`;
+        } else {
+            tasks.forEach(t => {
+                const parts = t.title.split(':::DESC:::');
+                const mainTitle = parts[0];
+                const desc = parts[1] || '';
+                const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
+                const isDone = t.done === 'true';
+
+                html += `
+                    <div style="position: relative; margin-bottom: 24px;">
+                        <div style="position: absolute; left: -28px; top: 18px; width: 14px; height: 14px; border-radius: 50%; background: ${isDone ? '#8e8e93' : '#2da140'}; border: 4px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
+                        
+                        <div style="background: ${isDone ? '#f2f2f7' : '#fff'}; border: 1px solid ${isDone ? '#e5e5ea' : '#d1e7dd'}; border-left: 5px solid ${isDone ? '#8e8e93' : '#2da140'}; border-radius: 16px; padding: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); opacity: ${isDone ? '0.75' : '1'};">
+                            <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                ${!isAllDay ? `<div style="font-size: 13px; color: ${isDone ? '#8e8e93' : '#2da140'}; font-weight: 700;">🕒 ${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>` : '<div></div>'}
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight:600; color: ${isDone ? '#2da140' : '#8e8e93'}; background: #f0f0f0; padding: 4px 10px; border-radius: 20px;">
+                                    <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleMobileTaskDone('${t.id}', this.checked, '${dateStr}')" style="accent-color: #2da140; width: 16px; height: 16px;">
+                                    ${isDone ? 'Fait' : 'À faire'}
+                                </label>
+                            </div>
+                            <div style="font-weight: 700; font-size: 17px; color: #1c1c1e; text-decoration: ${isDone ? 'line-through' : 'none'};">${window.escapeHTML(mainTitle)}</div>
+                            
+                            ${desc ? `
+                            <button style="background: transparent; color: #007aff; font-weight: 600; border: none; padding: 12px 0 0 0; font-size: 14px; cursor: pointer;" onclick="openMobileTaskDetailModal('${window.escapeHTML(mainTitle)}', \`${window.escapeHTML(desc)}\`)">Voir détails</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        html += `
+                </div>
+            </div>
+        `;
+        document.getElementById('list-content').innerHTML = html;
+
+        window.openMobileTaskDetailModal = (title, desc) => {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.style.zIndex = "10000";
+            modal.innerHTML = `
+                <div class="modal-box" style="padding: 24px; border-radius: 28px; animation: modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); text-align: left;">
+                    <div style="font-weight: 800; font-size: 22px; margin-bottom: 8px; color: #1c1c1e;">Détails</div>
+                    <div style="font-weight: 700; color: #2da140; margin-bottom: 20px; font-size: 17px; line-height: 1.4; border-bottom: 1px solid #f2f2f7; padding-bottom: 12px;">${title}</div>
+                    
+                    <div style="background: #f2f2f7; padding: 20px; border-radius: 20px; color: #3a3a3c; font-size: 16px; line-height: 1.6; white-space: pre-wrap; max-height: 45vh; overflow-y: auto; text-align: left; min-height: 60px;">${desc}</div>
+                    
+                    <div style="margin-top: 24px;">
+                        <button class="btn" style="background: #1c1c1e; width: 100%; border-radius: 18px; padding: 16px; font-size: 17px;" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        };
+
+        window.toggleMobileTaskDone = async (taskId, isChecked, date) => {
+            try {
+                await api.updateTask(taskId, { done: isChecked ? 'true' : 'false' });
+                renderMobilePlanning(date);
+            } catch (e) {
+                alert("Erreur: " + e.message);
+            }
+        };
+
+    } catch (e) {
+        document.getElementById('list-content').innerHTML = `<div style="color:red; margin:20px; padding: 16px; background: #ffe5e5; border-radius: 12px; border: 1px solid #ffcccc;">Erreur: ${e.message}</div>`;
+    }
+};
 
 function showMobileRootFiles(docs) {
     mobileCurrentPath = "Autres"; // Fake path for UI
@@ -469,6 +606,7 @@ async function renderAdminView(session) {
             <nav id="admin-nav">
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -611,6 +749,521 @@ window.renderAdminAbout = async function () {
     `;
 };
 
+window.renderAdminPlanning = async function (mondayStr = null) {
+    if (window.planningRefreshInterval) clearInterval(window.planningRefreshInterval);
+    
+    // Auto-refresh every 15 seconds if we are on the planning page
+    window.planningRefreshInterval = setInterval(() => {
+        const navPlanning = document.getElementById('nav-planning');
+        if (navPlanning && navPlanning.classList.contains('active')) {
+            const currentMonday = document.querySelector('[data-monday]');
+            const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
+            renderAdminPlanning(mondayToUse);
+        } else {
+            clearInterval(window.planningRefreshInterval);
+        }
+    }, 15000);
+
+    adminCurrentFolder = null;
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('nav-planning').classList.add('active');
+
+    const content = document.getElementById('admin-content');
+    const existingContainer = document.getElementById('planning-fullscreen-container');
+    const isCurrentlyFullscreen = existingContainer && (!!document.fullscreenElement);
+    
+    if (!existingContainer) {
+        content.innerHTML = `<div style="display:flex; justify-content:center; padding: 40px;"><div class="loader" style="border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div></div>`;
+    }
+
+    // Compute Monday
+    let currentMonday;
+    if (mondayStr) {
+        currentMonday = new Date(mondayStr + 'T12:00:00');
+        // Force to Monday
+        const day = currentMonday.getDay();
+        const diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
+        currentMonday.setDate(diff);
+    } else {
+        const now = new Date();
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+        currentMonday = new Date(now.getFullYear(), now.getMonth(), diff);
+    }
+    const currentSunday = new Date(currentMonday);
+    currentSunday.setDate(currentMonday.getDate() + 6);
+
+    const pad = (n) => String(n).padStart(2, '0');
+    const startStr = `${currentMonday.getFullYear()}-${pad(currentMonday.getMonth() + 1)}-${pad(currentMonday.getDate())}`;
+    const endStr = `${currentSunday.getFullYear()}-${pad(currentSunday.getMonth() + 1)}-${pad(currentSunday.getDate())}`;
+
+    try {
+        const users = await api.listUsers();
+        let tasks = [];
+        try {
+            tasks = await api.getAdminTasks(startStr, endStr);
+        } catch (e) {
+            console.warn("Could not fetch tasks:", e);
+        }
+
+        const tasksByUserDate = {};
+        users.forEach(u => tasksByUserDate[u.id] = {});
+        tasks.forEach(t => {
+            if (!tasksByUserDate[t.user_id]) tasksByUserDate[t.user_id] = {};
+            if (!tasksByUserDate[t.user_id][t.date]) tasksByUserDate[t.user_id][t.date] = [];
+            tasksByUserDate[t.user_id][t.date].push(t);
+        });
+
+        const weekDays = [];
+        for (let i = 0; i < 7; i++) {
+            let d = new Date(currentMonday);
+            d.setDate(currentMonday.getDate() + i);
+            weekDays.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+        }
+
+        const formatShortDate = (dStr) => {
+            const d = new Date(dStr + 'T12:00:00');
+            const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+            return `${days[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
+        };
+
+        const displayStart = new Date(startStr + 'T12:00:00').toLocaleDateString('fr-FR');
+        const displayEnd = new Date(endStr + 'T12:00:00').toLocaleDateString('fr-FR');
+
+        if (!document.getElementById('planning-styles')) {
+            const style = document.createElement('style');
+            style.id = 'planning-styles';
+            style.innerHTML = `
+                .planning-inline { background: rgba(20,20,20,0.75) !important; color: white !important; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+                .planning-inline header { background: transparent !important; margin-bottom: 12px !important; padding: 16px 20px !important; border-bottom: none !important; }
+                .planning-inline header h1, .planning-inline header span { color: white !important; }
+                .planning-inline .p-grid-bg { background: rgba(0,0,0,0.35) !important; border: 1px solid var(--border) !important; border-radius: 8px; }
+                .planning-inline .p-head { background: #2a2a2a !important; color: white !important; border-top:none; border-bottom: 1px solid var(--border) !important; }
+                .planning-inline .p-user { background: #202020 !important; color: white !important; border-bottom: 1px solid var(--border) !important; }
+                .planning-inline .p-cell { border-color: rgba(255,255,255,0.05) !important; border-right: 1px solid rgba(255,255,255,0.05) !important; }
+                .planning-inline .p-task { border-left: 3px solid var(--primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05); }
+                .planning-inline .p-task-title { color: white !important; }
+                .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border: 1px dashed rgba(255,255,255,0.2) !important; }
+                .planning-inline .p-add-btn:hover { background: rgba(255,255,255,0.1) !important; color: white !important; }
+                
+                /* ===== FULLSCREEN: TV / Wall Display Mode ===== */
+                .planning-fullscreen { background: #0a0f0a !important; color: white !important; }
+
+                /* Header: green branded bar */
+                .planning-fullscreen header {
+                    background: linear-gradient(135deg, #1a3a1f 0%, #0d1f10 100%) !important;
+                    border-bottom: 3px solid #2da140 !important;
+                    margin-bottom: 0 !important;
+                    padding: 20px 50px !important;
+                    box-shadow: 0 4px 30px rgba(45, 161, 64, 0.15) !important;
+                }
+                .planning-fullscreen header h1 { font-size: 28px !important; color: #2da140 !important; letter-spacing: 1px; }
+                .planning-fullscreen header span { font-size: 22px !important; color: rgba(255,255,255,0.9) !important; }
+                .planning-fullscreen .p-header-controls { display: none !important; }
+
+                /* Grid container fills 100% height */
+                .planning-fullscreen #planning-scroll-area { padding: 0 !important; }
+                .planning-fullscreen .p-grid-bg {
+                    background: transparent !important;
+                    border: none !important;
+                    border-radius: 0 !important;
+                    height: 100% !important;
+                }
+
+                /* Column headers: dark green */
+                .planning-fullscreen .p-head {
+                    background: linear-gradient(180deg, #152a18, #0d1f10) !important;
+                    color: #7be892 !important;
+                    border-color: rgba(45,161,64,0.3) !important;
+                    font-size: 20px !important;
+                    font-weight: 700 !important;
+                    padding: 16px 0 !important;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                    border-bottom: 2px solid rgba(45,161,64,0.4) !important;
+                    border-right: 1px solid rgba(45,161,64,0.15) !important;
+                }
+
+                /* User name rows */
+                .planning-fullscreen .p-user {
+                    background: linear-gradient(90deg, #111, #0d0d0d) !important;
+                    color: white !important;
+                    border-color: rgba(45,161,64,0.15) !important;
+                    font-size: 18px !important;
+                    font-weight: 700 !important;
+                    padding: 14px 20px !important;
+                    border-bottom: 1px solid rgba(45,161,64,0.2) !important;
+                }
+
+                /* Day cells */
+                .planning-fullscreen .p-cell {
+                    border-color: rgba(45,161,64,0.1) !important;
+                    border-right: 1px solid rgba(45,161,64,0.1) !important;
+                    border-bottom: 1px solid rgba(45,161,64,0.15) !important;
+                    padding: 4px 6px !important;
+                    background: rgba(0,0,0,0.15) !important;
+                }
+                /* Black scrollbar (for the main container) */
+                #planning-scroll-area::-webkit-scrollbar { width: 8px; }
+                #planning-scroll-area::-webkit-scrollbar-track { background: #0a0f0a; }
+                #planning-scroll-area::-webkit-scrollbar-thumb { background: #2da14033; border-radius: 4px; }
+                #planning-scroll-area::-webkit-scrollbar-thumb:hover { background: #2da14066; }
+
+                /* Task cards: user-colored, compact */
+                .planning-fullscreen .p-task {
+                    border-left: 4px solid currentColor !important;
+                    border-right: none !important;
+                    border-top: none !important;
+                    border-bottom: none !important;
+                    padding: 5px 8px !important;
+                    margin-bottom: 4px !important;
+                    border-radius: 4px !important;
+                    box-shadow: 0 1px 6px rgba(0,0,0,0.25) !important;
+                }
+                .planning-fullscreen .p-task-title { color: white !important; font-size: 13px !important; font-weight: 600 !important; line-height: 1.3 !important; }
+                .planning-fullscreen .p-task-time { font-size: 11px !important; font-weight: 700 !important; margin-bottom: 2px !important; color: rgba(255,255,255,0.85) !important; }
+                .planning-fullscreen .p-add-btn { display: none !important; }
+                .planning-fullscreen .p-task button { display: none !important; }
+                .planning-fullscreen .p-reorder-controls { display: none !important; }
+                
+                /* Reorder buttons (inline mode only) */
+                .p-reorder-btn {
+                    background: rgba(255,255,255,0.08);
+                    border: none;
+                    color: rgba(255,255,255,0.5);
+                    font-size: 9px;
+                    line-height: 1;
+                    padding: 2px 5px;
+                    cursor: pointer;
+                    border-radius: 3px;
+                    transition: 0.15s;
+                }
+                .p-reorder-btn:hover { background: rgba(255,255,255,0.2); color: white; }
+            `;
+            document.head.appendChild(style);
+        }
+
+        const userCount = users.length || 1;
+
+        // Sort users by saved order
+        const savedOrder = JSON.parse(localStorage.getItem('planning_user_order') || '[]');
+        if (savedOrder.length > 0) {
+            users.sort((a, b) => {
+                const ia = savedOrder.indexOf(a.id);
+                const ib = savedOrder.indexOf(b.id);
+                // Users not in savedOrder go to the end
+                return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+            });
+        }
+        // Save current order (including any new users)
+        localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
+
+        let headerHTML = `
+                <header style="z-index: 100; display: flex; align-items: center; justify-content: space-between;">
+                    <h1 style="margin: 0; display:flex; align-items:center; gap: 15px; font-size: 20px;">
+                        📅 Planning Semaine
+                    </h1>
+                    <div style="display:flex; gap: 12px; align-items:center;">
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)">◀</button>
+                        <span style="font-weight:600; font-size: 14px;">Du ${displayStart} au ${displayEnd}</span>
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)">▶</button>
+                    </div>
+                    <div class="p-header-controls" style="display:flex; gap: 12px;">
+                        <button class="btn-sm btn-secondary" onclick="autoSortPlanningUsers('${startStr}')" title="Trier par nombre de tâches">⇅ Tri auto</button>
+                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Nouvelle Tâche</button>
+                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ Plein Écran</button>
+                    </div>
+                </header>
+        `;
+
+        let gridHTML = `
+                <div id="planning-scroll-area" style="flex: 1; overflow-y: auto; overflow-x: auto; padding: ${isCurrentlyFullscreen ? '0 40px 20px 40px' : '0 20px 20px 20px'};">
+                    <div class="p-grid-bg" style="display: grid; grid-template-columns: 200px repeat(7, minmax(130px, 1fr)); grid-template-rows: auto repeat(${userCount}, minmax(min-content, 1fr));">
+                        <div class="p-head" style="padding: 10px; font-weight:bold; position: sticky; top: 0; left: 0; z-index: 4; border-right: 1px solid; border-bottom: 1px solid;">
+                            Collaborateur
+                        </div>
+                        ${weekDays.map(d => {
+                            const isToday = d === new Date().toISOString().split('T')[0];
+                            const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.25) !important; color: #fff !important; border-bottom: 2px solid #2da140 !important;' : '';
+                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 3; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
+                        }).join('')}
+        `;
+
+        let rowsHTML = '';
+        users.forEach((u, idx) => {
+            const userName = (u.first_name || '') + ' ' + (u.last_name || '');
+            const displayedName = userName.trim() || u.email;
+            const safeName = window.escapeHTML(displayedName);
+            const userColor = u.color ? u.color : '#2da140';
+
+            const upBtn = idx > 0 ? `<button class="p-reorder-btn" onclick="reorderPlanningUser(${idx}, ${idx - 1}, '${startStr}')" title="Monter">▲</button>` : '';
+            const downBtn = idx < users.length - 1 ? `<button class="p-reorder-btn" onclick="reorderPlanningUser(${idx}, ${idx + 1}, '${startStr}')" title="Descendre">▼</button>` : '';
+
+            rowsHTML += '<div class="p-user" style="padding: 8px 12px; font-weight:600; font-size: 13px; display: flex; align-items: center; gap: 6px; border-right: 1px solid; border-bottom: 1px solid; position: sticky; left: 0; z-index: 2; border-left: 4px solid ' + userColor + ' !important; background: linear-gradient(90deg, ' + userColor + '15, transparent);">';
+            rowsHTML += '<span style="flex:1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="' + safeName + '">' + safeName + '</span>';
+            rowsHTML += '<span class="p-reorder-controls" style="display:flex; flex-direction:column; gap:1px; margin-left: auto;">' + upBtn + downBtn + '</span>';
+            rowsHTML += '</div>';
+
+            weekDays.forEach(d => {
+                const isToday = d === new Date().toISOString().split('T')[0];
+                const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.08) !important;' : '';
+                const rawTasks = (tasksByUserDate[u.id] && tasksByUserDate[u.id][d]) ? tasksByUserDate[u.id][d] : [];
+                // Tri: Tâches non faites en haut, faites en bas
+                const dayTasks = [...rawTasks].sort((a, b) => {
+                    const doneA = a.done === 'true' ? 1 : 0;
+                    const doneB = b.done === 'true' ? 1 : 0;
+                    return doneA - doneB;
+                });
+
+                rowsHTML += `<div class="p-cell" style="padding: 4px; border-bottom: 1px solid; min-height: 50px; display: flex; flex-direction: column; gap: 4px; position:relative; ${todayStyle}">`;
+
+                dayTasks.forEach(t => {
+                    const parsedTitle = t.title.split(':::DESC:::')[0];
+                    const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
+                    const isDone = t.done === 'true';
+                    let timeHtml = '';
+                    if (!isAllDay) {
+                        timeHtml = `<div class="p-task-time" style="font-size: 10px; font-weight:bold; margin-bottom: 2px;">${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>`;
+                    }
+                    rowsHTML += `
+                        <div class="p-task" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; position: relative; border-left: 4px solid ${userColor} !important; color: ${userColor}; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
+                            ${timeHtml}
+                            <div class="p-task-title" style="font-size: 11px; font-weight: 500; word-break: break-word; line-height: 1.2; ${isDone ? 'text-decoration: line-through;' : ''}">${window.escapeHTML(parsedTitle)}</div>
+                            <button class="btn-sm" style="position: absolute; top: 0px; right: 2px; background: transparent; border:none; color: #ff6b6b; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="deleteAdminTask('${t.id}', '${startStr}')" title="Supprimer">×</button>
+                        </div>
+                    `;
+                });
+
+                rowsHTML += `<button class="p-add-btn" style="margin-top:auto; border-radius: 4px; cursor: pointer; padding: 2px; font-size: 11px; width: 100%; transition: 0.2s;" onclick="openNewTaskModal('${d}', '${u.id}', '${startStr}')">+ Ajouter</button>`;
+                rowsHTML += `</div>`;
+            });
+        });
+
+        rowsHTML += `
+                    </div>
+                </div>
+        `;
+        
+        const finalContent = headerHTML + gridHTML + rowsHTML;
+
+        if (existingContainer) {
+            existingContainer.setAttribute('data-monday', startStr);
+            // Don't replace the element, just its content to keep fullscreen alive
+            existingContainer.innerHTML = finalContent;
+        } else {
+            content.innerHTML = `
+                <div id="planning-fullscreen-container" class="planning-inline" data-monday="${startStr}" style="height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; border-radius: 8px; transition: 0.3s;">
+                    ${finalContent}
+                </div>
+            `;
+        }
+
+    } catch (e) {
+        content.innerHTML = `<div style="color:var(--danger); padding:20px;">Erreur lors du chargement du planning : ${e.message}</div>`;
+    }
+};
+
+window.reorderPlanningUser = function (fromIndex, toIndex, weekStartStr) {
+    const order = JSON.parse(localStorage.getItem('planning_user_order') || '[]');
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= order.length || toIndex >= order.length) return;
+    // Swap
+    const tmp = order[fromIndex];
+    order[fromIndex] = order[toIndex];
+    order[toIndex] = tmp;
+    localStorage.setItem('planning_user_order', JSON.stringify(order));
+    renderAdminPlanning(weekStartStr);
+};
+
+window.autoSortPlanningUsers = async function (weekStartStr) {
+    try {
+        const users = await api.listUsers();
+        // Compute week range
+        const monday = new Date(weekStartStr + 'T12:00:00');
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        const pad = (n) => String(n).padStart(2, '0');
+        const startStr = `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
+        const endStr = `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`;
+
+        let tasks = [];
+        try { tasks = await api.getAdminTasks(startStr, endStr); } catch (e) { }
+
+        // Count tasks per user
+        const taskCount = {};
+        users.forEach(u => taskCount[u.id] = 0);
+        tasks.forEach(t => { taskCount[t.user_id] = (taskCount[t.user_id] || 0) + 1; });
+
+        // Sort by task count descending
+        users.sort((a, b) => (taskCount[b.id] || 0) - (taskCount[a.id] || 0));
+
+        localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
+        renderAdminPlanning(weekStartStr);
+    } catch (e) {
+        alert("Erreur tri automatique: " + e.message);
+    }
+};
+
+window.changePlanningWeek = function (currentMondayStr, offsetDays) {
+    // Parse as local date (add T12:00 to avoid UTC midnight issues)
+    const d = new Date(currentMondayStr + 'T12:00:00');
+    d.setDate(d.getDate() + offsetDays);
+    // Force recalculate to Monday of that week
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    renderAdminPlanning(`${yyyy}-${mm}-${dd}`);
+};
+
+window.togglePlanningFullscreen = function () {
+    const el = document.getElementById('planning-fullscreen-container');
+    const scrollArea = document.getElementById('planning-scroll-area');
+    if (!document.fullscreenElement) {
+        el.classList.remove('planning-inline');
+        el.classList.add('planning-fullscreen');
+        if (scrollArea) scrollArea.style.padding = '0 40px 20px 40px';
+        el.requestFullscreen().catch(err => {
+            alert(`Erreur plein écran: ${err.message}`);
+        });
+    } else {
+        document.exitFullscreen();
+    }
+};
+
+// Listen for fullscreen exit to restore padding safely
+document.addEventListener('fullscreenchange', () => {
+    const el = document.getElementById('planning-fullscreen-container');
+    const scrollArea = document.getElementById('planning-scroll-area');
+    if (el && !document.fullscreenElement) {
+        el.classList.remove('planning-fullscreen');
+        el.classList.add('planning-inline');
+        if (scrollArea) scrollArea.style.padding = '0 20px 20px 20px'; // restore
+    }
+});
+
+window.deleteAdminTask = async function (taskId, currentWeekStartStr) {
+    try {
+        await api.deleteAdminTask(taskId);
+        renderAdminPlanning(currentWeekStartStr);
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.openNewTaskModal = async function (defaultDateStr, prefillUserId = '', currentWeekStartStr = null) {
+    const refWeek = currentWeekStartStr || defaultDateStr;
+    try {
+        const users = await api.listUsers();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.id = 'new-task-modal';
+        overlay.innerHTML = `
+            <div class="modal-box" style="width: 480px;">
+                <div class="modal-header">Nouvelle Tâche</div>
+                <form id="new-task-form" onsubmit="event.preventDefault(); submitNewTask('${refWeek}')">
+                    <div style="display: flex; gap: 16px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Date de début</label>
+                            <input type="date" class="form-input" id="task-date" required value="${defaultDateStr}" onchange="document.getElementById('task-date-end').value = this.value">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Date de fin</label>
+                            <input type="date" class="form-input" id="task-date-end" required value="${defaultDateStr}">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Salarié Assigné</label>
+                        <select class="form-input" id="task-user-id" required>
+                            <option value="">-- Choisir un salarié --</option>
+                            ${users.map(u => `<option value="${u.id}" ${u.id === prefillUserId ? 'selected' : ''}>${window.escapeHTML(u.first_name || '')} ${window.escapeHTML(u.last_name || '')}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Titre de la tâche</label>
+                        <input type="text" class="form-input" id="task-title" required placeholder="Ex: Intervention chez M. Dupont" maxlength="38">
+                    </div>
+                    <div class="form-group">
+                        <label>Description détaillée (Optionnelle, visible par le contacté sur mobile)</label>
+                        <textarea class="form-input" id="task-desc" rows="2" placeholder="Saisissez des instructions complémentaires..."></textarea>
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                        <input type="checkbox" id="task-has-time" style="width:16px; height:16px;" onchange="document.getElementById('task-time-container').style.display = this.checked ? 'flex' : 'none'">
+                        <label for="task-has-time" style="margin:0; font-weight:normal; cursor:pointer;">Définir des horaires précis</label>
+                    </div>
+                    <div id="task-time-container" style="display: none; gap: 16px; margin-bottom: 16px;">
+                        <div class="form-group" style="flex:1; margin-bottom:0;">
+                            <label>Heure de début</label>
+                            <input type="time" class="form-input" id="task-start" value="09:00">
+                        </div>
+                        <div class="form-group" style="flex:1; margin-bottom:0;">
+                            <label>Heure de fin</label>
+                            <input type="time" class="form-input" id="task-end" value="10:00">
+                        </div>
+                    </div>
+                     <div class="modal-actions" style="margin-top: 24px;">
+                        <button type="button" class="btn-secondary" onclick="closeModal('new-task-modal')">Annuler</button>
+                        <button type="submit" class="btn-primary">Ajouter</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.submitNewTask = async function (refWeekStr) {
+    const userId = document.getElementById('task-user-id').value;
+    const taskDateStr = document.getElementById('task-date').value;
+    const taskDateEndStr = document.getElementById('task-date-end').value;
+    const titleMain = document.getElementById('task-title').value.trim();
+    const desc = document.getElementById('task-desc').value.trim();
+    const title = desc ? titleMain + ':::DESC:::' + desc : titleMain;
+    const hasTime = document.getElementById('task-has-time').checked;
+
+    let startTime = "00:00";
+    let endTime = "00:00";
+
+    if (hasTime) {
+        startTime = document.getElementById('task-start').value;
+        endTime = document.getElementById('task-end').value;
+        if (!startTime || !endTime) return alert("Veuillez remplir les horaires.");
+    }
+
+    if (!userId || !taskDateStr || !taskDateEndStr || !title) return alert("Veuillez remplir tous les champs.");
+
+    const startDate = new Date(taskDateStr);
+    const endDate = new Date(taskDateEndStr);
+    if (endDate < startDate) return alert("La date de fin ne peut pas être avant la date de début.");
+
+    const promises = [];
+    const current = new Date(startDate);
+
+    // Build array of promises and execute parallelly
+    while (current <= endDate) {
+        promises.push(api.saveAdminTask({
+            user_id: userId,
+            title: title,
+            date: current.toISOString().split('T')[0],
+            start_time: startTime + ":00",
+            end_time: endTime + ":00"
+        }));
+        current.setDate(current.getDate() + 1);
+    }
+
+    try {
+        await Promise.all(promises);
+        closeModal('new-task-modal');
+        renderAdminPlanning(refWeekStr);
+    } catch (e) {
+        alert("Erreur lors de l'ajout: " + e.message);
+    }
+};
+
 window.renderAdminUsers = async function () {
     adminCurrentFolder = null; // Clear folder view state
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
@@ -630,29 +1283,30 @@ window.renderAdminUsers = async function () {
                 </div>
             </header>
 
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Prénom</th>
-                            <th>Nom</th>
-                            <th>Email</th>
-                            <th>Rôle</th>
-                            <th>Date Création</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${users.map(u => {
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Prénom</th>
+                                <th>Nom</th>
+                                <th>Email</th>
+                                <th>Rôle</th>
+                                <th>Date Création</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${users.map(u => {
             const safeFirstName = window.escapeHTML(u.first_name || '-');
             const safeLastName = window.escapeHTML(u.last_name || '-');
             const safeEmail = window.escapeHTML(u.email);
             const jsFirstName = (u.first_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const jsLastName = (u.last_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const jsEmail = (u.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const userColor = u.color ? u.color : '#2da140';
             return `
                             <tr>
-                                <td>${safeFirstName}</td>
+                                <td><div style="display:flex; align-items:center; gap:8px;"><div style="width:12px; height:12px; border-radius:50%; background-color:${userColor};" title="Couleur Planning"></div> ${safeFirstName}</div></td>
                                 <td>${safeLastName}</td>
                                 <td>${safeEmail}</td>
                                 <td>
@@ -666,7 +1320,7 @@ window.renderAdminUsers = async function () {
                                 </td>
                                 <td>${new Date(u.created_at).toLocaleDateString()}</td>
                                 <td>
-                                    <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}')" title="Modifier le nom">✏️ Editer</button>
+                                    <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${userColor}')" title="Modifier le nom">✏️ Editer</button>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
                     ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
                                            <span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
@@ -676,10 +1330,10 @@ window.renderAdminUsers = async function () {
                                 </td>
                             </tr>
                         `}).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
+                        </tbody>
+                    </table>
+                </div>
+            `;
     } catch (e) {
         content.innerHTML = `<div style="color:red">Erreur chargement utilisateurs: ${e.message}</div>`;
     }
@@ -733,7 +1387,7 @@ window.openNewUserModal = function () {
                 <button class="btn-primary" onclick="createNewUser()">Créer / Envoyer</button>
             </div>
         </div>
-    `;
+            `;
     document.body.appendChild(overlay);
 };
 
@@ -812,7 +1466,7 @@ window.openAdminChangePasswordModal = function (id, firstName, lastName, email) 
     overlay.className = 'modal-overlay';
     overlay.id = 'admin-change-password-modal';
 
-    const displayName = (firstName && lastName) ? `${firstName} ${lastName}` : email;
+    const displayName = (firstName && lastName) ? `${firstName} ${lastName} ` : email;
 
     overlay.innerHTML = `
         <div class="modal-box">
@@ -911,7 +1565,7 @@ window.showPromptModal = function (title, defaultValue, onConfirm) {
 window.deleteUser = function (id, email) {
     showConfirmModal(
         "Confirmer la suppression",
-        `Voulez-vous vraiment supprimer l'utilisateur <b>${email}</b> ?<br>Cette action est irréversible.`,
+        `Voulez - vous vraiment supprimer l'utilisateur <b>${email}</b> ?<br>Cette action est irréversible.`,
         async () => {
             try {
                 await api.deleteUser(id);
@@ -927,7 +1581,7 @@ window.deleteUser = function (id, email) {
     );
 };
 
-window.openEditUserModal = function (id, firstName, lastName) {
+window.openEditUserModal = function (id, firstName, lastName, color = '#2da140') {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'edit-user-modal';
@@ -939,11 +1593,18 @@ window.openEditUserModal = function (id, firstName, lastName) {
             <div style="display: flex; gap: 16px;">
                 <div class="form-group" style="flex: 1;">
                     <label>Prénom</label>
-                    <input type="text" class="form-input" id="edit-user-firstname" value="${firstName.replace(/"/g, '&quot;')}">
+                    <input type="text" class="form-input" id="edit-user-firstname" value="${firstName.replace(/"/g, '&quot;').replace(/^-$/, '')}">
                 </div>
                 <div class="form-group" style="flex: 1;">
                     <label>Nom</label>
-                    <input type="text" class="form-input" id="edit-user-lastname" value="${lastName.replace(/"/g, '&quot;')}">
+                    <input type="text" class="form-input" id="edit-user-lastname" value="${lastName.replace(/"/g, '&quot;').replace(/^-$/, '')}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Couleur (Planning)</label>
+                <div style="display:flex; align-items:center; gap: 12px; background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px;">
+                    <input type="color" id="edit-user-color" value="${color}" style="width: 40px; height: 40px; border:none; background:transparent; cursor:pointer;">
+                    <span style="color:var(--text-secondary); font-size: 13px;">S'applique aux tâches et à la case de ce salarié.</span>
                 </div>
             </div>
             <div class="modal-actions">
@@ -958,16 +1619,18 @@ window.openEditUserModal = function (id, firstName, lastName) {
 window.updateUserProfileName = async function (id) {
     const firstName = document.getElementById('edit-user-firstname').value.trim();
     const lastName = document.getElementById('edit-user-lastname').value.trim();
+    const color = document.getElementById('edit-user-color').value;
 
     try {
         await api.updateUserProfile(id, firstName, lastName);
+        await api.updateUserColor(id, color);
+
         showSuccessModal("Profil mis à jour avec succès.");
         closeModal('edit-user-modal');
         // Non-blocking refresh
         renderAdminUsers();
 
-        // If it's our own session, let's refresh page to update the Name in sidebar? Or just let it be.
-        // Doing a simple replace is fine. 
+        // If it's our own session, update sidebar
         if (currentAdminSession && currentAdminSession.user.id === id) {
             document.getElementById('admin-welcome-name').textContent = `${firstName} ${lastName}`;
         }

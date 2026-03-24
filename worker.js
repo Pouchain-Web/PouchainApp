@@ -15,7 +15,7 @@ export default {
         // CORS Headers
         const corsHeaders = {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, PUT, POST, DELETE, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, PUT, POST, DELETE, PATCH, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, x-worker-secret, Authorization",
         };
 
@@ -395,7 +395,8 @@ export default {
                         created_at: u.created_at,
                         role: profile ? profile.role : 'user',
                         first_name: profile ? profile.first_name : null,
-                        last_name: profile ? profile.last_name : null
+                        last_name: profile ? profile.last_name : null,
+                        color: profile ? profile.color : '#2da140'
                     };
                 });
 
@@ -618,11 +619,11 @@ export default {
                 return new Response(JSON.stringify({ message: "Profile updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            // 2f. Update User Preferences (PUT /admin/users/preferences)
-            if (method === "PUT" && url.pathname.endsWith("/admin/users/preferences")) {
+            // 2f. Update User Color (PUT /admin/users/color)
+            if (method === "PUT" && url.pathname.endsWith("/admin/users/color")) {
                 const body = await request.json();
-                const { id, preferences } = body;
-                if (!id || !preferences) return new Response("Missing id or preferences", { status: 400, headers: corsHeaders });
+                const { id, color } = body;
+                if (!id || !color) return new Response("Missing id or color", { status: 400, headers: corsHeaders });
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
@@ -635,12 +636,12 @@ export default {
                         "Content-Type": "application/json",
                         "Prefer": "return=minimal"
                     },
-                    body: JSON.stringify({ preferences }) // Update the preferences JSONB column
+                    body: JSON.stringify({ color }) // Update the color column
                 });
 
                 if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
 
-                return new Response(JSON.stringify({ message: "Preferences updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                return new Response(JSON.stringify({ message: "Color updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // 3. Delete User (DELETE /admin/users)
@@ -677,6 +678,144 @@ export default {
                 if (!delRes.ok) return new Response(await delRes.text(), { status: delRes.status, headers: corsHeaders });
 
                 return new Response(JSON.stringify({ message: "User deleted" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: PLANNING (Admin) ---
+
+            // 1. Get all tasks (Admin)
+            if (method === "GET" && url.pathname.endsWith("/admin/tasks")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const { searchParams } = new URL(request.url);
+                const startDate = searchParams.get('start_date');
+                const endDate = searchParams.get('end_date');
+                const dateParam = searchParams.get('date');
+                
+                const today = new Date().toISOString().split('T')[0];
+
+                // Auto-carry forward: Move overdue unfinished tasks to today
+                try {
+                    const overdueUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${today}&done=neq.true`;
+                    const resOverdue = await fetch(overdueUrl, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (resOverdue.ok) {
+                        const overdue = await resOverdue.json();
+                        for (const ot of overdue) {
+                            await fetch(`${supabaseUrl}/rest/v1/tasks?id=eq.${ot.id}`, {
+                                method: "PATCH",
+                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({ date: today })
+                            });
+                        }
+                    }
+                } catch(e) {}
+
+                let queryUrl = `${supabaseUrl}/rest/v1/tasks?select=*`;
+                if (startDate && endDate) {
+                    queryUrl += `&date=gte.${startDate}&date=lte.${endDate}`;
+                } else if (dateParam) {
+                    queryUrl += `&date=eq.${dateParam}`;
+                }
+                queryUrl += `&order=date.asc,start_time.asc`;
+
+                const response = await fetch(queryUrl, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!response.ok) return new Response(await response.text(), { status: response.status, headers: corsHeaders });
+                return new Response(await response.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // 2. Create/Update task (Admin)
+            if (method === "POST" && url.pathname.endsWith("/admin/tasks")) {
+                const body = await request.json();
+                const { id, user_id, title, date, start_time, end_time, done } = body;
+                if (!user_id || !title || !date || !start_time || !end_time) {
+                    return new Response("Missing required fields", { status: 400, headers: corsHeaders });
+                }
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const payload = { user_id, title, date, start_time, end_time, done };
+                if (id) payload.id = id;
+
+                const updateRes = await fetch(`${supabaseUrl}/rest/v1/tasks`, {
+                    method: "POST",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates"
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ message: "Task saved" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // 3. Delete task (Admin)
+            if (method === "DELETE" && url.pathname.endsWith("/admin/tasks")) {
+                const body = await request.json();
+                const { id } = body;
+                if (!id) return new Response("Missing task ID", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const delRes = await fetch(`${supabaseUrl}/rest/v1/tasks?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!delRes.ok) return new Response(await delRes.text(), { status: delRes.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ message: "Task deleted" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: PLANNING (User Mobile) ---
+            if (method === "GET" && url.pathname.endsWith("/tasks")) {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const { searchParams } = new URL(request.url);
+                const date = searchParams.get('date'); // optional
+
+                let queryUrl = `${supabaseUrl}/rest/v1/tasks?user_id=eq.${user.id}&select=*`;
+                if (date) queryUrl += `&date=eq.${date}`;
+                queryUrl += `&order=date.asc,start_time.asc`;
+
+                const response = await fetch(queryUrl, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!response.ok) return new Response(await response.text(), { status: response.status, headers: corsHeaders });
+                return new Response(await response.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // 4. Update task completion (User Mobile)
+            if (method === "PATCH" && url.pathname.endsWith("/tasks")) {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { id, done } = body;
+                if (!id) return new Response("Missing task ID", { status: 400, headers: corsHeaders });
+                
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                
+                // Update only if task belongs to user
+               const updateRes = await fetch(`${supabaseUrl}/rest/v1/tasks?id=eq.${id}&user_id=eq.${user.id}`, {
+                   method: "PATCH",
+                   headers: {
+                       "apikey": serviceKey,
+                       "Authorization": `Bearer ${serviceKey}`,
+                       "Content-Type": "application/json",
+                       "Prefer": "return=minimal"
+                   },
+                   body: JSON.stringify({ done })
+               });
+
+               if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
+               return new Response(JSON.stringify({ message: "Task updated" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // 404
