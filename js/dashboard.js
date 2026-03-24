@@ -641,11 +641,10 @@ window.openNewUserModal = function () {
                 <input type="email" class="form-input" id="new-user-email" placeholder="email@exemple.com">
             </div>
 
-            <div id="manual-fields">
-                <div class="form-group">
-                    <label>Mot de passe</label>
-                    <input type="password" class="form-input" id="new-user-password" placeholder="Minimum 6 caractères">
-                </div>
+            <div id="manual-fields" style="background:var(--bg-secondary, #f3f4f6); padding:12px; border-radius:6px; margin-bottom:16px; font-size:13px; text-align:left;">
+                <b style="color:var(--text-primary, #333);">Mot de passe par défaut :</b><br>
+                Le mot de passe généré pour ce compte sera <b>123456</b>.<br>
+                L'utilisateur sera obligé de le changer lors de sa toute première connexion à l'application.
             </div>
 
              <div class="form-group">
@@ -703,12 +702,10 @@ window.createNewUser = async function () {
         console.log("Sending Invite with Redirect To:", redirectTo);
 
         if (mode === 'manual') {
-            const password = document.getElementById('new-user-password').value;
-            if (!password) return alert("Veuillez remplir le mot de passe.");
-            if (password.length < 6) return alert("Mot de passe trop court (min 6).");
+            const password = "123456";
 
             await api.createUser(email, password, role, firstName, lastName);
-            showSuccessModal("Utilisateur créé avec succès !");
+            showSuccessModal("Utilisateur créé avec succès !<br><br><span style='font-size:14.5px;color:rgba(100,100,100,0.9); font-weight:normal;'>Le mot de passe temporaire de l'utilisateur est <b>123456</b>.<br>Il sera invité à le changer dès sa première connexion.</span>");
         } else {
             await api.inviteUser(email, role, redirectTo, firstName, lastName);
             showSuccessModal("Invitation envoyée avec succès !");
