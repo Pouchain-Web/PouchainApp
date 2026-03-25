@@ -342,7 +342,8 @@ export const api = {
 
     // --- Material Request Management ---
     async getMaterialRequests(userId = null) {
-        let url = `${config.api.workerUrl}${userId ? '/material/requests' : '/admin/material/requests'}`;
+        const role = await auth.getUserRole();
+        const url = `${config.api.workerUrl}${role === 'admin' ? '/admin/material/requests' : '/material/requests'}`;
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

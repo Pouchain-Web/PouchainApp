@@ -35,7 +35,7 @@ export default {
             }
 
             // Check Admin for /admin/ routes
-            if (url.pathname.includes('/admin/')) {
+            if (url.pathname.startsWith('/admin/')) {
                 const admin = await isAdmin(user, env);
                 if (!admin) {
                     return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
@@ -873,7 +873,7 @@ export default {
             }
 
             // --- ROUTE: MATERIAL REQUESTS (Admin) ---
-            if (method === "GET" && url.pathname.endsWith("/admin/material/requests")) {
+            if (method === "GET" && url.pathname === "/admin/material/requests") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_requests?select=*,profiles(first_name,last_name)&order=created_at.desc`, {
@@ -883,7 +883,7 @@ export default {
                 return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            if (method === "PATCH" && url.pathname.endsWith("/admin/material/requests")) {
+            if (method === "PATCH" && url.pathname === "/admin/material/requests") {
                 const body = await request.json();
                 const { id, status } = body;
                 if (!id || !status) return new Response("Missing id or status", { status: 400, headers: corsHeaders });
@@ -898,7 +898,7 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            if (method === "DELETE" && url.pathname.endsWith("/admin/material/requests")) {
+            if (method === "DELETE" && url.pathname === "/admin/material/requests") {
                 const body = await request.json();
                 const { id } = body;
                 if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
@@ -930,7 +930,7 @@ export default {
             }
 
             // --- ROUTE: MATERIAL CATEGORIES (Public for Authenticated Users) ---
-            if (method === "GET" && url.pathname.endsWith("/material/categories")) {
+            if (method === "GET" && url.pathname === "/material/categories") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
@@ -941,7 +941,7 @@ export default {
             }
 
             // --- ROUTE: MATERIAL CATEGORIES (Admin - Same as above but prefixed) ---
-            if (method === "GET" && url.pathname.endsWith("/admin/material/categories")) {
+            if (method === "GET" && url.pathname === "/admin/material/categories") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
@@ -1127,7 +1127,7 @@ export default {
             }
 
             // --- ROUTE: MATERIAL REQUESTS (User Mobile) ---
-            if (method === "GET" && url.pathname.endsWith("/material/requests")) {
+            if (method === "GET" && url.pathname === "/material/requests") {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
@@ -1138,7 +1138,7 @@ export default {
                 return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            if (method === "POST" && url.pathname.endsWith("/material/requests")) {
+            if (method === "POST" && url.pathname === "/material/requests") {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
                 const body = await request.json();
                 const { material_name, comment, category, image_path } = body;
