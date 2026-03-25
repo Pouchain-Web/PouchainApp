@@ -1063,13 +1063,13 @@ window.renderAdminPlanning = async function (mondayStr = null) {
         let gridHTML = `
                 <div id="planning-scroll-area" style="flex: 1; overflow-y: auto; overflow-x: auto; padding: ${isCurrentlyFullscreen ? '0 40px 20px 40px' : '0 20px 20px 20px'};">
                     <div class="p-grid-bg" style="display: grid; grid-template-columns: 200px repeat(7, minmax(130px, 1fr)); grid-template-rows: auto repeat(${userCount}, minmax(min-content, 1fr));">
-                        <div class="p-head" style="padding: 10px; font-weight:bold; position: sticky; top: 0; left: 0; z-index: 4; border-right: 1px solid; border-bottom: 1px solid;">
+                        <div class="p-head" style="padding: 10px; font-weight:bold; position: sticky; top: 0; left: 0; z-index: 11; border-right: 1px solid; border-bottom: 1px solid; background: inherit;">
                             Collaborateur
                         </div>
                         ${weekDays.map(d => {
                             const isToday = d === new Date().toISOString().split('T')[0];
-                            const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.25) !important; color: #fff !important; border-bottom: 2px solid #2da140 !important;' : '';
-                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 3; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
+                            const todayStyle = isToday ? 'background-color: #264d2e !important; color: #fff !important; border-bottom: 2px solid #2da140 !important;' : 'background: inherit;';
+                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
                         }).join('')}
         `;
 
@@ -1083,7 +1083,7 @@ window.renderAdminPlanning = async function (mondayStr = null) {
             const upBtn = idx > 0 ? `<button class="p-reorder-btn" onclick="reorderPlanningUser(${idx}, ${idx - 1}, '${startStr}')" title="Monter">▲</button>` : '';
             const downBtn = idx < users.length - 1 ? `<button class="p-reorder-btn" onclick="reorderPlanningUser(${idx}, ${idx + 1}, '${startStr}')" title="Descendre">▼</button>` : '';
 
-            rowsHTML += '<div class="p-user" style="padding: 8px 12px; font-weight:600; font-size: 13px; display: flex; align-items: center; gap: 6px; border-right: 1px solid; border-bottom: 1px solid; position: sticky; left: 0; z-index: 2; border-left: 4px solid ' + userColor + ' !important; background: linear-gradient(90deg, ' + userColor + '15, transparent);">';
+            rowsHTML += '<div class="p-user" style="padding: 8px 12px; font-weight:600; font-size: 13px; display: flex; align-items: center; gap: 6px; border-right: 1px solid; border-bottom: 1px solid; position: sticky; left: 0; z-index: 9; border-left: 4px solid ' + userColor + ' !important; background-color: #202020; background-image: linear-gradient(90deg, ' + userColor + '20, #202020);">';
             rowsHTML += '<span style="flex:1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="' + safeName + '">' + safeName + '</span>';
             rowsHTML += '<span class="p-reorder-controls" style="display:flex; flex-direction:column; gap:1px; margin-left: auto;">' + upBtn + downBtn + '</span>';
             rowsHTML += '</div>';
