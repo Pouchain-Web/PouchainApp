@@ -1085,7 +1085,7 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                         </div>
                         ${weekDays.map(d => {
                             const isToday = d === new Date().toISOString().split('T')[0];
-                            const todayStyle = isToday ? 'background-color: #264d2e !important; color: #fff !important; border-bottom: 2px solid #2da140 !important;' : 'background: inherit;';
+                            const todayStyle = isToday ? 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);' : 'background: inherit;';
                             return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
                         }).join('')}
         `;
@@ -1107,7 +1107,7 @@ window.renderAdminPlanning = async function (mondayStr = null) {
 
             weekDays.forEach(d => {
                 const isToday = d === new Date().toISOString().split('T')[0];
-                const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.08) !important;' : '';
+                const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.15) !important;' : '';
                 const rawTasks = (tasksByUserDate[u.id] && tasksByUserDate[u.id][d]) ? tasksByUserDate[u.id][d] : [];
                 // Tri: Tâches non faites en haut, faites en bas
                 const dayTasks = [...rawTasks].sort((a, b) => {
