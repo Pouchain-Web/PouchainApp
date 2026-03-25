@@ -848,6 +848,29 @@ export default {
                 return new Response(await response.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            if (method === "PATCH" && url.pathname.endsWith("/tasks")) {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { id, done } = body;
+                if (!id) return new Response("Missing task ID", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const patchRes = await fetch(`${supabaseUrl}/rest/v1/tasks?id=eq.${id}&user_id=eq.${user.id}`, {
+                    method: "PATCH",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ done })
+                });
+
+                if (!patchRes.ok) return new Response(await patchRes.text(), { status: patchRes.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: MATERIAL REQUESTS (Admin) ---
             if (method === "GET" && url.pathname.endsWith("/admin/material/requests")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
