@@ -771,6 +771,75 @@ export default {
                 return new Response(JSON.stringify({ message: "Task deleted" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // 4. Archive old tasks (Admin)
+            // Usage: POST /admin/tasks/archive
+            if (method === "POST" && url.pathname.endsWith("/admin/tasks/archive")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+                // 1. Fetch old tasks
+                const fetchUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thirtyDaysAgoStr}&select=*&order=date.asc`;
+                const fetchRes = await fetch(fetchUrl, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                if (!fetchRes.ok) return new Response(await fetchRes.text(), { status: fetchRes.status, headers: corsHeaders });
+                const oldTasks = await fetchRes.json();
+
+                if (oldTasks.length === 0) {
+                    return new Response(JSON.stringify({ message: "No tasks to archive", count: 0 }), {
+                        headers: { ...corsHeaders, "Content-Type": "application/json" }
+                    });
+                }
+
+                // 2. Format as CSV
+                const headers = ["id", "user_id", "title", "date", "start_time", "end_time", "done", "created_at"];
+                const csvRows = [headers.join(",")];
+                
+                for (const t of oldTasks) {
+                    const row = headers.map(h => {
+                        let val = t[h] === null || t[h] === undefined ? "" : t[h];
+                        // Escape quotes and wrap in quotes for CSV safety
+                        val = String(val).replace(/"/g, '""');
+                        return `"${val}"`;
+                    });
+                    csvRows.push(row.join(","));
+                }
+                const csvContent = csvRows.join("\n");
+
+                // 3. Upload to R2
+                const today = new Date().toISOString().split('T')[0];
+                const archiveKey = `archives/planning/planning_archived_${today}_tasks_${oldTasks.length}.csv`;
+                await env.MY_BUCKET.put(archiveKey, csvContent, {
+                    httpMetadata: { contentType: "text/csv" }
+                });
+
+                // 4. Delete from Supabase
+                const deleteUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thirtyDaysAgoStr}`;
+                const delRes = await fetch(deleteUrl, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                if (!delRes.ok) {
+                    return new Response(JSON.stringify({ 
+                        message: "Archived to R2 but cleanup in Supabase failed", 
+                        archiveKey,
+                        error: await delRes.text() 
+                    }), { status: 500, headers: corsHeaders });
+                }
+
+                return new Response(JSON.stringify({ 
+                    message: "Archived successfully", 
+                    count: oldTasks.length,
+                    archiveKey 
+                }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: PLANNING (User Mobile) ---
             if (method === "GET" && url.pathname.endsWith("/tasks")) {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });

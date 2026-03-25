@@ -1053,6 +1053,7 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                         <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)">▶</button>
                     </div>
                     <div class="p-header-controls" style="display:flex; gap: 12px;">
+                        <button class="btn-sm btn-secondary" onclick="archivePlanningData()" title="Archiver les semaines de plus de 1 mois">📦 Archiver Vieux Planning</button>
                         <button class="btn-sm btn-secondary" onclick="autoSortPlanningUsers('${startStr}')" title="Trier par nombre de tâches">⇅ Tri auto</button>
                         <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Nouvelle Tâche</button>
                         <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ Plein Écran</button>
@@ -1144,6 +1145,30 @@ window.renderAdminPlanning = async function (mondayStr = null) {
 
     } catch (e) {
         content.innerHTML = `<div style="color:var(--danger); padding:20px;">Erreur lors du chargement du planning : ${e.message}</div>`;
+    }
+};
+
+window.archivePlanningData = async function() {
+    if (!confirm("Voulez-vous archiver toutes les tâches de planning d'il y a plus de 30 jours vers Clouflare (Fichier CSV) et les supprimer de la base de données active ?")) return;
+    
+    try {
+        const btn = document.querySelector('button[onclick="archivePlanningData()"]');
+        if (btn) btn.disabled = true;
+        
+        const result = await api.archiveOldTasks();
+        if (result.count > 0) {
+            alert(`Succès ! ${result.count} tâches ont été archivées dans : ${result.archiveKey}`);
+        } else {
+            alert("Aucune tâche de plus de 30 jours à archiver.");
+        }
+        
+        const currentMonday = document.querySelector('[data-monday]');
+        const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
+        renderAdminPlanning(mondayToUse);
+        
+        if (btn) btn.disabled = false;
+    } catch (e) {
+        alert("Erreur lors de l'archivage : " + e.message);
     }
 };
 
