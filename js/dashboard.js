@@ -4012,7 +4012,7 @@ window.renderAdminVehicles = async function() {
                             <th>Kilométrage</th>
                             <th>Affectation</th>
                             <th>Dernière MAJ</th>
-                            <th style="text-align: right;">Actions</th>
+                            <th style="text-align: right; width: 170px;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -4028,16 +4028,20 @@ window.renderAdminVehicles = async function() {
                 html += `
                     <tr>
                         <td>
-                            <div style="font-weight: 700; color: white;">${v.make || ''} ${v.model || 'Inconnu'}</div>
+                            <div style="font-weight: 700; color: white; font-size: 15px;">${v.make || ''} ${v.model || 'Inconnu'}</div>
                             <div style="font-size: 11px; color: #666;">Année: ${v.year || '-'}</div>
                         </td>
-                        <td><span style="background: white; color: black; padding: 4px 10px; border-radius: 4px; font-weight: 800; font-family: monospace; border: 2px solid #333;">${v.plate_number}</span></td>
-                        <td><div style="font-weight: 600;">${v.last_mileage.toLocaleString()} km</div></td>
-                        <td><div style="color: #bbb;">${userName}</div></td>
+                        <td><span style="background: #FFF; color: #000; padding: 4px 10px; border-radius: 6px; font-weight: 800; font-family: 'JetBrains Mono', monospace; border: 2px solid #222; font-size: 13px; letter-spacing: 1px;">${v.plate_number}</span></td>
+                        <td>
+                            <div style="font-weight: 600; font-size: 15px;">${v.last_mileage.toLocaleString()} <span style="font-size: 12px; color: #666;">km</span></div>
+                        </td>
+                        <td><div style="color: #bbb; font-weight: 500;">${userName}</div></td>
                         <td><div style="font-size: 12px; color: #666;">${lastUpdate}</div></td>
-                        <td style="text-align: right; display: flex; gap: 8px; justify-content: flex-end;">
-                            <button class="btn-sm btn-secondary" onclick="openAddVehicleModal('${v.id}')">Modifier</button>
-                            <button class="btn-sm" style="background: rgba(255, 59, 48, 0.1); color: #FF3B30; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer;" onclick="deleteAdminVehicle('${v.id}')">×</button>
+                        <td style="text-align: right;">
+                            <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
+                                <button class="btn-sm btn-secondary" style="margin:0; padding: 8px 12px; border-radius: 10px; font-weight: 600;" onclick="openAddVehicleModal('${v.id}')">✏️ Modifier</button>
+                                <button class="btn-sm" style="background: rgba(255, 59, 48, 0.15); color: #FF3B30; border: 1px solid rgba(255,59,48,0.2); padding: 8px 10px; border-radius: 10px; cursor: pointer; transition: 0.2s; height: 36px; display: flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(255, 59, 48, 0.3)'" onmouseout="this.style.background='rgba(255, 59, 48, 0.15)'" onclick="deleteAdminVehicle('${v.id}')">🗑️</button>
+                            </div>
                         </td>
                     </tr>
                 `;
