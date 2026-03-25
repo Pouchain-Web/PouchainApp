@@ -1282,7 +1282,7 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                         <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)">▶</button>
                     </div>
                     <div class="p-header-controls" style="display:flex; gap: 12px;">
-                        <button class="btn-sm btn-secondary" onclick="archivePlanningData()" title="Archiver les semaines de plus de 1 mois">📦 Archiver Vieux Planning</button>
+                        <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Exporter les données</button>
                         <button class="btn-sm btn-secondary" onclick="autoSortPlanningUsers('${startStr}')" title="Trier par nombre de tâches">⇅ Tri auto</button>
                         <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Nouvelle Tâche</button>
                         <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ Plein Écran</button>
@@ -1377,32 +1377,121 @@ window.renderAdminPlanning = async function (mondayStr = null) {
     }
 };
 
-window.archivePlanningData = async function() {
-    showConfirmModal(
-        "Confirmation d'archivage",
-        "Voulez-vous archiver toutes les semaines de planning passées (tout ce qui précède ce lundi) vers Cloudflare (CSV) et les supprimer de Supabase ? <br><br>Ceci est irréversible dans la base active mais l'historique restera consultable.",
-        async () => {
+window.openPlanningExportModal = async function() {
+    try {
+        const users = await api.listUsers();
+        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '100008';
+        
+        const today = new Date().toISOString().split('T')[0];
+        
+        modal.innerHTML = `
+            <div class="modal-box glass-panel" style="width: 550px; padding: 40px; animation: modalPop 0.3s ease-out;">
+                <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white; display: flex; align-items: center; gap: 12px;">
+                    <span>📤 Exporter les données</span>
+                </h2>
+                <p style="color: #aaa; font-size: 14px; margin-bottom: 32px;">Sélectionnez la période et les collaborateurs pour générer un fichier CSV.</p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px;">
+                    <div>
+                        <label style="display: block; font-size: 13px; color: #888; margin-bottom: 8px;">Date de début</label>
+                        <input type="date" id="export-start-date" class="form-input" style="width: 100%;" value="${today}">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 13px; color: #888; margin-bottom: 8px;">Date de fin</label>
+                        <input type="date" id="export-end-date" class="form-input" style="width: 100%;" value="${today}">
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                    <label style="font-size: 13px; color: #888;">Collaborateurs</label>
+                    <button class="btn-sm" style="background: transparent; color: var(--primary); border: none; font-size: 12px; cursor: pointer;" onclick="toggleAllExportUsers(true)">Tout sélectionner</button>
+                </div>
+
+                <div style="max-height: 250px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 16px; padding: 8px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.05);">
+                    ${users.map(u => `
+                        <label style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; border-radius: 10px; transition: 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">
+                            <input type="checkbox" class="export-user-cb" value="${u.id}" checked style="width: 18px; height: 18px; accent-color: var(--primary);">
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-weight: 600; font-size: 14px; color: #eee;">${u.first_name || ''} ${u.last_name || ''}</span>
+                                <span style="font-size: 11px; color: #666;">${u.email}</span>
+                            </div>
+                        </label>
+                    `).join('')}
+                </div>
+
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                    <button id="start-export-btn" class="btn-primary" style="padding: 10px 24px;">Générer le CSV</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        window.toggleAllExportUsers = (val) => {
+            const cbs = document.querySelectorAll('.export-user-cb');
+            cbs.forEach(cb => cb.checked = val);
+        };
+
+        document.getElementById('start-export-btn').onclick = async () => {
+            const start = document.getElementById('export-start-date').value;
+            const end = document.getElementById('export-end-date').value;
+            const selectedUserIds = Array.from(document.querySelectorAll('.export-user-cb:checked')).map(cb => cb.value);
+
+            if (!start || !end) return alert("Veuillez choisir une période.");
+            if (selectedUserIds.length === 0) return alert("Veuillez sélectionner au moins un collaborateur.");
+
+            const btn = document.getElementById('start-export-btn');
+            btn.disabled = true;
+            btn.innerText = "Chargement...";
+
             try {
-                const btn = document.querySelector('button[onclick="archivePlanningData()"]');
-                if (btn) btn.disabled = true;
+                const tasks = await api.getAdminTasks(start, end);
+                const filteredTasks = tasks.filter(t => selectedUserIds.includes(t.user_id));
                 
-                const result = await api.archiveOldTasks();
-                if (result.count > 0) {
-                    showInfoModal("Archivage Terminé", `Succès ! <b>${result.count}</b> tâches ont été ajoutées aux journaux annuels CSV sur Cloudflare.<br><br>Votre historique reste consultable via le planning.`);
-                } else {
-                    showInfoModal("Information", "Aucune semaine passée à archiver pour le moment.");
-                }
+                // Create CSV
+                const headers = ["Date", "Employé", "Début", "Fin", "Tâche", "Statut"];
+                const userMap = {};
+                users.forEach(u => userMap[u.id] = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email);
+
+                const rows = filteredTasks.map(t => [
+                    t.date,
+                    userMap[t.user_id] || "Inconnu",
+                    t.start_time.substring(0, 5),
+                    t.end_time.substring(0, 5),
+                    t.title.replace(/:::DESC:::.*$/, '').replace(/"/g, '""'),
+                    t.done === 'true' ? "Terminé" : "En cours"
+                ]);
+
+                let csvContent = "\ufeff" + headers.join(";") + "\n";
+                rows.forEach(r => {
+                    csvContent += r.map(cell => `"${cell}"`).join(";") + "\n";
+                });
+
+                // Download
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `Export_Planning_${start}_au_${end}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
                 
-                const currentMonday = document.querySelector('[data-monday]');
-                const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
-                renderAdminPlanning(mondayToUse);
-                
-                if (btn) btn.disabled = false;
+                modal.remove();
             } catch (e) {
-                showInfoModal("Erreur", "Erreur lors de l'archivage : " + e.message);
+                alert("Erreur lors de l'export: " + e.message);
+                btn.disabled = false;
+                btn.innerText = "Générer le CSV";
             }
-        }
-    );
+        };
+
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
 };
 
 window.showConfirmModal = function(title, message, callback) {
