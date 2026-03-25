@@ -1009,6 +1009,13 @@ export default {
                         
                         // Insert tasks for each alert user
                         for (const targetUserId of alertUsers) {
+                            // Check for existing pending task today
+                            const existingRes = await fetch(`${supabaseUrl}/rest/v1/tasks?user_id=eq.${targetUserId}&date=eq.${today}&title=eq.${encodeURIComponent("Check besoin de matériel")}&done=eq.false&select=id`, {
+                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                            });
+                            const existingData = await existingRes.json();
+                            if (existingData.length > 0) continue; // Skip if there's already a pending one
+
                             await fetch(`${supabaseUrl}/rest/v1/tasks`, {
                                 method: "POST",
                                 headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
@@ -1016,8 +1023,8 @@ export default {
                                     user_id: targetUserId,
                                     title: "Check besoin de matériel",
                                     date: today,
-                                    start_time: "08:00:00",
-                                    end_time: "08:30:00",
+                                    start_time: "00:00:00",
+                                    end_time: "00:00:00",
                                     done: "false"
                                 })
                             });

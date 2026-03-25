@@ -861,7 +861,10 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material">📦 Demande de matériel</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>📦 Demande de matériel</span>
+                    <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4);">0</span>
+                </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -929,6 +932,11 @@ async function renderAdminView(session) {
         const text = document.getElementById('cloud-storage-text');
         if (text) text.innerText = 'Erreur';
     }
+
+    // Update material requests notification badge + auto refresh every 30s
+    if (window.materialBadgeInterval) clearInterval(window.materialBadgeInterval);
+    window.updateMaterialBadge();
+    window.materialBadgeInterval = setInterval(() => window.updateMaterialBadge(), 30000);
 }
 
 // Global scope for admin functions
@@ -3715,7 +3723,7 @@ window.renderAdminMaterialRequests = async function () {
         if (archivedRequests.length > 0) {
             html += `
                 <details style="margin-top: 40px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px;">
-                    <summary style="cursor: pointer; color: #888; font-weight: 600; margin-bottom: 20px;">📜 Voir les demandes acquittées (${archivedRequests.length})</summary>
+                    <summary style="cursor: pointer; color: #000000ff; font-weight: 600; margin-bottom: 20px;">📜 Voir les demandes acquittées (${archivedRequests.length})</summary>
                     <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
                         <table class="admin-table">
                             <thead>
@@ -3751,6 +3759,7 @@ window.renderAdminMaterialRequests = async function () {
             try {
                 await api.updateMaterialRequestStatus(id, status);
                 renderAdminMaterialRequests();
+                window.updateMaterialBadge(); // Update sidebar badge
             } catch (e) {
                 alert("Erreur: " + e.message);
             }
@@ -3852,6 +3861,25 @@ window.renderAdminMaterialRequests = async function () {
 
     } catch (e) {
         content.innerHTML = `<div style="color:red; margin:50px;">Erreur lors du chargement: ${e.message}</div>`;
+    }
+};
+
+// Global badge update for admin sidebar
+window.updateMaterialBadge = async function() {
+    try {
+        const requests = await api.getMaterialRequests();
+        const pendingCount = requests.filter(r => r.status === 'requested').length;
+        const badge = document.getElementById('mat-request-badge');
+        if (badge) {
+            if (pendingCount > 0) {
+                badge.textContent = pendingCount;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (e) {
+        console.warn("Could not update material badge", e);
     }
 };
 
