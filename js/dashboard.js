@@ -908,7 +908,10 @@ async function renderAdminView(session) {
                     <span>📦 Demande de matériel</span>
                     <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4);">0</span>
                 </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminVehicles()" id="nav-vehicles">🚗 Gestion des véhicules</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminVehicles()" id="nav-vehicles" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🚗 Gestion des véhicules</span>
+                    <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
+                </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -2214,14 +2217,21 @@ window.changeUserRole = async function (id, newRole) {
 
 async function refreshAdminData() {
     try {
-        adminFilesCache = await api.listFiles();
+        const [files, vehicles] = await Promise.all([
+            api.listFiles(),
+            api.getVehicles()
+        ]);
+        
+        adminFilesCache = files;
+        if (window.updateVehicleSidebarBadge) window.updateVehicleSidebarBadge(vehicles);
+
         if (adminCurrentFolder) {
             renderAdminFiles(adminCurrentFolder);
         } else {
             renderAdminFolders();
         }
     } catch (e) {
-        document.getElementById('admin-content').innerHTML = `<div style="color:red">Erreur chargement: ${e.message}</div>`;
+        console.warn("Refresh admin data error:", e);
     }
 }
 
@@ -4011,7 +4021,7 @@ window.renderAdminVehicles = async function() {
                             <th>Immatriculation</th>
                             <th>Kilométrage</th>
                             <th>Affectation</th>
-                            <th>Dernière MAJ</th>
+                            <th>Entretien</th>
                             <th style="text-align: right; width: 170px;">Actions</th>
                         </tr>
                     </thead>
@@ -4023,20 +4033,45 @@ window.renderAdminVehicles = async function() {
         } else {
             vehicles.forEach(v => {
                 const userName = v.profiles ? `${v.profiles.first_name} ${v.profiles.last_name}`.trim() : '<span style="color:#666">Non affecté</span>';
-                const lastUpdate = new Date(v.updated_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
                 
+                // Alert logic
+                let maintenanceAlert = false;
+                let maintenanceCritical = false;
+                let maintenanceLabel = "OK";
+                
+                if (v.next_maintenance_km) {
+                    const diff = v.next_maintenance_km - v.last_mileage;
+                    if (diff <= 0) { maintenanceCritical = true; maintenanceLabel = "Dépassé (km)"; }
+                    else if (diff <= 2000) { maintenanceAlert = true; maintenanceLabel = "Bientôt (km)"; }
+                }
+                
+                if (v.next_maintenance_date && !maintenanceCritical) {
+                    const today = new Date();
+                    const target = new Date(v.next_maintenance_date);
+                    const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+                    if (diffDays <= 0) { maintenanceCritical = true; maintenanceLabel = "Dépassé (date)"; }
+                    else if (diffDays <= 30) { maintenanceAlert = true; maintenanceLabel = "Bientôt (date)"; }
+                }
+
+                const maintenanceStyle = maintenanceCritical ? 'background: #FF3B30; color: white;' : (maintenanceAlert ? 'background: #FF9500; color: white;' : 'background: rgba(52, 199, 89, 0.1); color: #34C759;');
+                const maintenanceIcon = maintenanceCritical ? '🔴' : (maintenanceAlert ? '⚠️' : '✅');
+
                 html += `
-                    <tr>
+                    <tr class="vehicle-row" style="cursor: pointer;" onclick="if(!event.target.closest('button')) openVehicleDetailModal('${v.id}')">
                         <td>
                             <div style="font-weight: 700; color: white; font-size: 15px;">${v.make || ''} ${v.model || 'Inconnu'}</div>
-                            <div style="font-size: 11px; color: #666;">Année: ${v.year || '-'}</div>
+                            <div style="font-size: 11px; color: #666;">ID: ${v.id.split('-')[0]}</div>
                         </td>
                         <td><span style="background: #FFF; color: #000; padding: 4px 10px; border-radius: 6px; font-weight: 800; font-family: 'JetBrains Mono', monospace; border: 2px solid #222; font-size: 13px; letter-spacing: 1px;">${v.plate_number}</span></td>
                         <td>
                             <div style="font-weight: 600; font-size: 15px;">${v.last_mileage.toLocaleString()} <span style="font-size: 12px; color: #666;">km</span></div>
                         </td>
                         <td><div style="color: #bbb; font-weight: 500;">${userName}</div></td>
-                        <td><div style="font-size: 12px; color: #666;">${lastUpdate}</div></td>
+                        <td>
+                            <div style="${maintenanceStyle} padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px;">
+                                <span>${maintenanceIcon}</span> ${maintenanceLabel}
+                            </div>
+                        </td>
                         <td style="text-align: right;">
                             <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
                                 <button class="btn-sm btn-secondary" style="margin:0; padding: 8px 12px; border-radius: 10px; font-weight: 600;" onclick="openAddVehicleModal('${v.id}')">✏️ Modifier</button>
@@ -4050,6 +4085,19 @@ window.renderAdminVehicles = async function() {
 
         html += `</tbody></table></div>`;
         content.innerHTML = html;
+
+        // Add hover effect style if missing
+        if (!document.getElementById('vehicle-table-style')) {
+            const style = document.createElement('style');
+            style.id = 'vehicle-table-style';
+            style.innerHTML = `
+                .vehicle-row:hover { background: rgba(255,255,255,0.03); }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Global update badge for vehicles
+        updateVehicleSidebarBadge(vehicles);
 
     } catch (e) {
         content.innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
@@ -4086,28 +4134,47 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
                     <div>
                         <label class="form-label">Immatriculation</label>
                         <input type="text" id="v-plate" class="form-input" value="${existing?.plate_number || ''}" placeholder="Ex: AB-123-CD">
                     </div>
                     <div>
-                        <label class="form-label">Année</label>
-                        <input type="text" id="v-year" class="form-input" value="${existing?.year || ''}" placeholder="Ex: 2021">
+                        <label class="form-label">Collaborateur affecté</label>
+                        <select id="v-user" class="form-input">
+                            <option value="">-- Non affecté --</option>
+                            ${users.map(u => `<option value="${u.id}" ${existing?.assigned_user_id === u.id ? 'selected' : ''}>${u.first_name || ''} ${u.last_name || ''}</option>`).join('')}
+                        </select>
                     </div>
                 </div>
 
-                <div style="margin-bottom: 24px;">
-                    <label class="form-label">Collaborateur affecté</label>
-                    <select id="v-user" class="form-input">
-                        <option value="">-- Non affecté --</option>
-                        ${users.map(u => `<option value="${u.id}" ${existing?.assigned_user_id === u.id ? 'selected' : ''}>${u.first_name || ''} ${u.last_name || ''} (${u.email})</option>`).join('')}
-                    </select>
+                <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Cartes & Administration</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+                    <div>
+                        <label class="form-label">Carte DKV / Essence</label>
+                        <input type="text" id="v-dkv" class="form-input" value="${existing?.dkv_card || ''}" placeholder="N° de carte">
+                    </div>
+                    <div>
+                        <label class="form-label">Badge Télépéage</label>
+                        <input type="text" id="v-toll" class="form-input" value="${existing?.toll_card || ''}" placeholder="N° du badge">
+                    </div>
+                </div>
+
+                <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Planification Entretien</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+                    <div>
+                        <label class="form-label">Prochain entretien (km)</label>
+                        <input type="number" id="v-m-km" class="form-input" value="${existing?.next_maintenance_km || ''}" placeholder="Ex: 50000">
+                    </div>
+                    <div>
+                        <label class="form-label">Date limite entretien</label>
+                        <input type="date" id="v-m-date" class="form-input" value="${existing?.next_maintenance_date || ''}">
+                    </div>
                 </div>
 
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
                     <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                    <button id="save-v-btn" class="btn-primary">Enregistrer</button>
+                    <button id="save-v-btn" class="btn-primary" style="padding: 10px 24px;">🚀 Enregistrer</button>
                 </div>
             </div>
         `;
@@ -4119,8 +4186,11 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                 make: document.getElementById('v-make').value,
                 model: document.getElementById('v-model').value,
                 plate_number: document.getElementById('v-plate').value,
-                year: document.getElementById('v-year').value,
-                assigned_user_id: document.getElementById('v-user').value || null
+                assigned_user_id: document.getElementById('v-user').value || null,
+                dkv_card: document.getElementById('v-dkv').value,
+                toll_card: document.getElementById('v-toll').value,
+                next_maintenance_km: document.getElementById('v-m-km').value ? parseInt(document.getElementById('v-m-km').value) : null,
+                next_maintenance_date: document.getElementById('v-m-date').value || null
             };
 
             if (!data.plate_number) return alert("L'immatriculation est obligatoire.");
@@ -4280,6 +4350,165 @@ window.reportMobileVehicleIssue = function(vehicleId) {
         .then(() => api.getMyVehicle())
         .then(updated => renderMobileVehicleApp(updated))
         .catch(e => alert("Erreur: " + e.message));
+};
+
+window.updateVehicleSidebarBadge = function(vehicles) {
+    let alertCount = 0;
+    const today = new Date();
+    
+    vehicles.forEach(v => {
+        let isAlert = false;
+        if (v.next_maintenance_km && (v.next_maintenance_km - v.last_mileage <= 2000)) isAlert = true;
+        if (v.next_maintenance_date) {
+            const target = new Date(v.next_maintenance_date);
+            const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 30) isAlert = true;
+        }
+        if (isAlert) alertCount++;
+    });
+
+    const badge = document.getElementById('vehicle-badge');
+    if (badge) {
+        if (alertCount > 0) {
+            badge.textContent = alertCount;
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+};
+
+window.openVehicleDetailModal = async function(vehicleId) {
+    try {
+        const [vehicles, logs] = await Promise.all([
+            api.getVehicles(),
+            api.getVehicleAllLogs(vehicleId)
+        ]);
+        const v = vehicles.find(veh => veh.id === vehicleId);
+        if (!v) return;
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '100010';
+        
+        modal.innerHTML = `
+            <div class="modal-box glass-panel" style="width: 900px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #0a0a0b;">
+                <!-- Header -->
+                <div style="padding: 32px; background: linear-gradient(to right, #1a1a1c, #0a0a0b); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 13px; color: #888; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">Détails du véhicule</div>
+                        <h2 style="margin: 0; font-size: 28px; font-weight: 800; color: white;">${v.make || ''} ${v.model || 'Inconnu'} <span style="color: #444; font-weight: 400; margin-left: 10px;">${v.plate_number}</span></h2>
+                    </div>
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 20px; border-radius: 12px;">Fermer</button>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 320px 1fr; height: 600px;">
+                    <!-- Left Column: Info -->
+                    <div style="padding: 32px; background: rgba(255,255,255,0.02); border-right: 1px solid rgba(255,255,255,0.05); overflow-y: auto;">
+                        <h3 style="font-size: 12px; color: #555; text-transform: uppercase; margin-bottom: 16px;">Administration</h3>
+                        <div class="glass-panel" style="padding: 16px; border-radius: 16px; margin-bottom: 24px; background: rgba(255,255,255,0.03);">
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Carte DKV / Essence</div>
+                                <div style="font-family: monospace; font-size: 15px; color: #eee;">${v.dkv_card || '<i>Non renseigné</i>'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Badge Télépéage</div>
+                                <div style="font-family: monospace; font-size: 15px; color: #eee;">${v.toll_card || '<i>Non renseigné</i>'}</div>
+                            </div>
+                        </div>
+
+                        <h3 style="font-size: 12px; color: #555; text-transform: uppercase; margin-bottom: 16px;">Entretien Prévu</h3>
+                        <div class="glass-panel" style="padding: 16px; border-radius: 16px; margin-bottom: 24px;">
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Échéance Kilométrique</div>
+                                <div style="font-size: 16px; font-weight: 700; color: #34C759;">${v.next_maintenance_km ? v.next_maintenance_km.toLocaleString() + ' km' : '--'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Échéance Date</div>
+                                <div style="font-size: 16px; font-weight: 700; color: #FF9500;">${v.next_maintenance_date ? new Date(v.next_maintenance_date).toLocaleDateString() : '--'}</div>
+                            </div>
+                        </div>
+
+                        <h3 style="font-size: 12px; color: #555; text-transform: uppercase; margin-bottom: 16px;">Historique Récent</h3>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            ${logs.slice(0, 5).map(l => `
+                                <div style="font-size: 12px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                        <span style="font-weight: 700; color: ${l.type === 'issue' ? '#FF3B30' : '#888'};">${l.type.toUpperCase()}</span>
+                                        <span style="color: #444;">${new Date(l.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                    <div style="color: #bbb;">${l.type === 'mileage' ? l.value + ' km' : l.description}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Chart -->
+                    <div style="padding: 40px; display: flex; flex-direction: column; gap: 32px; overflow-y: auto;">
+                        <div style="flex: 1; min-height: 300px; background: rgba(255,255,255,0.02); border-radius: 24px; padding: 24px; border: 1px solid rgba(255,255,255,0.05);">
+                            <h3 style="margin-top: 0; font-size: 18px; color: white;">Évolution du kilométrage</h3>
+                            <canvas id="mileageChart"></canvas>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                            <div class="glass-panel" style="padding: 24px; border-radius: 24px;">
+                                <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Dernière Activité</div>
+                                <div style="font-size: 20px; font-weight: 700; color: white;">${v.profiles ? v.profiles.first_name + ' ' + v.profiles.last_name : 'N/A'}</div>
+                                <div style="font-size: 12px; color: #444;">${v.updated_at ? new Date(v.updated_at).toLocaleString() : ''}</div>
+                            </div>
+                            <div class="glass-panel" style="padding: 24px; border-radius: 24px;">
+                                <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Kilométrage Actuel</div>
+                                <div style="font-size: 32px; font-weight: 900; color: #34C759;">${v.last_mileage.toLocaleString()} <span style="font-size: 16px; opacity: 0.5;">km</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // Render Chart
+        const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+        const ctx = document.getElementById('mileageChart').getContext('2d');
+        
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: mileageLogs.map(l => new Date(l.created_at).toLocaleDateString()),
+                datasets: [{
+                    label: 'Kilométrage',
+                    data: mileageLogs.map(l => parseInt(l.value)),
+                    borderColor: '#34C759',
+                    backgroundColor: 'rgba(52, 199, 89, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#34C759',
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#444' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#444' }
+                    }
+                }
+            }
+        });
+
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
 };
 
 // Start
