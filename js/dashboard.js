@@ -1172,82 +1172,72 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                 .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border: 1px dashed rgba(255,255,255,0.2) !important; }
                 .planning-inline .p-add-btn:hover { background: rgba(255,255,255,0.1) !important; color: white !important; }
                 
-                /* ===== FULLSCREEN: TV / Wall Display Mode ===== */
-                .planning-fullscreen { background: #0a0f0a !important; color: white !important; }
+                .p-reorder-btn { background: rgba(255,255,255,0.08); border: none; color: rgba(255,255,255,0.5); font-size: 9px; line-height: 1; padding: 2px 5px; cursor: pointer; border-radius: 3px; transition: 0.15s; }
+                .p-reorder-btn:hover { background: rgba(255,255,255,0.2); color: white; }
 
-                /* Header: green branded bar */
+                /* ===== FULLSCREEN: TV / Wall Display Mode (LIGHT THEME) ===== */
+                .planning-fullscreen { background: #f8f9fa !important; color: #212529 !important; }
+
                 .planning-fullscreen header {
-                    background: linear-gradient(135deg, #1a3a1f 0%, #0d1f10 100%) !important;
+                    background: #ffffff !important;
                     border-bottom: 3px solid #2da140 !important;
                     margin-bottom: 0 !important;
                     padding: 20px 50px !important;
-                    box-shadow: 0 4px 30px rgba(45, 161, 64, 0.15) !important;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
                 }
                 .planning-fullscreen header h1 { font-size: 28px !important; color: #2da140 !important; letter-spacing: 1px; }
-                .planning-fullscreen header span { font-size: 22px !important; color: rgba(255,255,255,0.9) !important; }
+                .planning-fullscreen header span { font-size: 22px !important; color: #495057 !important; }
                 .planning-fullscreen .p-header-controls { display: none !important; }
 
-                /* Grid container fills 100% height */
                 .planning-fullscreen #planning-scroll-area { padding: 0 !important; }
-                .planning-fullscreen .p-grid-bg {
-                    background: transparent !important;
-                    border: none !important;
-                    border-radius: 0 !important;
-                    height: 100% !important;
-                }
+                .planning-fullscreen .p-grid-bg { background: #ffffff !important; border: none !important; border-radius: 0 !important; height: 100% !important; }
 
-                /* Column headers: dark green */
                 .planning-fullscreen .p-head {
-                    background: linear-gradient(180deg, #152a18, #0d1f10) !important;
-                    color: #7be892 !important;
-                    border-color: rgba(45,161,64,0.3) !important;
+                    background: #f1f3f5 !important;
+                    color: #2da140 !important;
+                    border-color: #dee2e6 !important;
                     font-size: 20px !important;
                     font-weight: 700 !important;
                     padding: 16px 0 !important;
                     text-transform: uppercase;
                     letter-spacing: 1px;
-                    border-bottom: 2px solid rgba(45,161,64,0.4) !important;
-                    border-right: 1px solid rgba(45,161,64,0.15) !important;
+                    border-bottom: 2px solid #2da140 !important;
                 }
 
-                /* User name rows */
                 .planning-fullscreen .p-user {
-                    background: linear-gradient(90deg, #111, #0d0d0d) !important;
-                    color: white !important;
-                    border-color: rgba(45,161,64,0.15) !important;
-                    font-size: 18px !important;
-                    font-weight: 700 !important;
-                    padding: 14px 20px !important;
-                    border-bottom: 1px solid rgba(45,161,64,0.2) !important;
+                    background: #ffffff !important;
+                    color: #212529 !important;
+                    border-color: #dee2e6 !important;
+                    font-size: 19px !important;
+                    font-weight: 800 !important;
+                    padding: 16px 24px !important;
+                    border-bottom: 1px solid #dee2e6 !important;
                 }
 
-                /* Day cells */
                 .planning-fullscreen .p-cell {
-                    border-color: rgba(45,161,64,0.1) !important;
-                    border-right: 1px solid rgba(45,161,64,0.1) !important;
-                    border-bottom: 1px solid rgba(45,161,64,0.15) !important;
-                    padding: 4px 6px !important;
-                    background: rgba(0,0,0,0.15) !important;
+                    border-color: #f1f3f5 !important;
+                    border-right: 1px solid #f1f3f5 !important;
+                    border-bottom: 1px solid #dee2e6 !important;
+                    padding: 6px 8px !important;
+                    background: #ffffff !important;
                 }
-                /* Black scrollbar (for the main container) */
+                
                 #planning-scroll-area::-webkit-scrollbar { width: 8px; }
-                #planning-scroll-area::-webkit-scrollbar-track { background: #0a0f0a; }
+                #planning-scroll-area::-webkit-scrollbar-track { background: #f8f9fa; }
                 #planning-scroll-area::-webkit-scrollbar-thumb { background: #2da14033; border-radius: 4px; }
                 #planning-scroll-area::-webkit-scrollbar-thumb:hover { background: #2da14066; }
 
-                /* Task cards: user-colored, compact */
                 .planning-fullscreen .p-task {
-                    border-left: 4px solid currentColor !important;
-                    border-right: none !important;
-                    border-top: none !important;
-                    border-bottom: none !important;
-                    padding: 5px 8px !important;
-                    margin-bottom: 4px !important;
-                    border-radius: 4px !important;
-                    box-shadow: 0 1px 6px rgba(0,0,0,0.25) !important;
+                    border-left: 6px solid currentColor !important;
+                    background: #fff !important;
+                    padding: 8px 12px !important;
+                    margin-bottom: 6px !important;
+                    border-radius: 8px !important;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+                    border: 1px solid rgba(0,0,0,0.03) !important;
                 }
-                .planning-fullscreen .p-task-title { color: white !important; font-size: 13px !important; font-weight: 600 !important; line-height: 1.3 !important; }
-                .planning-fullscreen .p-task-time { font-size: 11px !important; font-weight: 700 !important; margin-bottom: 2px !important; color: rgba(255,255,255,0.85) !important; }
+                .planning-fullscreen .p-task-title { color: #212529 !important; font-size: 15px !important; font-weight: 700 !important; line-height: 1.3 !important; }
+                .planning-fullscreen .p-task-time { font-size: 13px !important; font-weight: 800 !important; margin-bottom: 4px !important; color: #495057 !important; }
                 .planning-fullscreen .p-add-btn { display: none !important; }
                 .planning-fullscreen .p-task button { display: none !important; }
                 .planning-fullscreen .p-reorder-controls { display: none !important; }
