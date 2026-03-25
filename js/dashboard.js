@@ -3826,7 +3826,7 @@ window.renderAdminMaterialRequests = async function () {
             'requested': { label: 'En attente', color: '#ffec99', icon: '⏳' },
             'ordered': { label: 'Commandé', color: '#a5d8ff', icon: '📦' },
             'refused': { label: 'Refusé', color: '#ffc9c9', icon: '❌' },
-            'received': { label: 'Reçu / Acquitté', color: '#b2f2bb', icon: '✅' }
+            'received': { label: 'Reçu / Livré', color: '#b2f2bb', icon: '✅' }
         };
 
         let html = `
@@ -3910,7 +3910,7 @@ window.renderAdminMaterialRequests = async function () {
                                 <div class="mat-btn-group">
                                     <button class="mat-btn ordered" onclick="updateReqStatus('${req.id}', 'ordered')" title="Commander">📦 Commander</button>
                                     <button class="mat-btn refused" onclick="updateReqStatus('${req.id}', 'refused')" title="Refuser">❌ Refuser</button>
-                                    <button class="mat-btn received" onclick="updateReqStatus('${req.id}', 'received')" title="Acquitter">✅ Acquitter</button>
+                                    <button class="mat-btn received" onclick="updateReqStatus('${req.id}', 'received')" title="Livrer">✅ Livrer</button>
                                 </div>
                             </td>
                         </tr>
