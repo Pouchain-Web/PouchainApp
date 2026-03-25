@@ -352,7 +352,9 @@ export const api = {
     // --- Material Request Management ---
     async getMaterialRequests(userId = null) {
         const role = await auth.getUserRole();
-        const url = `${config.api.workerUrl}${role === 'admin' ? '/admin/material/requests' : '/material/requests'}`;
+        // If userId is provided, we force the user-specific route (only see your own)
+        // Otherwise, if admin, see all.
+        const url = `${config.api.workerUrl}${ (role === 'admin' && !userId) ? '/admin/material/requests' : '/material/requests'}`;
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
