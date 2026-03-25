@@ -15,11 +15,12 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            background-color: var(--background-color, #F2F2F7);
+            background-color: #FFFFFF !important;
+            background-image: none !important;
         }
     </style>
     <script>
-        // Auto dark mode based on device preference
+        // Auto dark mode based on device preference (for mobile elements if needed)
         const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
         const applyTheme = (isDark) => {
             document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');

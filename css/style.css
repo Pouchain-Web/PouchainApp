@@ -910,3 +910,58 @@ body {
         background-color: #000000 !important;
     }
 }
+
+/* --- Logo Bubble for Dark Mode --- */
+.logo-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+:root[data-theme="dark"] .logo-container {
+    background: #FFFFFF;
+    padding: 6px 16px;
+    border-radius: 40px;
+    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
+}
+
+/* --- Theme Toggle Button Styling & Animation --- */
+.theme-toggle-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border: none;
+    overflow: hidden;
+}
+
+.theme-toggle-btn svg {
+    transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s;
+}
+
+:root[data-theme="dark"] .theme-toggle-btn {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #FFD60A !important; /* Sun yellow */
+}
+
+:root[data-theme="light"] .theme-toggle-btn {
+    background: rgba(118, 118, 128, 0.12) !important;
+    color: #5856D6 !important; /* Moon purple/blue */
+}
+
+.theme-toggle-btn:active {
+    transform: scale(0.85);
+}
+
+@keyframes rotateIn {
+    from { transform: rotate(-90deg) scale(0); opacity: 0; }
+    to { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+
+.theme-toggle-btn svg {
+    animation: rotateIn 0.5s ease-out;
+}

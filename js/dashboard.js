@@ -67,27 +67,51 @@ async function renderMobileView() {
         document.head.appendChild(link);
     }
 
-    // Auto dark mode based on device preference
-    const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+    // Local theme logic
     const applyMobileTheme = (isDark) => {
         document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        const themeBtn = document.getElementById('theme-toggle');
+        if (themeBtn) {
+            themeBtn.innerHTML = isDark ? `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+            ` : `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+            `;
+        }
     };
-    applyMobileTheme(darkMq.matches);
-    darkMq.addEventListener('change', (e) => applyMobileTheme(e.matches));
 
     // Structure
     document.body.innerHTML = `
     <!-- Fixed Top Bar -->
     <div class="mobile-top-bar">
         <div class="mobile-header-content">
-            <img src="logo-pouchain.svg" alt="Pouchain" class="header-logo" style="height: 32px; width: auto; max-width: 60vw; object-fit: contain;">
-            <button id="logout-btn" class="header-btn" title="Déconnexion">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                    <polyline points="16 17 21 12 16 7"></polyline>
-                    <line x1="21" y1="12" x2="9" y2="12"></line>
-                </svg>
-            </button>
+            <div class="logo-container">
+                <img src="logo-pouchain.svg" alt="Pouchain" class="header-logo" style="height: 32px; width: auto; max-width: 60vw; object-fit: contain;">
+            </div>
+            <div style="display:flex; gap: 12px; align-items: center;">
+                <button id="theme-toggle" class="header-btn theme-toggle-btn" title="Changer le thème" style="background: rgba(142, 142, 147, 0.12); color: #8E8E93;">
+                   <!-- Icon dynamically filled -->
+                </button>
+                <button id="logout-btn" class="header-btn" title="Déconnexion">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
         </div>
         <!-- Search Bar in Top Header -->
         <div class="mobile-search-container">
@@ -168,14 +192,43 @@ async function renderMobileView() {
         // Fetch user profile to get preferences
         if (session) {
             try {
-                const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
+                const supabaseClient = window.supabase.createClient(config.supabase.url, config.supabase.anonKey);
+                const { data: profile } = await supabaseClient
                     .from('profiles')
                     .select('preferences')
                     .eq('id', session.user.id)
                     .single();
-                // Theme and preferences logic removed
+                
+                let currentPreferences = (profile && profile.preferences) || {};
+                if (typeof currentPreferences === 'string') currentPreferences = JSON.parse(currentPreferences);
+                
+                // Set initial theme
+                const isDarkMode = currentPreferences.mobile_dark_mode === true;
+                applyMobileTheme(isDarkMode);
+
+                // Theme Toggle Handler
+                const themeBtn = document.getElementById('theme-toggle');
+                if (themeBtn) {
+                    themeBtn.onclick = async () => {
+                        const isNewDark = document.documentElement.getAttribute('data-theme') !== 'dark';
+                        applyMobileTheme(isNewDark);
+                        
+                        // Re-render if in planning
+                        if (mobileCurrentPath === 'planning') {
+                            const dateInput = document.querySelector('input[type="date"]');
+                            renderMobilePlanning(dateInput ? dateInput.value : undefined);
+                        }
+
+                        // Save to DB
+                        currentPreferences.mobile_dark_mode = isNewDark;
+                        await supabaseClient
+                            .from('profiles')
+                            .update({ preferences: currentPreferences })
+                            .eq('id', session.user.id);
+                    };
+                }
             } catch (prefError) {
-                console.warn("Could not fetch user profile details for mobile", prefError);
+                console.warn("Could not handle user profile details for mobile theme", prefError);
             }
         }
 
