@@ -1408,7 +1408,7 @@ window.openPlanningExportModal = async function() {
 
                 <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
                     <label style="font-size: 13px; color: #888;">Collaborateurs</label>
-                    <button class="btn-sm" style="background: transparent; color: var(--primary); border: none; font-size: 12px; cursor: pointer;" onclick="toggleAllExportUsers(true)">Tout sélectionner</button>
+                    <button id="toggle-all-btn" class="btn-sm" style="background: transparent; color: var(--primary); border: none; font-size: 12px; cursor: pointer;" onclick="toggleAllExportUsers()">Tout déselectionner</button>
                 </div>
 
                 <div style="max-height: 250px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 16px; padding: 8px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.05);">
@@ -1431,9 +1431,13 @@ window.openPlanningExportModal = async function() {
         `;
         document.body.appendChild(modal);
 
-        window.toggleAllExportUsers = (val) => {
+        window.toggleAllExportUsers = () => {
             const cbs = document.querySelectorAll('.export-user-cb');
-            cbs.forEach(cb => cb.checked = val);
+            const btn = document.getElementById('toggle-all-btn');
+            const anyChecked = Array.from(cbs).some(cb => cb.checked);
+            
+            cbs.forEach(cb => cb.checked = !anyChecked);
+            btn.innerText = !anyChecked ? "Tout déselectionner" : "Tout sélectionner";
         };
 
         document.getElementById('start-export-btn').onclick = async () => {
