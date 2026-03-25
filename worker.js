@@ -929,7 +929,18 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            // --- ROUTE: MATERIAL CATEGORIES (Admin) ---
+            // --- ROUTE: MATERIAL CATEGORIES (Public for Authenticated Users) ---
+            if (method === "GET" && url.pathname.endsWith("/material/categories")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MATERIAL CATEGORIES (Admin - Same as above but prefixed) ---
             if (method === "GET" && url.pathname.endsWith("/admin/material/categories")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;

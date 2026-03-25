@@ -4396,7 +4396,10 @@ window.openVehicleDetailModal = async function(vehicleId) {
                             <span style="background: #000; color: #fff; padding: 4px 12px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 18px; margin-left: 12px; vertical-align: middle;">${v.plate_number}</span>
                         </h2>
                     </div>
-                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 20px; border-radius: 12px; background: #eee; color: #333; border: none;">Fermer</button>
+                    <div style="display:flex; gap:12px;">
+                        <button class="btn-primary" onclick="openAddVehicleEventModal('${v.id}')" style="padding: 10px 20px; border-radius: 12px; background: #2da140; color: #fff; border: none; font-weight: 700;">➕ Ajouter événement</button>
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 20px; border-radius: 12px; background: #eee; color: #333; border: none; font-weight: 700;">Fermer</button>
+                    </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 320px 1fr; height: 600px;">
@@ -4440,7 +4443,6 @@ window.openVehicleDetailModal = async function(vehicleId) {
                                     </div>
                                 </div>
                             `).join('')}
-                            <button class="btn-sm btn-secondary" style="width: 100%; margin-top: 8px; border-radius: 10px; border: 1px dashed #ccc; background: transparent; color: #777;" onclick="openAddVehicleEventModal('${vehicleId}')">➕ Ajouter un événement</button>
                         </div>
                     </div>
 

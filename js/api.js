@@ -375,7 +375,7 @@ export const api = {
     },
 
     async getMaterialCategories() {
-        const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
+        const response = await fetch(`${config.api.workerUrl}/material/categories`, {
             headers: await getAuthHeaders()
         });
         if (!response.ok) throw new Error(await response.text());
