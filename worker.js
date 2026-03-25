@@ -50,7 +50,8 @@ export default {
 
                 // 1. List from R2
                 const listing = await env.MY_BUCKET.list();
-                let objects = listing.objects;
+                // Hide internal folders from listing
+                let objects = listing.objects.filter(obj => !obj.key.startsWith('material_requests/'));
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
