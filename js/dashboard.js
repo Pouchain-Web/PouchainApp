@@ -4439,7 +4439,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
                                     </div>
                                     <div style="color: #212529; font-weight: 500; word-break: break-word;">
                                         ${l.type === 'mileage' ? '<b>' + l.value + '</b> km' : l.description}
-                                        ${l.image_path ? `<br><a href="${config.api.workerUrl}/file/${l.image_path}" target="_blank" style="color:var(--primary); font-size:10px; text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin-top:5px; font-weight:700;">📎 Voir pièce jointe</a>` : ''}
+                                        ${l.image_path ? `<br><a href="${config.api.workerUrl}/get/${l.image_path}" target="_blank" style="color:var(--primary); font-size:10px; text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin-top:5px; font-weight:700;">📎 Voir pièce jointe</a>` : ''}
                                     </div>
                                 </div>
                             `).join('')}
