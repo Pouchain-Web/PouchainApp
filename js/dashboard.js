@@ -4432,12 +4432,15 @@ window.openVehicleDetailModal = async function(vehicleId) {
                         <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Historique</h3>
                         <div style="display: flex; flex-direction: column; gap: 12px;">
                             ${logs.slice(0, 5).map(l => `
-                                <div style="font-size: 12px; padding: 12px; border-radius: 14px; background: #f8f9fa; border: 1px solid #f1f3f5;">
-                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                                        <span style="font-weight: 800; color: ${l.type === 'issue' ? '#FF3B30' : (l.type === 'event' ? '#007AFF' : '#495057')}; font-size: 10px;">${l.type.toUpperCase()}</span>
-                                        <span style="color: #adb5bd; font-size: 10px; font-weight:700;">${new Date(l.created_at).toLocaleDateString()}</span>
+                                <div style="font-size: 12px; padding: 12px; border-radius: 14px; background: #f8f9fa; border: 1px solid #f1f3f5; position: relative;">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding-right: 20px;">
+                                        <div>
+                                            <span style="font-weight: 800; color: ${l.type === 'issue' ? '#FF3B30' : (l.type === 'event' ? '#007AFF' : '#495057')}; font-size: 10px;">${l.type.toUpperCase()}</span>
+                                            <span style="color: #adb5bd; font-size: 10px; font-weight:700; margin-left: 8px;">${new Date(l.created_at).toLocaleDateString()}</span>
+                                        </div>
                                     </div>
-                                    <div style="color: #212529; font-weight: 500; word-break: break-word;">
+                                    <button onclick="handleDeleteVehicleLog('${l.id}', '${vehicleId}')" style="position: absolute; top: 12px; right: 12px; background: none; border: none; color: #ff3b30; cursor: pointer; font-size: 16px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; opacity: 0.5; font-weight: 900;" title="Supprimer">&times;</button>
+                                    <div style="color: #212529; font-weight: 500; word-break: break-word; padding-right: 20px;">
                                         ${l.type === 'mileage' ? '<b>' + l.value + '</b> km' : l.description}
                                         ${l.image_path ? `<br><a href="${config.api.workerUrl}/get/${l.image_path}" target="_blank" style="color:var(--primary); font-size:10px; text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin-top:5px; font-weight:700;">📎 Voir pièce jointe</a>` : ''}
                                     </div>
@@ -4586,6 +4589,17 @@ window.openAddVehicleEventModal = function(vehicleId) {
             saveBtn.innerText = "Enregistrer l'événement";
         }
     };
+};
+
+window.handleDeleteVehicleLog = async function(id, vehicleId) {
+    if (!confirm("Voulez-vous vraiment supprimer cet événement ? Cela supprimera également la pièce jointe associée.")) return;
+    try {
+        await api.deleteVehicleLog(id);
+        // Refresh detail view
+        await window.openVehicleDetailModal(vehicleId);
+    } catch(e) {
+        alert("Erreur: " + e.message);
+    }
 };
 
 initDashboard();

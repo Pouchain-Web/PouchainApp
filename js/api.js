@@ -505,5 +505,18 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async deleteVehicleLog(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/vehicle/log`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

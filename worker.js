@@ -1043,6 +1043,37 @@ export default {
                 return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            if (method === "DELETE" && url.pathname.endsWith("/admin/vehicle/log")) {
+                const body = await request.json();
+                const { id } = body;
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Fetch to check for attachment
+                const checkRes = await fetch(`${supabaseUrl}/rest/v1/vehicle_logs?id=eq.${id}&select=image_path`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (checkRes.ok) {
+                    const data = await checkRes.json();
+                    if (data && data[0] && data[0].image_path) {
+                        try {
+                            await env.MY_BUCKET.delete(data[0].image_path);
+                        } catch (e) {
+                            console.error("R2 Delete Error:", e);
+                        }
+                    }
+                }
+
+                // 2. Delete Log
+                const res = await fetch(`${supabaseUrl}/rest/v1/vehicle_logs?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: VEHICLES (Mobile / My Vehicle) ---
             if (method === "GET" && url.pathname.endsWith("/my-vehicle")) {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
