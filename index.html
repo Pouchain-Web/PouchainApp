@@ -19,15 +19,6 @@
             background-image: none !important;
         }
     </style>
-    <script>
-        // Auto dark mode based on device preference (for mobile elements if needed)
-        const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
-        const applyTheme = (isDark) => {
-            document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-        };
-        applyTheme(darkMq.matches);
-        darkMq.addEventListener('change', (e) => applyTheme(e.matches));
-    </script>
 </head>
 
 <body>
