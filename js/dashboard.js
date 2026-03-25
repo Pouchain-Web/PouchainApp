@@ -1157,9 +1157,9 @@ window.archivePlanningData = async function() {
         
         const result = await api.archiveOldTasks();
         if (result.count > 0) {
-            alert(`Succès ! ${result.count} tâches ont été ajoutées aux journaux annuels CSV sur Cloudflare.`);
+            showInfoModal("Archivage Terminé", `Succès ! <b>${result.count}</b> tâches ont été ajoutées aux journaux annuels CSV sur Cloudflare.<br><br>Votre historique reste consultable via le planning.`);
         } else {
-            alert("Aucune semaine passée à archiver pour le moment.");
+            showInfoModal("Information", "Aucune semaine passée à archiver pour le moment.");
         }
         
         const currentMonday = document.querySelector('[data-monday]');
@@ -1168,8 +1168,24 @@ window.archivePlanningData = async function() {
         
         if (btn) btn.disabled = false;
     } catch (e) {
-        alert("Erreur lors de l'archivage : " + e.message);
+        showInfoModal("Erreur", "Erreur lors de l'archivage : " + e.message);
     }
+};
+
+window.showInfoModal = function(title, message) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.zIndex = '100006';
+    overlay.innerHTML = `
+        <div class="modal-box" style="max-width:400px; text-align:center; animation: modalPop 0.3s ease-out;">
+            <div class="modal-header" style="justify-content:center; border-bottom:none; font-size:20px;">${title}</div>
+            <div style="padding: 15px; font-size:15px; line-height:1.5; color:rgba(255,255,255,0.85);">${message}</div>
+            <div class="modal-actions" style="justify-content:center; margin-top:10px; border-top:none;">
+                <button class="btn-primary" onclick="this.closest('.modal-overlay').remove()">Compris</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
 };
 
 window.reorderPlanningUser = function (fromIndex, toIndex, weekStartStr) {
@@ -1199,11 +1215,51 @@ window.autoSortPlanningUsers = async function (weekStartStr) {
 
         // Count tasks per user
         const taskCount = {};
-        users.forEach(u => taskCount[u.id] = 0);
-        tasks.forEach(t => { taskCount[t.user_id] = (taskCount[t.user_id] || 0) + 1; });
+        const userTasks = {};
+        users.forEach(u => {
+            taskCount[u.id] = 0;
+            userTasks[u.id] = [];
+        });
+        tasks.forEach(t => { 
+            taskCount[t.user_id] = (taskCount[t.user_id] || 0) + 1; 
+            if(!userTasks[t.user_id]) userTasks[t.user_id] = [];
+            userTasks[t.user_id].push(t);
+        });
+        
+        // Helper to check if tasks are only AT or RECUP
+        const isOnlyInactif = (uid) => {
+            const uT = userTasks[uid] || [];
+            if (uT.length === 0) return 0; // 0 tasks is handled separately
+            return uT.every(t => {
+                const title = (t.title || "").toUpperCase();
+                return title.includes("AT") || title.includes("RECUP");
+            });
+        };
 
-        // Sort by task count descending
-        users.sort((a, b) => (taskCount[b.id] || 0) - (taskCount[a.id] || 0));
+        // Sort strategy scores
+        // Score 0: Has active tasks (not only AT/RECUP)
+        // Score 1: Zero tasks
+        // Score 2: Has only AT/RECUP (inactive)
+        users.sort((a, b) => {
+            const aT = userTasks[a.id] || [];
+            const bT = userTasks[b.id] || [];
+            
+            const aInactif = isOnlyInactif(a.id);
+            const bInactif = isOnlyInactif(b.id);
+            
+            let aScore = 0;
+            if (aT.length === 0) aScore = 1;
+            else if (aInactif) aScore = 2;
+            
+            let bScore = 0;
+            if (bT.length === 0) bScore = 1;
+            else if (bInactif) bScore = 2;
+            
+            if (aScore !== bScore) return aScore - bScore;
+            
+            // If same score, sort by count DESC
+            return bT.length - aT.length;
+        });
 
         localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
         renderAdminPlanning(weekStartStr);
