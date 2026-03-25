@@ -53,7 +53,8 @@ export default {
                 // Hide internal folders from listing
                 let objects = listing.objects.filter(obj => 
                     !obj.key.startsWith('material_requests/') && 
-                    !obj.key.startsWith('fleet/')
+                    !obj.key.startsWith('fleet/') &&
+                    !obj.key.startsWith('archives/')
                 );
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
