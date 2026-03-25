@@ -4592,7 +4592,6 @@ window.openAddVehicleEventModal = function(vehicleId) {
 };
 
 window.handleDeleteVehicleLog = async function(id, vehicleId) {
-    if (!confirm("Voulez-vous vraiment supprimer cet événement ? Cela supprimera également la pièce jointe associée.")) return;
     try {
         await api.deleteVehicleLog(id);
         // Refresh detail view
