@@ -574,7 +574,7 @@ window.renderMobileMaterialRequests = async function () {
     }
 };
 
-window.renderMobilePlanning = async function (dateStr = new Date().toISOString().split('T')[0]) {
+window.renderMobilePlanning = async function (dateStr = new Date().toISOString().split('T')[0], mode = 'day') {
     document.getElementById('categories-view').classList.add('hidden');
     document.getElementById('search-results-view').classList.add('hidden');
     const searchContainer = document.querySelector('.mobile-search-container');
@@ -597,7 +597,25 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
     document.getElementById('list-content').innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader" style="border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto;"></div></div>`;
 
     try {
-        const tasks = await api.getTasks(dateStr);
+        let tasks = [];
+        let weekRange = null;
+
+        if (mode === 'day') {
+            tasks = await api.getTasks(dateStr);
+        } else {
+            // Week Mode
+            const d = new Date(dateStr + 'T12:00:00');
+            const dayNum = d.getDay();
+            const diff = d.getDate() - dayNum + (dayNum === 0 ? -6 : 1);
+            const monday = new Date(d.setDate(diff));
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            
+            const startDate = monday.toISOString().split('T')[0];
+            const endDate = sunday.toISOString().split('T')[0];
+            weekRange = { startDate, endDate };
+            tasks = await api.getTasks({ startDate, endDate });
+        }
         const displayDate = new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
         
         // Dark mode detection for inline styles
@@ -616,67 +634,78 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
 
         // Helper to change day
         window.changeMobileDay = (current, offset) => {
-            const d = new Date(current);
-            d.setDate(d.getDate() + offset);
-            renderMobilePlanning(d.toISOString().split('T')[0]);
+            const d = new Date(current + 'T12:00:00');
+            d.setDate(d.getDate() + (mode === 'week' ? offset * 7 : offset));
+            renderMobilePlanning(d.toISOString().split('T')[0], mode);
         };
 
         let html = `
             <div style="background: ${bg}; display: flex; flex-direction: column; height: calc(100vh - 60px);">
-                <!-- Fixed Header Block (Navigation arrows + Day Title) -->
-                <div style="position: fixed; top: 110px; left: 0; right: 0; z-index: 150; background: ${bg}; padding: 16px 16px 0 16px; border-bottom: 1px solid ${subtleBorder}; box-shadow: 0 4px 10px rgba(0,0,0,${dk ? '0.2' : '0.02'});">
-                    <div style="margin-bottom: 16px; background: ${cardBg}; padding: 12px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,${dk ? '0.3' : '0.06'}); display: flex; align-items: center; gap: 10px;">
-                        <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">◀</button>
-                        <div style="flex:1; position: relative;">
-                            <input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 14px; color: ${textColor};" value="${dateStr}" onchange="renderMobilePlanning(this.value)">
-                        </div>
-                        <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">▶</button>
+                <!-- Fixed Header Block -->
+                <div style="position: fixed; top: 110px; left: 0; right: 0; z-index: 150; background: ${bg}; padding: 16px; border-bottom: 1px solid ${subtleBorder}; box-shadow: 0 4px 10px rgba(0,0,0,${dk ? '0.2' : '0.01'});">
+                    
+                    <!-- View Switcher -->
+                    <div style="display: flex; background: ${dk ? '#1C1C1E' : '#E5E5EA'}; padding: 4px; border-radius: 12px; margin-bottom: 16px;">
+                        <button onclick="renderMobilePlanning('${dateStr}', 'day')" style="flex: 1; border: none; background: ${mode === 'day' ? cardBg : 'transparent'}; color: ${textColor}; padding: 8px; border-radius: 8px; font-weight: 700; font-size: 13px; box-shadow: ${mode === 'day' ? '0 2px 8px rgba(0,0,0,0.1)' : 'none'}; transition: 0.3s;">Jour</button>
+                        <button onclick="renderMobilePlanning('${dateStr}', 'week')" style="flex: 1; border: none; background: ${mode === 'week' ? cardBg : 'transparent'}; color: ${textColor}; padding: 8px; border-radius: 8px; font-weight: 700; font-size: 13px; box-shadow: ${mode === 'week' ? '0 2px 8px rgba(0,0,0,0.1)' : 'none'}; transition: 0.3s;">Semaine</button>
                     </div>
 
-                    <div style="font-weight: 700; color: ${textColor}; font-size: 18px; margin-bottom: 15px; text-transform: capitalize; padding-left: 8px;">
-                        ${displayDate}
+                    <div style="margin-bottom: 12px; background: ${cardBg}; padding: 10px; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,${dk ? '0.2' : '0.04'}); display: flex; align-items: center; gap: 8px;">
+                        <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">◀</button>
+                        <div style="flex:1; position: relative; text-align:center;">
+                            ${mode === 'day' 
+                                ? `<input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 15px; color: ${textColor}; padding: 0;" value="${dateStr}" onchange="renderMobilePlanning(this.value, 'day')">`
+                                : `<div style="font-weight:800; font-size:14px; color:${textColor};">${new Date(weekRange.startDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})} - ${new Date(weekRange.endDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})}</div>`
+                            }
+                        </div>
+                        <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">▶</button>
                     </div>
+
+                    ${mode === 'day' ? `
+                        <div style="font-weight: 800; color: ${textColor}; font-size: 19px; text-transform: capitalize; padding-left: 4px;">
+                            ${new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        </div>
+                    ` : ''}
                 </div>
 
                 <!-- Scrollable Task List -->
-                <div style="flex: 1; overflow-y: auto; padding: 130px 16px 100px 16px;">
-                    <div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid ${timelineBorder}; margin-left: 10px;">
+                <div style="flex: 1; overflow-y: auto; padding: ${mode === 'day' ? '240px' : '210px'} 16px 100px 16px;">
         `;
 
         if (tasks.length === 0) {
             html += `<div style="color:#8E8E93; text-align:center; padding: 60px 0; font-size: 16px;">
                 <div style="font-size: 40px; margin-bottom: 12px;">🌟</div>
-                Aucune tâche prévue aujourd'hui
+                Aucune tâche prévue
             </div>`;
         } else {
-            tasks.forEach(t => {
-                const parts = t.title.split(':::DESC:::');
-                const mainTitle = parts[0];
-                const desc = parts[1] || '';
-                const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
-                const isDone = t.done === 'true';
+            if (mode === 'day') {
+                html += `<div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid ${timelineBorder}; margin-left: 10px;">`;
+                tasks.forEach(t => { html += renderMobileTaskCard(t, dateStr, mode, dk, cardBg, textColor, subtleBorder, timelineBorder, chipBg, doneCardBg, doneBorder, normalBorder, dotBorderColor); });
+                html += `</div>`;
+            } else {
+                // Group by date
+                const grouped = {};
+                tasks.forEach(t => {
+                    if (!grouped[t.date]) grouped[t.date] = [];
+                    grouped[t.date].push(t);
+                });
 
-                html += `
-                    <div style="position: relative; margin-bottom: 24px;">
-                        <div style="position: absolute; left: -28px; top: 18px; width: 14px; height: 14px; border-radius: 50%; background: ${isDone ? '#8e8e93' : '#2da140'}; border: 4px solid ${dotBorderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
-                        
-                        <div style="background: ${isDone ? doneCardBg : cardBg}; border: 1px solid ${isDone ? doneBorder : normalBorder}; border-left: 5px solid ${isDone ? '#8e8e93' : '#2da140'}; border-radius: 16px; padding: 16px; box-shadow: 0 4px 15px rgba(0,0,0,${dk ? '0.3' : '0.05'}); opacity: ${isDone ? '0.75' : '1'};">
-                            <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                                ${!isAllDay ? `<div style="font-size: 13px; color: ${isDone ? '#8e8e93' : '#2da140'}; font-weight: 700;">🕒 ${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>` : '<div></div>'}
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight:600; color: ${isDone ? '#2da140' : '#8e8e93'}; background: ${chipBg}; padding: 4px 10px; border-radius: 20px;">
-                                    <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleMobileTaskDone('${t.id}', this.checked, '${dateStr}')" style="accent-color: #2da140; width: 16px; height: 16px;">
-                                    ${isDone ? 'Fait' : 'À faire'}
-                                </label>
-                            </div>
-                            <div style="font-weight: 700; font-size: 17px; color: ${textColor}; text-decoration: ${isDone ? 'line-through' : 'none'};">${window.escapeHTML(mainTitle)}</div>
-                            
-                            ${desc ? `
-                            <button style="background: transparent; color: #007aff; font-weight: 600; border: none; padding: 12px 0 0 0; font-size: 14px; cursor: pointer;" onclick="openMobileTaskDetailModal('${window.escapeHTML(mainTitle)}', \`${window.escapeHTML(desc)}\`)">Voir détails</button>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
-            });
+                Object.keys(grouped).sort().forEach(date => {
+                    const dayTasks = grouped[date];
+                    const d = new Date(date + 'T12:00:00');
+                    const dayLabel = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+                    
+                    html += `<div style="margin-bottom: 32px;">
+                                <div style="font-weight: 800; font-size: 14px; text-transform: uppercase; color: ${dk ? '#8E8E93' : '#666'}; margin-bottom: 12px; padding-left: 4px; display: flex; align-items: center; gap: 8px;">
+                                    <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></div>
+                                    ${dayLabel}
+                                </div>
+                                <div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid ${timelineBorder}; margin-left: 10px;">
+                            `;
+                    dayTasks.forEach(t => { html += renderMobileTaskCard(t, dateStr, mode, dk, cardBg, textColor, subtleBorder, timelineBorder, chipBg, doneCardBg, doneBorder, normalBorder, dotBorderColor); });
+                    html += `</div></div>`;
+                });
+            }
         }
 
         html += `
@@ -716,16 +745,47 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
         window.toggleMobileTaskDone = async (taskId, isChecked, date) => {
             try {
                 await api.updateTask(taskId, { done: isChecked ? 'true' : 'false' });
-                renderMobilePlanning(date);
+                renderMobilePlanning(date, mode);
             } catch (e) {
                 alert("Erreur: " + e.message);
             }
         };
 
     } catch (e) {
+        console.error(e);
         document.getElementById('list-content').innerHTML = `<div style="color:red; margin:20px; padding: 16px; background: #ffe5e5; border-radius: 12px; border: 1px solid #ffcccc;">Erreur: ${e.message}</div>`;
     }
 };
+
+// Helper to render task card
+function renderMobileTaskCard(t, dateStr, mode, dk, cardBg, textColor, subtleBorder, timelineBorder, chipBg, doneCardBg, doneBorder, normalBorder, dotBorderColor) {
+    const parts = t.title.split(':::DESC:::');
+    const mainTitle = parts[0];
+    const desc = parts[1] || '';
+    const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
+    const isDone = t.done === 'true';
+
+    return `
+        <div style="position: relative; margin-bottom: 24px;">
+            <div style="position: absolute; left: -28px; top: 18px; width: 14px; height: 14px; border-radius: 50%; background: ${isDone ? '#8e8e93' : '#2da140'}; border: 4px solid ${dotBorderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
+            
+            <div style="background: ${isDone ? doneCardBg : cardBg}; border: 1px solid ${isDone ? doneBorder : normalBorder}; border-left: 5px solid ${isDone ? '#8e8e93' : '#2da140'}; border-radius: 16px; padding: 16px; box-shadow: 0 4px 15px rgba(0,0,0,${dk ? '0.3' : '0.05'}); opacity: ${isDone ? '0.75' : '1'};">
+                <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                    ${!isAllDay ? `<div style="font-size: 13px; color: ${isDone ? '#8e8e93' : '#2da140'}; font-weight: 700;">🕒 ${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>` : '<div></div>'}
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight:600; color: ${isDone ? '#2da140' : '#8e8e93'}; background: ${chipBg}; padding: 4px 10px; border-radius: 20px;">
+                        <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleMobileTaskDone('${t.id}', this.checked, '${dateStr}', '${mode}')" style="accent-color: #2da140; width: 16px; height: 16px;">
+                        ${isDone ? 'Fait' : 'À faire'}
+                    </label>
+                </div>
+                <div style="font-weight: 700; font-size: 17px; color: ${textColor}; text-decoration: ${isDone ? 'line-through' : 'none'};">${window.escapeHTML(mainTitle)}</div>
+                
+                ${desc ? `
+                <button style="background: transparent; color: #007aff; font-weight: 600; border: none; padding: 12px 0 0 0; font-size: 14px; cursor: pointer;" onclick="openMobileTaskDetailModal('${window.escapeHTML(mainTitle)}', \`${window.escapeHTML(desc).replace(/`/g, '\\`').replace(/\n/g, '\\n')}\`)">Voir détails</button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
 
 function showMobileRootFiles(docs) {
     mobileCurrentPath = "Autres"; // Fake path for UI

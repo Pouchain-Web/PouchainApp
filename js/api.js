@@ -264,9 +264,18 @@ export const api = {
     },
 
     // --- Planning Management ---
-    async getTasks(date = null) {
+    async getTasks(params = {}) {
         let url = `${config.api.workerUrl}/tasks`;
-        if (date) url += `?date=${encodeURIComponent(date)}`;
+        const queryParams = [];
+        if (typeof params === 'string') {
+            queryParams.push(`date=${encodeURIComponent(params)}`);
+        } else {
+            if (params.date) queryParams.push(`date=${encodeURIComponent(params.date)}`);
+            if (params.startDate) queryParams.push(`startDate=${encodeURIComponent(params.startDate)}`);
+            if (params.endDate) queryParams.push(`endDate=${encodeURIComponent(params.endDate)}`);
+        }
+        if (queryParams.length > 0) url += `?${queryParams.join('&')}`;
+        
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

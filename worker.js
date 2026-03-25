@@ -839,10 +839,16 @@ export default {
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
                 const { searchParams } = new URL(request.url);
-                const date = searchParams.get('date'); // optional
+                const date = searchParams.get('date');
+                const startDate = searchParams.get('startDate');
+                const endDate = searchParams.get('endDate');
 
                 let queryUrl = `${supabaseUrl}/rest/v1/tasks?user_id=eq.${user.id}&select=*`;
-                if (date) queryUrl += `&date=eq.${date}`;
+                if (startDate && endDate) {
+                    queryUrl += `&date=gte.${startDate}&date=lte.${endDate}`;
+                } else if (date) {
+                    queryUrl += `&date=eq.${date}`;
+                }
                 queryUrl += `&order=date.asc,start_time.asc`;
 
                 const response = await fetch(queryUrl, {
