@@ -232,9 +232,12 @@ async function renderMobileView() {
             }
         }
 
-        const files = await api.listFiles(userId);
+        const [files, myVehicle] = await Promise.all([
+            api.listFiles(userId),
+            api.getMyVehicle()
+        ]);
         mobileFilesCache = files;
-        generateMobileCategories(files);
+        generateMobileCategories(files, myVehicle);
     } catch (e) {
         console.error(e);
         document.getElementById('categories-grid').innerHTML = `<div style="color:red; text-align:center;">Erreur de chargement: ${e.message}</div>`;
@@ -291,7 +294,7 @@ function handleMobileSearch(query) {
     });
 }
 
-function generateMobileCategories(files) {
+function generateMobileCategories(files, myVehicle = null) {
     const grid = document.getElementById('categories-grid');
     grid.innerHTML = '';
 
@@ -302,7 +305,7 @@ function generateMobileCategories(files) {
         const parts = file.key.split('/');
         if (parts.length > 1) {
             const folder = parts[0];
-            if (folder.toLowerCase() === 'archive') return; // Skip entirely
+            if (folder.toLowerCase() === 'archive') return; 
             if (!categories.has(folder)) {
                 categories.set(folder, { files: [], color: null, emoji: '📁', order: 999, row: 1 });
             }
@@ -320,7 +323,7 @@ function generateMobileCategories(files) {
                 catData.files.push(file);
             }
         } else {
-            if (file.key.toLowerCase().includes('archive')) return; // Skip archive files
+            if (file.key.toLowerCase().includes('archive')) return; 
             uncategorized.push(file);
         }
     });
@@ -335,7 +338,7 @@ function generateMobileCategories(files) {
     });
 
     sortedCategories.forEach(([catName, data]) => {
-        if (catName.toLowerCase() === 'archive') return; // Hide archive for mobile users
+        if (catName.toLowerCase() === 'archive') return;
         const card = document.createElement('div');
         card.className = 'category-card';
         const color = data.color || colors[colorIdx % colors.length];
@@ -343,7 +346,6 @@ function generateMobileCategories(files) {
             <div class="category-icon" style="background-color: ${color}">${data.emoji}</div>
             <div class="category-title">${catName}</div>
         `;
-        // Start navigation from root category
         card.onclick = () => openMobileFolder(catName);
         grid.appendChild(card);
         colorIdx++;
@@ -356,13 +358,11 @@ function generateMobileCategories(files) {
             <div class="category-icon" style="background-color: rgba(255, 255, 255, 0.2)">📄</div>
             <div class="category-title">Autres</div>
         `;
-        card.onclick = () => {
-            showMobileRootFiles(uncategorized);
-        };
+        card.onclick = () => showMobileRootFiles(uncategorized);
         grid.appendChild(card);
     }
 
-    // Add Planning Card at the very top (prepend)
+    // Add Special App Cards
     const planningCard = document.createElement('div');
     planningCard.className = 'category-card';
     planningCard.innerHTML = `
@@ -370,7 +370,7 @@ function generateMobileCategories(files) {
         <div class="category-title" style="font-weight:bold;">Planning</div>
     `;
     planningCard.onclick = () => renderMobilePlanning();
-    // Add "Mon Matos" Card
+
     const matosCard = document.createElement('div');
     matosCard.className = 'category-card';
     matosCard.innerHTML = `
@@ -379,9 +379,18 @@ function generateMobileCategories(files) {
     `;
     matosCard.onclick = () => renderMobileMaterialRequests();
 
-    // 2nd: Mon Matos
+    if (myVehicle) {
+        const autoCard = document.createElement('div');
+        autoCard.className = 'category-card';
+        autoCard.innerHTML = `
+            <div class="category-icon" style="background-color: #34C759;">🚗</div>
+            <div class="category-title" style="font-weight:bold;">Mon Auto</div>
+        `;
+        autoCard.onclick = () => renderMobileVehicleApp(myVehicle);
+        grid.prepend(autoCard);
+    }
+
     grid.prepend(matosCard);
-    // 1st: Planning
     grid.prepend(planningCard);
 }
 
@@ -899,6 +908,7 @@ async function renderAdminView(session) {
                     <span>📦 Demande de matériel</span>
                     <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4);">0</span>
                 </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminVehicles()" id="nav-vehicles">🚗 Gestion des véhicules</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -3856,7 +3866,6 @@ window.renderAdminMaterialRequests = async function () {
             }
         }
 
-        html += `</div>`;
         content.innerHTML = html;
 
         window.updateReqStatus = async (id, status) => {
@@ -3973,6 +3982,171 @@ window.renderAdminMaterialRequests = async function () {
     }
 };
 
+// --- VEHICLE MANAGEMENT (Admin) ---
+window.renderAdminVehicles = async function() {
+    adminCurrentFolder = null;
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('nav-vehicles').classList.add('active');
+
+    const content = document.getElementById('admin-content');
+    content.innerHTML = `<div style="text-align:center; padding: 50px;"><div class="loader-spinner"></div></div>`;
+
+    try {
+        const [vehicles, users] = await Promise.all([
+            api.getVehicles(),
+            api.listUsers()
+        ]);
+
+        let html = `
+            <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">Gestion du parc véhicule</h1>
+                <button class="btn-primary" onclick="openAddVehicleModal()">+ Ajouter un véhicule</button>
+            </header>
+
+            <div class="admin-table-container glass-panel" style="padding: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Véhicule</th>
+                            <th>Immatriculation</th>
+                            <th>Kilométrage</th>
+                            <th>Affectation</th>
+                            <th>Dernière MAJ</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        if (vehicles.length === 0) {
+            html += `<tr><td colspan="6" style="text-align:center; padding: 40px; color: #888;">Aucun véhicule enregistré</td></tr>`;
+        } else {
+            vehicles.forEach(v => {
+                const userName = v.profiles ? `${v.profiles.first_name} ${v.profiles.last_name}`.trim() : '<span style="color:#666">Non affecté</span>';
+                const lastUpdate = new Date(v.updated_at).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+                
+                html += `
+                    <tr>
+                        <td>
+                            <div style="font-weight: 700; color: white;">${v.make || ''} ${v.model || 'Inconnu'}</div>
+                            <div style="font-size: 11px; color: #666;">Année: ${v.year || '-'}</div>
+                        </td>
+                        <td><span style="background: white; color: black; padding: 4px 10px; border-radius: 4px; font-weight: 800; font-family: monospace; border: 2px solid #333;">${v.plate_number}</span></td>
+                        <td><div style="font-weight: 600;">${v.last_mileage.toLocaleString()} km</div></td>
+                        <td><div style="color: #bbb;">${userName}</div></td>
+                        <td><div style="font-size: 12px; color: #666;">${lastUpdate}</div></td>
+                        <td style="text-align: right; display: flex; gap: 8px; justify-content: flex-end;">
+                            <button class="btn-sm btn-secondary" onclick="openAddVehicleModal('${v.id}')">Modifier</button>
+                            <button class="btn-sm" style="background: rgba(255, 59, 48, 0.1); color: #FF3B30; border: none; padding: 4px 8px; border-radius: 6px; cursor: pointer;" onclick="deleteAdminVehicle('${v.id}')">×</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `</tbody></table></div>`;
+        content.innerHTML = html;
+
+    } catch (e) {
+        content.innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.openAddVehicleModal = async function(vehicleId = null) {
+    try {
+        const users = await api.listUsers();
+        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
+        
+        let existing = null;
+        if (vehicleId) {
+            const vehicles = await api.getVehicles();
+            existing = vehicles.find(v => v.id === vehicleId);
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '100009';
+        
+        modal.innerHTML = `
+            <div class="modal-box glass-panel" style="width: 500px; padding: 32px; animation: modalPop 0.3s ease-out;">
+                <h2 style="margin-top: 0; margin-bottom: 24px;">${existing ? 'Modifier le véhicule' : 'Ajouter un véhicule'}</h2>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                    <div>
+                        <label class="form-label">Marque</label>
+                        <input type="text" id="v-make" class="form-input" value="${existing?.make || ''}" placeholder="Ex: Renault">
+                    </div>
+                    <div>
+                        <label class="form-label">Modèle</label>
+                        <input type="text" id="v-model" class="form-input" value="${existing?.model || ''}" placeholder="Ex: Master">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                    <div>
+                        <label class="form-label">Immatriculation</label>
+                        <input type="text" id="v-plate" class="form-input" value="${existing?.plate_number || ''}" placeholder="Ex: AB-123-CD">
+                    </div>
+                    <div>
+                        <label class="form-label">Année</label>
+                        <input type="text" id="v-year" class="form-input" value="${existing?.year || ''}" placeholder="Ex: 2021">
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                    <label class="form-label">Collaborateur affecté</label>
+                    <select id="v-user" class="form-input">
+                        <option value="">-- Non affecté --</option>
+                        ${users.map(u => `<option value="${u.id}" ${existing?.assigned_user_id === u.id ? 'selected' : ''}>${u.first_name || ''} ${u.last_name || ''} (${u.email})</option>`).join('')}
+                    </select>
+                </div>
+
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                    <button id="save-v-btn" class="btn-primary">Enregistrer</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('save-v-btn').onclick = async () => {
+            const data = {
+                id: vehicleId,
+                make: document.getElementById('v-make').value,
+                model: document.getElementById('v-model').value,
+                plate_number: document.getElementById('v-plate').value,
+                year: document.getElementById('v-year').value,
+                assigned_user_id: document.getElementById('v-user').value || null
+            };
+
+            if (!data.plate_number) return alert("L'immatriculation est obligatoire.");
+
+            document.getElementById('save-v-btn').disabled = true;
+            try {
+                await api.saveVehicle(data);
+                modal.remove();
+                renderAdminVehicles();
+            } catch (e) {
+                alert("Erreur: " + e.message);
+                document.getElementById('save-v-btn').disabled = false;
+            }
+        };
+
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.deleteAdminVehicle = async function(id) {
+    if (!confirm("Voulez-vous vraiment supprimer ce véhicule ?")) return;
+    try {
+        await api.deleteVehicle(id);
+        renderAdminVehicles();
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
 // Global badge update for admin sidebar
 window.updateMaterialBadge = async function() {
     try {
@@ -3990,6 +4164,118 @@ window.updateMaterialBadge = async function() {
     } catch (e) {
         console.warn("Could not update material badge", e);
     }
+};
+
+// --- MOBILE VEHICLE APP ---
+window.renderMobileVehicleApp = async function(vehicle) {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Mon Auto";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    mobileCurrentPath = "auto";
+
+    const container = document.getElementById('list-content');
+    container.innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader-spinner"></div></div>`;
+
+    try {
+        const logs = await api.getVehicleAllLogs(vehicle.id);
+        const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+        const cardBg = dk ? '#1C1C1E' : '#fff';
+        const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+        const border = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+        let html = `
+            <div style="padding: 16px; padding-bottom: 100px;">
+                <!-- Vehicle Card -->
+                <div style="background: linear-gradient(135deg, #34C759, #28a745); border-radius: 24px; padding: 24px; color: white; margin-bottom: 24px; box-shadow: 0 8px 16px rgba(52, 199, 89, 0.2);">
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 4px;">Mon véhicule</div>
+                    <div style="font-size: 24px; font-weight: 800; margin-bottom: 16px;">${vehicle.make || ''} ${vehicle.model || 'Auto'}</div>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <span style="background: white; color: black; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 16px;">${vehicle.plate_number}</span>
+                        <span style="font-size: 14px; opacity: 0.9;">${vehicle.year || ''}</span>
+                    </div>
+                </div>
+
+                <!-- Mileage Card -->
+                <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div>
+                            <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 600;">Kilométrage actuel</div>
+                            <div style="font-size: 32px; font-weight: 800; color: ${textColor};">${vehicle.last_mileage.toLocaleString()} <span style="font-size: 16px; font-weight: 600; color: #8E8E93;">km</span></div>
+                        </div>
+                        <button class="btn-primary" onclick="updateMobileMileage('${vehicle.id}', ${vehicle.last_mileage})" style="padding: 10px 20px; border-radius: 12px; background: #34C759;">Mettre à jour</button>
+                    </div>
+                    <div style="font-size: 12px; color: #8E8E93;">Dernier relevé : ${new Date(vehicle.updated_at).toLocaleDateString('fr-FR')}</div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;">
+                    <button style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; cursor: pointer;" onclick="reportMobileVehicleIssue('${vehicle.id}')">
+                        <span style="font-size: 24px;">⚠️</span>
+                        <span style="font-weight: 600; color: ${textColor}; font-size: 14px;">Signaler un souci</span>
+                    </button>
+                    <button style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; cursor: pointer; filter: grayscale(1); opacity: 0.5;" onclick="alert('Bientôt disponible')">
+                        <span style="font-size: 24px;">⛽</span>
+                        <span style="font-weight: 600; color: ${textColor}; font-size: 14px;">Plein essence</span>
+                    </button>
+                </div>
+
+                <!-- History -->
+                <h3 style="font-size: 18px; margin: 0 0 16px 4px; color: ${textColor};">Historique récent</h3>
+        `;
+
+        if (logs.length === 0) {
+            html += `<div style="text-align:center; padding: 24px; color: #8E8E93;">Aucun historique</div>`;
+        } else {
+            logs.slice(0, 5).forEach(log => {
+                const icon = log.type === 'mileage' ? '📍' : (log.type === 'issue' ? '⚠️' : '🔧');
+                html += `
+                    <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 16px; padding: 14px; margin-bottom: 10px; display: flex; gap: 14px; align-items: center;">
+                        <div style="font-size: 20px; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 12px;">${icon}</div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: ${textColor}; font-size: 14px;">
+                                ${log.type === 'mileage' ? `Mise à jour : ${parseInt(log.value).toLocaleString()} km` : log.description}
+                            </div>
+                            <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        html += `</div>`;
+        container.innerHTML = html;
+
+    } catch (e) {
+        container.innerHTML = `<div style="color:red; text-align:center; padding:40px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.updateMobileMileage = function(vehicleId, current) {
+    const val = prompt("Entrez le kilométrage actuel au compteur :", current);
+    if (val === null) return;
+    const newMileage = parseInt(val);
+    if (isNaN(newMileage) || newMileage < current) return alert("Veuillez entrer un kilométrage valide (supérieur ou égal à l'actuel).");
+
+    api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: newMileage.toString() })
+        .then(() => api.getMyVehicle())
+        .then(updated => renderMobileVehicleApp(updated))
+        .catch(e => alert("Erreur: " + e.message));
+};
+
+window.reportMobileVehicleIssue = function(vehicleId) {
+    const desc = prompt("Décrivez brièvement le problème (bruit, choc, voyant...) :");
+    if (!desc) return;
+
+    api.submitVehicleLog({ vehicle_id: vehicleId, type: 'issue', description: desc })
+        .then(() => api.getMyVehicle())
+        .then(updated => renderMobileVehicleApp(updated))
+        .catch(e => alert("Erreur: " + e.message));
 };
 
 // Start

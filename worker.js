@@ -969,6 +969,111 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // --- ROUTE: VEHICLES (Admin) ---
+            if (method === "GET" && url.pathname.endsWith("/admin/vehicles")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?select=*,profiles(first_name,last_name,email)&order=plate_number.asc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname.endsWith("/admin/vehicles")) {
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                
+                const { id, ...vehicleData } = body;
+                const upsertBody = { ...vehicleData, updated_at: new Date().toISOString() };
+                if (id) upsertBody.id = id;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/vehicles`, {
+                    method: "POST",
+                    headers: { 
+                        "apikey": serviceKey, 
+                        "Authorization": `Bearer ${serviceKey}`, 
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates"
+                    },
+                    body: JSON.stringify(upsertBody)
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname.endsWith("/admin/vehicles")) {
+                const body = await request.json();
+                const { id } = body;
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: VEHICLE LOGS (Admin) ---
+            if (method === "GET" && url.pathname.endsWith("/admin/vehicle/all-logs")) {
+                const vehicle_id = url.searchParams.get('vehicle_id');
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                let query = `${supabaseUrl}/rest/v1/vehicle_logs?select=*,profiles(first_name,last_name)&order=created_at.desc&limit=100`;
+                if (vehicle_id) query += `&vehicle_id=eq.${vehicle_id}`;
+                
+                const res = await fetch(query, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: VEHICLES (Mobile / My Vehicle) ---
+            if (method === "GET" && url.pathname.endsWith("/my-vehicle")) {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=eq.${user.id}&select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                const data = await res.json();
+                return new Response(JSON.stringify(data[0] || null), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname.endsWith("/vehicle/log")) {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { vehicle_id, type, value, description, image_path } = body;
+                if (!vehicle_id || !type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+                
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Insert Log
+                const res = await fetch(`${supabaseUrl}/rest/v1/vehicle_logs`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ vehicle_id, user_id: user.id, type, value, description, image_path })
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+
+                // 2. If it's a mileage update, update the vehicle last_mileage
+                if (type === 'mileage' && value) {
+                    await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${vehicle_id}`, {
+                        method: "PATCH",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ last_mileage: parseInt(value), updated_at: new Date().toISOString() })
+                    });
+                }
+
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: MATERIAL CONFIG (Admin) ---
             if (method === "GET" && url.pathname.endsWith("/admin/material/config")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";

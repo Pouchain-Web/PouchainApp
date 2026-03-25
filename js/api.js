@@ -440,5 +440,69 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    // --- Vehicle Management ---
+    async getVehicles() {
+        const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveVehicle(vehicleData) {
+        const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(vehicleData)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteVehicle(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getVehicleAllLogs(vehicleId = null) {
+        let url = `${config.api.workerUrl}/admin/vehicle/all-logs`;
+        if (vehicleId) url += `?vehicle_id=${vehicleId}`;
+        const response = await fetch(url, { headers: await getAuthHeaders() });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMyVehicle() {
+        const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitVehicleLog(logData) {
+        const response = await fetch(`${config.api.workerUrl}/vehicle/log`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(logData)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };
