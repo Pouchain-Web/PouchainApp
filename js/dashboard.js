@@ -67,6 +67,14 @@ async function renderMobileView() {
         document.head.appendChild(link);
     }
 
+    // Auto dark mode based on device preference
+    const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyMobileTheme = (isDark) => {
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    };
+    applyMobileTheme(darkMq.matches);
+    darkMq.addEventListener('change', (e) => applyMobileTheme(e.matches));
+
     // Structure
     document.body.innerHTML = `
     <!-- Fixed Top Bar -->
@@ -326,6 +334,20 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
         const tasks = await api.getTasks(dateStr);
         const displayDate = new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
         
+        // Dark mode detection for inline styles
+        const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+        const bg = dk ? '#000000' : '#f8f9fa';
+        const cardBg = dk ? '#1C1C1E' : '#fff';
+        const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+        const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+        const btnBg = dk ? '#2C2C2E' : '#f0f0f0';
+        const timelineBorder = dk ? '#38383A' : '#e5e5ea';
+        const chipBg = dk ? '#2C2C2E' : '#f0f0f0';
+        const doneCardBg = dk ? '#1C1C1E' : '#f2f2f7';
+        const doneBorder = dk ? '#38383A' : '#e5e5ea';
+        const normalBorder = dk ? '#264d2e' : '#d1e7dd';
+        const dotBorderColor = dk ? '#000' : '#fff';
+
         // Helper to change day
         window.changeMobileDay = (current, offset) => {
             const d = new Date(current);
@@ -334,25 +356,25 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
         };
 
         let html = `
-            <div style="background: #f8f9fa; display: flex; flex-direction: column; height: calc(100vh - 60px);">
+            <div style="background: ${bg}; display: flex; flex-direction: column; height: calc(100vh - 60px);">
                 <!-- Fixed Header Block (Navigation arrows + Day Title) -->
-                <div style="position: fixed; top: 110px; left: 0; right: 0; z-index: 150; background: #f8f9fa; padding: 16px 16px 0 16px; border-bottom: 1px solid rgba(0,0,0,0.05); box-shadow: 0 4px 10px rgba(0,0,0,0.02);">
-                    <div style="margin-bottom: 16px; background: #fff; padding: 12px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 10px;">
-                        <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: #f0f0f0; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">◀</button>
+                <div style="position: fixed; top: 110px; left: 0; right: 0; z-index: 150; background: ${bg}; padding: 16px 16px 0 16px; border-bottom: 1px solid ${subtleBorder}; box-shadow: 0 4px 10px rgba(0,0,0,${dk ? '0.2' : '0.02'});">
+                    <div style="margin-bottom: 16px; background: ${cardBg}; padding: 12px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,${dk ? '0.3' : '0.06'}); display: flex; align-items: center; gap: 10px;">
+                        <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">◀</button>
                         <div style="flex:1; position: relative;">
-                            <input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 14px;" value="${dateStr}" onchange="renderMobilePlanning(this.value)">
+                            <input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 14px; color: ${textColor};" value="${dateStr}" onchange="renderMobilePlanning(this.value)">
                         </div>
-                        <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: #f0f0f0; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">▶</button>
+                        <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 44px; height: 44px; font-size: 20px; display: flex; align-items:center; justify-content:center;">▶</button>
                     </div>
 
-                    <div style="font-weight: 700; color: #1c1c1e; font-size: 18px; margin-bottom: 15px; text-transform: capitalize; padding-left: 8px;">
+                    <div style="font-weight: 700; color: ${textColor}; font-size: 18px; margin-bottom: 15px; text-transform: capitalize; padding-left: 8px;">
                         ${displayDate}
                     </div>
                 </div>
 
                 <!-- Scrollable Task List -->
                 <div style="flex: 1; overflow-y: auto; padding: 130px 16px 100px 16px;">
-                    <div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid #e5e5ea; margin-left: 10px;">
+                    <div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid ${timelineBorder}; margin-left: 10px;">
         `;
 
         if (tasks.length === 0) {
@@ -370,17 +392,17 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
 
                 html += `
                     <div style="position: relative; margin-bottom: 24px;">
-                        <div style="position: absolute; left: -28px; top: 18px; width: 14px; height: 14px; border-radius: 50%; background: ${isDone ? '#8e8e93' : '#2da140'}; border: 4px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
+                        <div style="position: absolute; left: -28px; top: 18px; width: 14px; height: 14px; border-radius: 50%; background: ${isDone ? '#8e8e93' : '#2da140'}; border: 4px solid ${dotBorderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
                         
-                        <div style="background: ${isDone ? '#f2f2f7' : '#fff'}; border: 1px solid ${isDone ? '#e5e5ea' : '#d1e7dd'}; border-left: 5px solid ${isDone ? '#8e8e93' : '#2da140'}; border-radius: 16px; padding: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); opacity: ${isDone ? '0.75' : '1'};">
+                        <div style="background: ${isDone ? doneCardBg : cardBg}; border: 1px solid ${isDone ? doneBorder : normalBorder}; border-left: 5px solid ${isDone ? '#8e8e93' : '#2da140'}; border-radius: 16px; padding: 16px; box-shadow: 0 4px 15px rgba(0,0,0,${dk ? '0.3' : '0.05'}); opacity: ${isDone ? '0.75' : '1'};">
                             <div style="display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                                 ${!isAllDay ? `<div style="font-size: 13px; color: ${isDone ? '#8e8e93' : '#2da140'}; font-weight: 700;">🕒 ${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>` : '<div></div>'}
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight:600; color: ${isDone ? '#2da140' : '#8e8e93'}; background: #f0f0f0; padding: 4px 10px; border-radius: 20px;">
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight:600; color: ${isDone ? '#2da140' : '#8e8e93'}; background: ${chipBg}; padding: 4px 10px; border-radius: 20px;">
                                     <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleMobileTaskDone('${t.id}', this.checked, '${dateStr}')" style="accent-color: #2da140; width: 16px; height: 16px;">
                                     ${isDone ? 'Fait' : 'À faire'}
                                 </label>
                             </div>
-                            <div style="font-weight: 700; font-size: 17px; color: #1c1c1e; text-decoration: ${isDone ? 'line-through' : 'none'};">${window.escapeHTML(mainTitle)}</div>
+                            <div style="font-weight: 700; font-size: 17px; color: ${textColor}; text-decoration: ${isDone ? 'line-through' : 'none'};">${window.escapeHTML(mainTitle)}</div>
                             
                             ${desc ? `
                             <button style="background: transparent; color: #007aff; font-weight: 600; border: none; padding: 12px 0 0 0; font-size: 14px; cursor: pointer;" onclick="openMobileTaskDetailModal('${window.escapeHTML(mainTitle)}', \`${window.escapeHTML(desc)}\`)">Voir détails</button>
@@ -398,18 +420,27 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
         document.getElementById('list-content').innerHTML = html;
 
         window.openMobileTaskDetailModal = (title, desc) => {
+            const _dk = document.documentElement.getAttribute('data-theme') === 'dark';
+            const _modalBg = _dk ? '#1C1C1E' : undefined; // uses .modal-box CSS by default
+            const _titleColor = _dk ? '#FFFFFF' : '#1c1c1e';
+            const _descBg = _dk ? '#2C2C2E' : '#f2f2f7';
+            const _descColor = _dk ? '#E5E5EA' : '#3a3a3c';
+            const _borderColor = _dk ? '#38383A' : '#f2f2f7';
+            const _closeBtnBg = _dk ? '#FFFFFF' : '#1c1c1e';
+            const _closeBtnColor = _dk ? '#000000' : '#FFFFFF';
+
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
             modal.style.zIndex = "10000";
             modal.innerHTML = `
                 <div class="modal-box" style="padding: 24px; border-radius: 28px; animation: modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); text-align: left;">
-                    <div style="font-weight: 800; font-size: 22px; margin-bottom: 8px; color: #1c1c1e;">Détails</div>
-                    <div style="font-weight: 700; color: #2da140; margin-bottom: 20px; font-size: 17px; line-height: 1.4; border-bottom: 1px solid #f2f2f7; padding-bottom: 12px;">${title}</div>
+                    <div style="font-weight: 800; font-size: 22px; margin-bottom: 8px; color: ${_titleColor};">Détails</div>
+                    <div style="font-weight: 700; color: #2da140; margin-bottom: 20px; font-size: 17px; line-height: 1.4; border-bottom: 1px solid ${_borderColor}; padding-bottom: 12px;">${title}</div>
                     
-                    <div style="background: #f2f2f7; padding: 20px; border-radius: 20px; color: #3a3a3c; font-size: 16px; line-height: 1.6; white-space: pre-wrap; max-height: 45vh; overflow-y: auto; text-align: left; min-height: 60px;">${desc}</div>
+                    <div style="background: ${_descBg}; padding: 20px; border-radius: 20px; color: ${_descColor}; font-size: 16px; line-height: 1.6; white-space: pre-wrap; max-height: 45vh; overflow-y: auto; text-align: left; min-height: 60px;">${desc}</div>
                     
                     <div style="margin-top: 24px;">
-                        <button class="btn" style="background: #1c1c1e; width: 100%; border-radius: 18px; padding: 16px; font-size: 17px;" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+                        <button class="btn" style="background: ${_closeBtnBg}; color: ${_closeBtnColor}; width: 100%; border-radius: 18px; padding: 16px; font-size: 17px;" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
                     </div>
                 </div>
             `;
@@ -1454,7 +1485,7 @@ window.showSuccessModal = function (message) {
         <div class="modal-box" style="text-align: center;">
             <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
             <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 20px;">Succès</h3>
-            <p style="margin-bottom: 24px; color: #666;">${message}</p>
+            <p style="margin-bottom: 24px; color: var(--text-secondary);">${message}</p>
             <button class="btn-primary" style="width: 100%; justify-content: center;" onclick="closeModal('success-modal')">OK</button>
         </div>
     `;
@@ -1471,7 +1502,7 @@ window.openAdminChangePasswordModal = function (id, firstName, lastName, email) 
     overlay.innerHTML = `
         <div class="modal-box">
             <div class="modal-header">Changer le mot de passe</div>
-            <p style="margin-bottom: 16px; color: #666;">Changer le mot de passe pour <b>${displayName}</b></p>
+            <p style="margin-bottom: 16px; color: var(--text-secondary);">Changer le mot de passe pour <b>${displayName}</b></p>
             <div class="form-group">
                 <label>Nouveau mot de passe</label>
                 <input type="password" class="form-input" id="admin-new-password-input" placeholder="Minimum 6 caractères">
@@ -1508,7 +1539,7 @@ window.showConfirmModal = function (title, message, onConfirm, confirmText = 'Su
         <div class="modal-box" style="text-align: center;">
             <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
             <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 20px;">${title}</h3>
-            <p style="margin-bottom: 24px; color: #666;">${message}</p>
+            <p style="margin-bottom: 24px; color: var(--text-secondary);">${message}</p>
             <div class="modal-actions" style="justify-content: center;">
                 <button class="btn-secondary" onclick="closeModal('confirm-modal')">Annuler</button>
                 <button class="${confirmClass}" id="confirm-btn">${confirmText}</button>
@@ -1823,6 +1854,7 @@ window.renderAdminFolders = async function () {
                     ondrop="handleFolderDrop(event, '${cat}', ${rowNum})"
                     ondragend="handleFolderDragEnd(event)">
                     <button class="edit-folder-btn" onclick="event.stopPropagation(); openEditFolderModal('${cat}', '${color}', '${data.emoji}')" title="Éditer le dossier">✏️</button>
+                    <button class="access-folder-btn" onclick="event.stopPropagation(); openAccessModal('${cat}')" title="Gérer la visibilité">👁️</button>
                     <button class="delete-folder-btn" onclick="event.stopPropagation(); deleteFolder('${cat}')" title="Supprimer le dossier">🗑️</button>
                     <div class="category-emoji-large">${data.emoji}</div>
                     <div style="width: 24px; height: 4px; background-color: ${color}; border-radius: 2px; margin-bottom: 12px;"></div>

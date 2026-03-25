@@ -169,7 +169,8 @@ body {
 }
 
 .delete-folder-btn,
-.edit-folder-btn {
+.edit-folder-btn,
+.access-folder-btn {
     position: absolute;
     top: 8px;
     background: var(--card-bg);
@@ -196,8 +197,13 @@ body {
     left: 8px;
 }
 
+.access-folder-btn {
+    left: 40px;
+}
+
 .category-card:hover .delete-folder-btn,
-.category-card:hover .edit-folder-btn {
+.category-card:hover .edit-folder-btn,
+.category-card:hover .access-folder-btn {
     display: flex;
 }
 
@@ -210,6 +216,12 @@ body {
 .edit-folder-btn:hover {
     background: #E5F1FF;
     color: var(--primary);
+    transform: scale(1.1);
+}
+
+.access-folder-btn:hover {
+    background: #E5F1FF;
+    color: #007AFF;
     transform: scale(1.1);
 }
 

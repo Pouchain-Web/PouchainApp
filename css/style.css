@@ -739,3 +739,174 @@ body {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     cursor: pointer;
 }
+
+/* ============================================
+   MOBILE DARK MODE (auto via system preference)
+   ============================================ */
+
+/* --- Dark mode CSS variables --- */
+:root[data-theme="dark"] {
+    --background-color: #000000;
+    --card-background: #1C1C1E;
+    --text-primary: #FFFFFF;
+    --text-secondary: #98989D;
+    --border-color: #38383A;
+    --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* --- Body --- */
+:root[data-theme="dark"] body {
+    background-color: #000000;
+    color: #FFFFFF;
+}
+
+/* --- Mobile Top Bar --- */
+:root[data-theme="dark"] .mobile-top-bar {
+    background-color: rgba(28, 28, 30, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --- Header Button (logout) --- */
+:root[data-theme="dark"] .header-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: #FF453A;
+}
+
+/* --- Search Bar --- */
+:root[data-theme="dark"] .search-bar {
+    background-color: rgba(118, 118, 128, 0.24);
+    color: #FFFFFF;
+}
+
+:root[data-theme="dark"] .search-bar::placeholder {
+    color: #98989D;
+}
+
+:root[data-theme="dark"] .search-bar:focus {
+    background-color: rgba(118, 118, 128, 0.36);
+}
+
+/* --- Dashboard Content Area --- */
+:root[data-theme="dark"] .dashboard-content {
+    background-color: #000000;
+}
+
+/* --- Category Title Text (iPhone grid labels) --- */
+:root[data-theme="dark"] .category-title {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* --- Document Items (file rows) --- */
+:root[data-theme="dark"] .document-item {
+    background: rgba(28, 28, 30, 0.85);
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme="dark"] .document-name {
+    color: #FFFFFF;
+}
+
+:root[data-theme="dark"] .document-meta {
+    color: #98989D;
+}
+
+:root[data-theme="dark"] .doc-download-icon {
+    color: #30D158;
+}
+
+/* --- Navigation Header (folder view) --- */
+:root[data-theme="dark"] .nav-header {
+    background: rgba(28, 28, 30, 0.85);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* --- Nav Title pill --- */
+:root[data-theme="dark"] .nav-title {
+    background-color: rgba(44, 44, 46, 0.85);
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* --- Back Button --- */
+:root[data-theme="dark"] .back-button {
+    color: #30D158;
+}
+
+:root[data-theme="dark"] .back-button svg {
+    stroke: #30D158;
+}
+
+/* --- Modals --- */
+:root[data-theme="dark"] .modal-overlay {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+:root[data-theme="dark"] .modal-box {
+    background: #1C1C1E;
+    color: #FFFFFF;
+}
+
+:root[data-theme="dark"] .modal-header {
+    color: #FFFFFF;
+}
+
+/* --- Form Inputs in dark mode --- */
+:root[data-theme="dark"] .form-input {
+    background: #2C2C2E;
+    border-color: #48484A;
+    color: #FFFFFF;
+}
+
+/* --- Buttons dark mode --- */
+:root[data-theme="dark"] .btn-secondary {
+    background: #2C2C2E;
+    color: #FFFFFF;
+}
+
+:root[data-theme="dark"] .btn {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* --- Input rows (login etc) --- */
+:root[data-theme="dark"] .input-group {
+    background-color: #1C1C1E;
+}
+
+:root[data-theme="dark"] .input-row {
+    border-bottom-color: #38383A;
+}
+
+:root[data-theme="dark"] .input-row input {
+    background-color: #1C1C1E;
+    color: #FFFFFF;
+}
+
+:root[data-theme="dark"] .input-row input::placeholder {
+    color: #636366;
+}
+
+/* --- Mobile bottom bar --- */
+:root[data-theme="dark"] .mobile-bottom-bar {
+    background-color: rgba(28, 28, 30, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .mobile-bottom-bar .search-bar {
+    background-color: #2C2C2E;
+    color: #FFFFFF;
+}
+
+/* --- Empty folder / loading placeholders --- */
+:root[data-theme="dark"] #list-content div[style*="color:#8E8E93"],
+:root[data-theme="dark"] #list-content div[style*="color: #8E8E93"] {
+    color: #98989D !important;
+}
+
+/* --- Mobile body background image override (already no image on mobile, just ensure bg color) --- */
+@media (max-width: 768px) {
+    :root[data-theme="dark"] body {
+        background-color: #000000 !important;
+    }
+}

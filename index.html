@@ -15,9 +15,18 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            background: #F2F2F7;
+            background-color: var(--background-color, #F2F2F7);
         }
     </style>
+    <script>
+        // Auto dark mode based on device preference
+        const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+        const applyTheme = (isDark) => {
+            document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        };
+        applyTheme(darkMq.matches);
+        darkMq.addEventListener('change', (e) => applyTheme(e.matches));
+    </script>
 </head>
 
 <body>
