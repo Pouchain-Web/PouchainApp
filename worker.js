@@ -723,7 +723,47 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!response.ok) return new Response(await response.text(), { status: response.status, headers: corsHeaders });
-                return new Response(await response.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                
+                let results = await response.json();
+
+                // FALLBACK: If 0 results in Supabase for a past week, search and parse R2 archives
+                if (results.length === 0 && startDate) {
+                    try {
+                        const listing = await env.MY_BUCKET.list({ prefix: "archives/planning/" });
+                        // Sort archives by date (keys usually contain date) to find relevant one faster? 
+                        // For now we scan them.
+                        for (const obj of listing.objects) {
+                            const archive = await env.MY_BUCKET.get(obj.key);
+                            if (archive) {
+                                const text = await archive.text();
+                                const lines = text.split("\n");
+                                if (lines.length < 2) continue;
+                                const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, ''));
+                                const dateIdx = headers.indexOf('date');
+                                
+                                for (let i = 1; i < lines.length; i++) {
+                                    const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); // Better CSV split
+                                    if (row) {
+                                        const cleanRow = row.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"'));
+                                        const rowDate = cleanRow[dateIdx];
+                                        if (rowDate >= startDate && rowDate <= (endDate || startDate)) {
+                                            const task = {};
+                                            headers.forEach((h, idx) => { if(h) task[h] = cleanRow[idx]; });
+                                            results.push(task);
+                                        }
+                                    }
+                                }
+                                if (results.length > 0) break;
+                            }
+                        }
+                    } catch (e) {
+                         console.error("Archive retrieval fallback failed", e);
+                    }
+                }
+
+                return new Response(JSON.stringify(results), { 
+                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                });
             }
 
             // 2. Create/Update task (Admin)
@@ -777,19 +817,16 @@ export default {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                // Target: Everything BEFORE the current week's Monday
                 const now = new Date();
                 const day = now.getDay();
                 const diff = (day === 0 ? -6 : 1) - day;
                 const currentMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
                 const thresholdStr = currentMonday.toISOString().split('T')[0];
 
-                // 1. Fetch old tasks
                 const fetchUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}&select=*&order=date.asc`;
                 const fetchRes = await fetch(fetchUrl, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
-
                 if (!fetchRes.ok) return new Response(await fetchRes.text(), { status: fetchRes.status, headers: corsHeaders });
                 const oldTasks = await fetchRes.json();
 
@@ -799,13 +836,23 @@ export default {
                     });
                 }
 
-                // 2. Format as CSV
-                const headers = ["id", "user_id", "title", "date", "start_time", "end_time", "done", "created_at"];
+                const profRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,first_name,last_name`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                const profiles = await profRes.json();
+                const nameMap = {};
+                profiles.forEach(p => {
+                    nameMap[p.id] = `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.id;
+                });
+
+                const headers = ["id", "user_id", "user_name", "title", "date", "start_time", "end_time", "done", "created_at"];
                 const csvRows = [headers.join(",")];
                 
                 for (const t of oldTasks) {
                     const row = headers.map(h => {
-                        let val = t[h] === null || t[h] === undefined ? "" : t[h];
+                        let val;
+                        if (h === 'user_name') val = nameMap[t.user_id] || "Inconnu";
+                        else val = t[h] === null || t[h] === undefined ? "" : t[h];
                         val = String(val).replace(/"/g, '""');
                         return `"${val}"`;
                     });
@@ -813,30 +860,20 @@ export default {
                 }
                 const csvContent = csvRows.join("\n");
 
-                // 3. Upload to R2
                 const today = new Date().toISOString().split('T')[0];
                 const archiveKey = `archives/planning/history_until_${thresholdStr}_generated_${today}.csv`;
                 await env.MY_BUCKET.put(archiveKey, csvContent, {
                     httpMetadata: { contentType: "text/csv" }
                 });
 
-                // 4. Delete from Supabase (Only old ones)
                 const deleteUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}`;
                 const delRes = await fetch(deleteUrl, {
                     method: "DELETE",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
 
-                if (!delRes.ok) {
-                    return new Response(JSON.stringify({ 
-                        message: "Archived to R2 but cleanup in Supabase failed", 
-                        archiveKey,
-                        error: await delRes.text() 
-                    }), { status: 500, headers: corsHeaders });
-                }
-
                 return new Response(JSON.stringify({ 
-                    message: `Archived successfully. Files before Monday ${thresholdStr} moved.`, 
+                    message: "Archived with names. History can still be viewed in planning.", 
                     count: oldTasks.length,
                     archiveKey 
                 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
