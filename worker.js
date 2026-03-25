@@ -777,12 +777,15 @@ export default {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+                // Target: Everything BEFORE the current week's Monday
+                const now = new Date();
+                const day = now.getDay();
+                const diff = (day === 0 ? -6 : 1) - day;
+                const currentMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+                const thresholdStr = currentMonday.toISOString().split('T')[0];
 
                 // 1. Fetch old tasks
-                const fetchUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thirtyDaysAgoStr}&select=*&order=date.asc`;
+                const fetchUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}&select=*&order=date.asc`;
                 const fetchRes = await fetch(fetchUrl, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -791,7 +794,7 @@ export default {
                 const oldTasks = await fetchRes.json();
 
                 if (oldTasks.length === 0) {
-                    return new Response(JSON.stringify({ message: "No tasks to archive", count: 0 }), {
+                    return new Response(JSON.stringify({ message: "No previous weeks to archive", count: 0 }), {
                         headers: { ...corsHeaders, "Content-Type": "application/json" }
                     });
                 }
@@ -803,7 +806,6 @@ export default {
                 for (const t of oldTasks) {
                     const row = headers.map(h => {
                         let val = t[h] === null || t[h] === undefined ? "" : t[h];
-                        // Escape quotes and wrap in quotes for CSV safety
                         val = String(val).replace(/"/g, '""');
                         return `"${val}"`;
                     });
@@ -813,13 +815,13 @@ export default {
 
                 // 3. Upload to R2
                 const today = new Date().toISOString().split('T')[0];
-                const archiveKey = `archives/planning/planning_archived_${today}_tasks_${oldTasks.length}.csv`;
+                const archiveKey = `archives/planning/history_until_${thresholdStr}_generated_${today}.csv`;
                 await env.MY_BUCKET.put(archiveKey, csvContent, {
                     httpMetadata: { contentType: "text/csv" }
                 });
 
-                // 4. Delete from Supabase
-                const deleteUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thirtyDaysAgoStr}`;
+                // 4. Delete from Supabase (Only old ones)
+                const deleteUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}`;
                 const delRes = await fetch(deleteUrl, {
                     method: "DELETE",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
@@ -834,7 +836,7 @@ export default {
                 }
 
                 return new Response(JSON.stringify({ 
-                    message: "Archived successfully", 
+                    message: `Archived successfully. Files before Monday ${thresholdStr} moved.`, 
                     count: oldTasks.length,
                     archiveKey 
                 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

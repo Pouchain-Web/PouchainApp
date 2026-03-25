@@ -1149,7 +1149,7 @@ window.renderAdminPlanning = async function (mondayStr = null) {
 };
 
 window.archivePlanningData = async function() {
-    if (!confirm("Voulez-vous archiver toutes les tâches de planning d'il y a plus de 30 jours vers Clouflare (Fichier CSV) et les supprimer de la base de données active ?")) return;
+    if (!confirm("Voulez-vous archiver toutes les semaines de planning passées (tout ce qui précède ce lundi) vers Cloudflare (CSV) et les supprimer de Supabase ? Cela permet de garder l'application rapide.")) return;
     
     try {
         const btn = document.querySelector('button[onclick="archivePlanningData()"]');
