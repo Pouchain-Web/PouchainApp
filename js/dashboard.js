@@ -4377,7 +4377,11 @@ window.openVehicleDetailModal = async function(vehicleId) {
         const v = vehicles.find(veh => veh.id === vehicleId);
         if (!v) return;
 
+        const existing = document.getElementById('vehicle-detail-modal');
+        if (existing) existing.remove();
+
         const modal = document.createElement('div');
+        modal.id = 'vehicle-detail-modal';
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100010';
         
@@ -4427,12 +4431,16 @@ window.openVehicleDetailModal = async function(vehicleId) {
                             ${logs.slice(0, 5).map(l => `
                                 <div style="font-size: 12px; padding: 12px; border-radius: 14px; background: #f8f9fa; border: 1px solid #f1f3f5;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                                        <span style="font-weight: 800; color: ${l.type === 'issue' ? '#FF3B30' : '#495057'}; font-size: 10px;">${l.type.toUpperCase()}</span>
+                                        <span style="font-weight: 800; color: ${l.type === 'issue' ? '#FF3B30' : (l.type === 'event' ? '#007AFF' : '#495057')}; font-size: 10px;">${l.type.toUpperCase()}</span>
                                         <span style="color: #adb5bd; font-size: 10px; font-weight:700;">${new Date(l.created_at).toLocaleDateString()}</span>
                                     </div>
-                                    <div style="color: #212529; font-weight: 500;">${l.type === 'mileage' ? '<b>' + l.value + '</b> km' : l.description}</div>
+                                    <div style="color: #212529; font-weight: 500; word-break: break-word;">
+                                        ${l.type === 'mileage' ? '<b>' + l.value + '</b> km' : l.description}
+                                        ${l.image_path ? `<br><a href="${config.api.workerUrl}/file/${l.image_path}" target="_blank" style="color:var(--primary); font-size:10px; text-decoration:none; display:inline-flex; align-items:center; gap:4px; margin-top:5px; font-weight:700;">📎 Voir pièce jointe</a>` : ''}
+                                    </div>
                                 </div>
                             `).join('')}
+                            <button class="btn-sm btn-secondary" style="width: 100%; margin-top: 8px; border-radius: 10px; border: 1px dashed #ccc; background: transparent; color: #777;" onclick="openAddVehicleEventModal('${vehicleId}')">➕ Ajouter un événement</button>
                         </div>
                     </div>
 
@@ -4508,5 +4516,75 @@ window.openVehicleDetailModal = async function(vehicleId) {
 };
 
 // Start
+// Event Modal for Vehicle
+window.openAddVehicleEventModal = function(vehicleId) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '100020';
+    modal.innerHTML = `
+        <div class="modal-box" style="width: 450px; background: #fff; border-radius: 20px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <h3 style="margin-top:0; color:#1a1a1c; font-weight:800; font-size:20px;">Nouvel événement</h3>
+            <div style="display:flex; flex-direction:column; gap:18px; margin-top:20px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:#888; margin-bottom:6px; font-weight:700; text-transform:uppercase;">Date de l'événement</label>
+                    <input type="date" id="event-date" class="form-control" value="${new Date().toISOString().split('T')[0]}" style="width:100%; padding:12px; border-radius:10px; border:1px solid #ddd;">
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:#888; margin-bottom:6px; font-weight:700; text-transform:uppercase;">Nom / Description</label>
+                    <input type="text" id="event-desc" class="form-control" placeholder="Ex: Facture révision, Contrôle technique..." style="width:100%; padding:12px; border-radius:10px; border:1px solid #ddd;">
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:#888; margin-bottom:6px; font-weight:700; text-transform:uppercase;">Pièce jointe (PDF, Image...)</label>
+                    <input type="file" id="event-file" class="form-control" style="width:100%; padding:10px; border:1px dashed #ccc; border-radius:10px; background:#fcfcfd;">
+                </div>
+                
+                <div style="display:flex; gap:12px; margin-top:10px;">
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex:1; padding:12px; border-radius:12px; border:none; background:#eee; color:#333; font-weight:700;">Annuler</button>
+                    <button class="btn-primary" id="save-event-btn" style="flex:2; padding:12px; border-radius:12px; border:none; background:#2da140; color:#fff; font-weight:700;">Enregistrer l'événement</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const saveBtn = modal.querySelector('#save-event-btn');
+    saveBtn.onclick = async () => {
+        const dateStr = modal.querySelector('#event-date').value;
+        const desc = modal.querySelector('#event-desc').value;
+        const fileInput = modal.querySelector('#event-file');
+        
+        if (!desc) return alert("Veuillez saisir une description");
+        
+        saveBtn.disabled = true;
+        saveBtn.innerText = "Téléchargement en cours...";
+        
+        try {
+            let filePath = null;
+            if (fileInput.files.length > 0) {
+                const uploadRes = await api.uploadFile(fileInput.files[0], 'fleet/events/');
+                filePath = uploadRes.key;
+            }
+            
+            saveBtn.innerText = "Enregistrement...";
+            await api.submitVehicleLog({
+                vehicle_id: vehicleId,
+                type: 'event',
+                description: desc,
+                event_date: dateStr ? (new Date(dateStr + 'T12:00:00')).toISOString() : new Date().toISOString(),
+                image_path: filePath
+            });
+            
+            modal.remove();
+            // Refresh detail view
+            await window.openVehicleDetailModal(vehicleId);
+        } catch(e) {
+            console.error(e);
+            alert("Erreur: " + e.message);
+            saveBtn.disabled = false;
+            saveBtn.innerText = "Enregistrer l'événement";
+        }
+    };
+};
+
 initDashboard();
 

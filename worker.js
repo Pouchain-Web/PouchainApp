@@ -1048,17 +1048,27 @@ export default {
             if (method === "POST" && url.pathname.endsWith("/vehicle/log")) {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
                 const body = await request.json();
-                const { vehicle_id, type, value, description, image_path } = body;
+                const { vehicle_id, type, value, description, image_path, event_date } = body;
                 if (!vehicle_id || !type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
                 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
                 // 1. Insert Log
+                const insertObj = { 
+                    vehicle_id, 
+                    user_id: user.id, 
+                    type, 
+                    value, 
+                    description, 
+                    image_path,
+                    created_at: event_date || new Date().toISOString()
+                };
+
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicle_logs`, {
                     method: "POST",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ vehicle_id, user_id: user.id, type, value, description, image_path })
+                    body: JSON.stringify(insertObj)
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
 
