@@ -891,6 +891,22 @@ window.renderAdminPlanning = async function (mondayStr = null) {
         }
 
         const tasksByUserDate = {};
+        
+        // --- Ghost Users Logic ---
+        // If archived tasks exist for users no longer in the DB, we add them dynamically
+        const currentIds = new Set(users.map(u => u.id));
+        tasks.forEach(t => {
+            if (t.user_id && !currentIds.has(t.user_id)) {
+                users.push({
+                    id: t.user_id,
+                    first_name: t.user_name || "Ancien",
+                    last_name: t.user_name ? "" : "Collaborateur",
+                    is_ghost: true
+                });
+                currentIds.add(t.user_id);
+            }
+        });
+
         users.forEach(u => tasksByUserDate[u.id] = {});
         tasks.forEach(t => {
             if (!tasksByUserDate[t.user_id]) tasksByUserDate[t.user_id] = {};
