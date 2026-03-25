@@ -742,8 +742,9 @@ export default {
                                 const dateIdx = headers.indexOf('date');
                                 
                                 for (let i = 1; i < lines.length; i++) {
-                                    const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/); // Better CSV split
-                                    if (row) {
+                                    if (!lines[i]) continue;
+                                    const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                                    if (row && row.length >= headers.length) {
                                         const cleanRow = row.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"'));
                                         const rowDate = cleanRow[dateIdx];
                                         if (rowDate >= startDate && rowDate <= (endDate || startDate)) {
@@ -814,69 +815,16 @@ export default {
             // 4. Archive old tasks (Admin)
             // Usage: POST /admin/tasks/archive
             if (method === "POST" && url.pathname.endsWith("/admin/tasks/archive")) {
-                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
-                const serviceKey = env.SUPABASE_SERVICE_KEY;
-
-                const now = new Date();
-                const day = now.getDay();
-                const diff = (day === 0 ? -6 : 1) - day;
-                const currentMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-                const thresholdStr = currentMonday.toISOString().split('T')[0];
-
-                const fetchUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}&select=*&order=date.asc`;
-                const fetchRes = await fetch(fetchUrl, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                if (!fetchRes.ok) return new Response(await fetchRes.text(), { status: fetchRes.status, headers: corsHeaders });
-                const oldTasks = await fetchRes.json();
-
-                if (oldTasks.length === 0) {
-                    return new Response(JSON.stringify({ message: "No previous weeks to archive", count: 0 }), {
-                        headers: { ...corsHeaders, "Content-Type": "application/json" }
-                    });
+                try {
+                    const result = await performArchiving(env);
+                    return new Response(JSON.stringify({ 
+                        message: result.count > 0 ? "Archived successfuly into yearly files." : "Nothing to archive.", 
+                        count: result.count,
+                        details: result.details
+                    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                } catch (e) {
+                    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
                 }
-
-                const profRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,first_name,last_name`, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                const profiles = await profRes.json();
-                const nameMap = {};
-                profiles.forEach(p => {
-                    nameMap[p.id] = `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.id;
-                });
-
-                const headers = ["id", "user_id", "user_name", "title", "date", "start_time", "end_time", "done", "created_at"];
-                const csvRows = [headers.join(",")];
-                
-                for (const t of oldTasks) {
-                    const row = headers.map(h => {
-                        let val;
-                        if (h === 'user_name') val = nameMap[t.user_id] || "Inconnu";
-                        else val = t[h] === null || t[h] === undefined ? "" : t[h];
-                        val = String(val).replace(/"/g, '""');
-                        return `"${val}"`;
-                    });
-                    csvRows.push(row.join(","));
-                }
-                const csvContent = csvRows.join("\n");
-
-                const today = new Date().toISOString().split('T')[0];
-                const archiveKey = `archives/planning/history_until_${thresholdStr}_generated_${today}.csv`;
-                await env.MY_BUCKET.put(archiveKey, csvContent, {
-                    httpMetadata: { contentType: "text/csv" }
-                });
-
-                const deleteUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}`;
-                const delRes = await fetch(deleteUrl, {
-                    method: "DELETE",
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-
-                return new Response(JSON.stringify({ 
-                    message: "Archived with names. History can still be viewed in planning.", 
-                    count: oldTasks.length,
-                    archiveKey 
-                }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: PLANNING (User Mobile) ---
@@ -954,14 +902,98 @@ export default {
                 } else {
                     console.error("Ping Supabase keep-alive échoué:", res.status, await res.text());
                 }
+
+                // 2. Weekly Archive Cleanup (Runs every time, but only Monday carries work)
+                // Assuming CRON is set for Monday morning.
+                const day = new Date().getDay();
+                if (day === 1) { // Monday
+                    console.log("Démarrage de l'archivage hebdomadaire automatique...");
+                    const resArchive = await performArchiving(env);
+                    console.log(`Archivage auto terminé : ${resArchive.count} tâches traitées.`);
+                }
+
             } catch (err) {
-                console.error("Erreur lors du ping Supabase:", err);
+                console.error("Erreur dans le handler scheduled:", err);
             }
         } else {
-            console.error("Aucune clé SUPABASE_SERVICE_KEY trouvée. Impossible de ping Supabase.");
+            console.error("Aucune clé SUPABASE_SERVICE_KEY trouvée.");
         }
     }
 };
+
+async function performArchiving(env) {
+    const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+    const serviceKey = env.SUPABASE_SERVICE_KEY;
+    if (!serviceKey) return { count: 0, message: "No service key" };
+
+    const now = new Date();
+    const dayCurr = now.getDay();
+    const diff = (dayCurr === 0 ? -6 : 1) - dayCurr;
+    const currentMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+    const thresholdStr = currentMonday.toISOString().split('T')[0];
+
+    // 1. Fetch tasks before this Monday
+    const fetchUrl = `${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}&select=*&order=date.asc`;
+    const fetchRes = await fetch(fetchUrl, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } });
+    if (!fetchRes.ok) throw new Error("Fetch tasks failed: " + await fetchRes.text());
+    const oldTasks = await fetchRes.json();
+    if (oldTasks.length === 0) return { count: 0, message: "Nothing to archive" };
+
+    // 2. Fetch profiles for name mapping
+    const profRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,first_name,last_name`, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+    const profiles = await (profRes.ok ? profRes.json() : []);
+    const nameMap = {};
+    profiles.forEach(p => {
+        nameMap[p.id] = `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.id;
+    });
+
+    // 3. Group tasks by year
+    const tasksByYear = {};
+    oldTasks.forEach(t => {
+        const year = t.date.split('-')[0];
+        if (!tasksByYear[year]) tasksByYear[year] = [];
+        tasksByYear[year].push(t);
+    });
+
+    const headers = ["id", "user_id", "user_name", "title", "date", "start_time", "end_time", "done", "created_at"];
+    const results = [];
+
+    for (const year in tasksByYear) {
+        const archiveKey = `archives/planning/Planning de l'année ${year} CSV Format.csv`;
+        let existingContent = "";
+        
+        // Check if file exists to append
+        const existingObj = await env.MY_BUCKET.get(archiveKey);
+        if (existingObj) {
+            existingContent = await existingObj.text();
+            if (existingContent && !existingContent.endsWith("\n")) existingContent += "\n";
+        } else {
+            existingContent = headers.join(",") + "\n";
+        }
+
+        const newRows = tasksByYear[year].map(t => {
+            return headers.map(h => {
+                let val = (h === 'user_name') ? (nameMap[t.user_id] || "Inconnu") : (t[h] === null || t[h] === undefined ? "" : t[h]);
+                return `"${String(val).replace(/"/g, '""')}"`;
+            }).join(",");
+        }).join("\n") + "\n";
+
+        await env.MY_BUCKET.put(archiveKey, existingContent + newRows, {
+            httpMetadata: { contentType: "text/csv" }
+        });
+        results.push({ year, count: tasksByYear[year].length });
+    }
+
+    // 4. Delete archived from Supabase
+    await fetch(`${supabaseUrl}/rest/v1/tasks?date=lt.${thresholdStr}`, {
+        method: "DELETE",
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+
+    return { count: oldTasks.length, details: results };
+}
 
 async function getUser(request, env) {
     const authHeader = request.headers.get("Authorization");

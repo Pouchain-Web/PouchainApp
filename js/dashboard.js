@@ -1157,9 +1157,9 @@ window.archivePlanningData = async function() {
         
         const result = await api.archiveOldTasks();
         if (result.count > 0) {
-            alert(`Succès ! ${result.count} tâches ont été archivées dans : ${result.archiveKey}`);
+            alert(`Succès ! ${result.count} tâches ont été ajoutées aux journaux annuels CSV sur Cloudflare.`);
         } else {
-            alert("Aucune tâche de plus de 30 jours à archiver.");
+            alert("Aucune semaine passée à archiver pour le moment.");
         }
         
         const currentMonday = document.querySelector('[data-monday]');
