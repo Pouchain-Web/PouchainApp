@@ -4382,73 +4382,76 @@ window.openVehicleDetailModal = async function(vehicleId) {
         modal.style.zIndex = '100010';
         
         modal.innerHTML = `
-            <div class="modal-box glass-panel" style="width: 900px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #0a0a0b;">
+            <div class="modal-box" style="width: 900px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #ffffff; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
                 <!-- Header -->
-                <div style="padding: 32px; background: linear-gradient(to right, #1a1a1c, #0a0a0b); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 32px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <div style="font-size: 13px; color: #888; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">Détails du véhicule</div>
-                        <h2 style="margin: 0; font-size: 28px; font-weight: 800; color: white;">${v.make || ''} ${v.model || 'Inconnu'} <span style="color: #444; font-weight: 400; margin-left: 10px;">${v.plate_number}</span></h2>
+                        <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 4px; font-weight: 700;">Administration de flotte</div>
+                        <h2 style="margin: 0; font-size: 28px; font-weight: 800; color: #1a1a1c;">
+                            ${v.make || ''} ${v.model || 'Inconnu'} 
+                            <span style="background: #000; color: #fff; padding: 4px 12px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 18px; margin-left: 12px; vertical-align: middle;">${v.plate_number}</span>
+                        </h2>
                     </div>
-                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 20px; border-radius: 12px;">Fermer</button>
+                    <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 20px; border-radius: 12px; background: #eee; color: #333; border: none;">Fermer</button>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 320px 1fr; height: 600px;">
                     <!-- Left Column: Info -->
-                    <div style="padding: 32px; background: rgba(255,255,255,0.02); border-right: 1px solid rgba(255,255,255,0.05); overflow-y: auto;">
-                        <h3 style="font-size: 12px; color: #555; text-transform: uppercase; margin-bottom: 16px;">Administration</h3>
-                        <div class="glass-panel" style="padding: 16px; border-radius: 16px; margin-bottom: 24px; background: rgba(255,255,255,0.03);">
-                            <div style="margin-bottom: 12px;">
-                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Carte DKV / Essence</div>
-                                <div style="font-family: monospace; font-size: 15px; color: #eee;">${v.dkv_card || '<i>Non renseigné</i>'}</div>
+                    <div style="padding: 32px; background: #ffffff; border-right: 1px solid #eee; overflow-y: auto;">
+                        <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Cartes & Badges</h3>
+                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 32px; background: #f8f9fa; border: 1px solid #f1f3f5;">
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Carte DKV / Essence</div>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #1a1a1c; font-weight: 700;">${v.dkv_card || '<span style="color:#ccc; font-weight:400;">Non renseigné</span>'}</div>
                             </div>
                             <div>
-                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Badge Télépéage</div>
-                                <div style="font-family: monospace; font-size: 15px; color: #eee;">${v.toll_card || '<i>Non renseigné</i>'}</div>
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Badge Télépéage</div>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #1a1a1c; font-weight: 700;">${v.toll_card || '<span style="color:#ccc; font-weight:400;">Non renseigné</span>'}</div>
                             </div>
                         </div>
 
-                        <h3 style="font-size: 12px; color: #555; text-transform: uppercase; margin-bottom: 16px;">Entretien Prévu</h3>
-                        <div class="glass-panel" style="padding: 16px; border-radius: 16px; margin-bottom: 24px;">
-                            <div style="margin-bottom: 12px;">
-                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Échéance Kilométrique</div>
-                                <div style="font-size: 16px; font-weight: 700; color: #34C759;">${v.next_maintenance_km ? v.next_maintenance_km.toLocaleString() + ' km' : '--'}</div>
+                        <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Entretien Prévu</h3>
+                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 32px; background: #fff; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Échéance Kilométrique</div>
+                                <div style="font-size: 20px; font-weight: 900; color: #34C759;">${v.next_maintenance_km ? v.next_maintenance_km.toLocaleString() + ' km' : '--'}</div>
                             </div>
                             <div>
-                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Échéance Date</div>
-                                <div style="font-size: 16px; font-weight: 700; color: #FF9500;">${v.next_maintenance_date ? new Date(v.next_maintenance_date).toLocaleDateString() : '--'}</div>
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Échéance Date</div>
+                                <div style="font-size: 20px; font-weight: 900; color: #FF9500;">${v.next_maintenance_date ? new Date(v.next_maintenance_date).toLocaleDateString() : '--'}</div>
                             </div>
                         </div>
 
-                        <h3 style="font-size: 12px; color: #555; text-transform: uppercase; margin-bottom: 16px;">Historique Récent</h3>
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Historique</h3>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
                             ${logs.slice(0, 5).map(l => `
-                                <div style="font-size: 12px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);">
+                                <div style="font-size: 12px; padding: 12px; border-radius: 14px; background: #f8f9fa; border: 1px solid #f1f3f5;">
                                     <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                                        <span style="font-weight: 700; color: ${l.type === 'issue' ? '#FF3B30' : '#888'};">${l.type.toUpperCase()}</span>
-                                        <span style="color: #444;">${new Date(l.created_at).toLocaleDateString()}</span>
+                                        <span style="font-weight: 800; color: ${l.type === 'issue' ? '#FF3B30' : '#495057'}; font-size: 10px;">${l.type.toUpperCase()}</span>
+                                        <span style="color: #adb5bd; font-size: 10px; font-weight:700;">${new Date(l.created_at).toLocaleDateString()}</span>
                                     </div>
-                                    <div style="color: #bbb;">${l.type === 'mileage' ? l.value + ' km' : l.description}</div>
+                                    <div style="color: #212529; font-weight: 500;">${l.type === 'mileage' ? '<b>' + l.value + '</b> km' : l.description}</div>
                                 </div>
                             `).join('')}
                         </div>
                     </div>
 
                     <!-- Right Column: Chart -->
-                    <div style="padding: 40px; display: flex; flex-direction: column; gap: 32px; overflow-y: auto;">
-                        <div style="flex: 1; min-height: 300px; background: rgba(255,255,255,0.02); border-radius: 24px; padding: 24px; border: 1px solid rgba(255,255,255,0.05);">
-                            <h3 style="margin-top: 0; font-size: 18px; color: white;">Évolution du kilométrage</h3>
+                    <div style="padding: 40px; display: flex; flex-direction: column; gap: 32px; overflow-y: auto; background: #fcfcfd;">
+                        <div style="flex: 1; min-height: 350px; background: #ffffff; border-radius: 24px; padding: 24px; border: 1px solid #eee; box-shadow: 0 4px 15px rgba(0,0,0,0.02);">
+                            <h3 style="margin-top: 0; font-size: 16px; color: #1a1a1c; font-weight: 800; margin-bottom: 24px;">📈 Évolution du kilométrage</h3>
                             <canvas id="mileageChart"></canvas>
                         </div>
                         
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                            <div class="glass-panel" style="padding: 24px; border-radius: 24px;">
-                                <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Dernière Activité</div>
-                                <div style="font-size: 20px; font-weight: 700; color: white;">${v.profiles ? v.profiles.first_name + ' ' + v.profiles.last_name : 'N/A'}</div>
-                                <div style="font-size: 12px; color: #444;">${v.updated_at ? new Date(v.updated_at).toLocaleString() : ''}</div>
+                            <div style="padding: 24px; border-radius: 24px; background: #fff; border: 1px solid #eee;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 8px; font-weight: 700; text-transform: uppercase;">Dernière Activité</div>
+                                <div style="font-size: 20px; font-weight: 800; color: #1a1a1c;">${v.profiles ? v.profiles.first_name + ' ' + v.profiles.last_name : 'N/A'}</div>
+                                <div style="font-size: 12px; color: #adb5bd; font-weight: 500;">${v.updated_at ? new Date(v.updated_at).toLocaleString() : ''}</div>
                             </div>
-                            <div class="glass-panel" style="padding: 24px; border-radius: 24px;">
-                                <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Kilométrage Actuel</div>
-                                <div style="font-size: 32px; font-weight: 900; color: #34C759;">${v.last_mileage.toLocaleString()} <span style="font-size: 16px; opacity: 0.5;">km</span></div>
+                            <div style="padding: 24px; border-radius: 24px; background: #fff; border: 1px solid #eee;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 8px; font-weight: 700; text-transform: uppercase;">Compteur Actuel</div>
+                                <div style="font-size: 32px; font-weight: 950; color: #34C759;">${v.last_mileage.toLocaleString()} <span style="font-size: 16px; opacity: 0.3; font-weight: 400;">km</span></div>
                             </div>
                         </div>
                     </div>
@@ -4469,12 +4472,15 @@ window.openVehicleDetailModal = async function(vehicleId) {
                     label: 'Kilométrage',
                     data: mileageLogs.map(l => parseInt(l.value)),
                     borderColor: '#34C759',
-                    backgroundColor: 'rgba(52, 199, 89, 0.1)',
-                    borderWidth: 3,
+                    backgroundColor: 'rgba(52, 199, 89, 0.05)',
+                    borderWidth: 4,
                     fill: true,
                     tension: 0.4,
-                    pointBackgroundColor: '#34C759',
-                    pointRadius: 4
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#34C759',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
                 }]
             },
             options: {
@@ -4486,11 +4492,11 @@ window.openVehicleDetailModal = async function(vehicleId) {
                 scales: {
                     x: {
                         grid: { display: false },
-                        ticks: { color: '#444' }
+                        ticks: { color: '#adb5bd', font: { weight: '600', size: 10 } }
                     },
                     y: {
-                        grid: { color: 'rgba(255,255,255,0.05)' },
-                        ticks: { color: '#444' }
+                        grid: { color: '#f1f3f5' },
+                        ticks: { color: '#adb5bd', font: { weight: '600', size: 10 } }
                     }
                 }
             }
