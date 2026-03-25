@@ -259,16 +259,25 @@ function handleMobileSearch(query) {
     // Hide others
     categoriesView.classList.add('hidden');
     docListView.classList.add('hidden');
-    searchView.classList.remove('hidden');
+        searchView.classList.remove('hidden');
 
     // Filter — exclude internal config files (.keep, .meta_color_*)
     const isInternalFile = (key) => {
         const name = key.split('/').pop();
         return name.endsWith('.keep') || name.startsWith('.meta_') || name.startsWith('.');
     };
-    const results = mobileFilesCache.filter(f =>
-        !isInternalFile(f.key) && f.key.toLowerCase().includes(normalizedQuery)
-    );
+    const results = mobileFilesCache.filter(f => {
+        // Exclude internal files
+        if (isInternalFile(f.key)) return false;
+
+        // Exclude archive files/folders
+        const fileName = f.key.split('/').pop().toLowerCase();
+        const isInArchiveFolder = f.key.toLowerCase().startsWith('archive/');
+        if (isInArchiveFolder || fileName.includes('archive')) return false;
+
+        // Check against search query
+        return f.key.toLowerCase().includes(normalizedQuery);
+    });
     const container = document.getElementById('search-results-list');
     container.innerHTML = '';
 
@@ -293,6 +302,7 @@ function generateMobileCategories(files) {
         const parts = file.key.split('/');
         if (parts.length > 1) {
             const folder = parts[0];
+            if (folder.toLowerCase() === 'archive') return; // Skip entirely
             if (!categories.has(folder)) {
                 categories.set(folder, { files: [], color: null, emoji: '📁', order: 999, row: 1 });
             }
@@ -310,6 +320,7 @@ function generateMobileCategories(files) {
                 catData.files.push(file);
             }
         } else {
+            if (file.key.toLowerCase().includes('archive')) return; // Skip archive files
             uncategorized.push(file);
         }
     });
@@ -324,6 +335,7 @@ function generateMobileCategories(files) {
     });
 
     sortedCategories.forEach(([catName, data]) => {
+        if (catName.toLowerCase() === 'archive') return; // Hide archive for mobile users
         const card = document.createElement('div');
         card.className = 'category-card';
         const color = data.color || colors[colorIdx % colors.length];
@@ -358,8 +370,166 @@ function generateMobileCategories(files) {
         <div class="category-title" style="font-weight:bold;">Planning</div>
     `;
     planningCard.onclick = () => renderMobilePlanning();
+    // Add "Mon Matos" Card
+    const matosCard = document.createElement('div');
+    matosCard.className = 'category-card';
+    matosCard.innerHTML = `
+        <div class="category-icon" style="background-color: #FF9500;">📦</div>
+        <div class="category-title" style="font-weight:bold;">Mon Matos</div>
+    `;
+    matosCard.onclick = () => renderMobileMaterialRequests();
+
+    // 2nd: Mon Matos
+    grid.prepend(matosCard);
+    // 1st: Planning
     grid.prepend(planningCard);
 }
+
+window.renderMobileMaterialRequests = async function () {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Mon Matos";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    mobileCurrentPath = "matos";
+
+    const container = document.getElementById('list-content');
+    container.innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader-spinner"></div></div>`;
+
+    try {
+        const session = await auth.getSession();
+        const requests = await api.getMaterialRequests(session.user.id);
+        const categories = await api.getMaterialCategories();
+        
+        const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+        const cardBg = dk ? '#1C1C1E' : '#fff';
+        const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+        const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+        let html = `
+            <div style="padding: 16px; padding-bottom: 100px;">
+                <button class="btn-primary" onclick="openNewMaterialRequestModal()" style="width: 100%; height: 56px; background: #FF9500; font-size: 16px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(255, 149, 0, 0.3);">
+                    + Nouvelle demande
+                </button>
+        `;
+
+        if (requests.length === 0) {
+            html += `<div style="text-align:center; color:#8E8E93; padding: 40px;">Aucune demande de matériel</div>`;
+        } else {
+            // Group by status
+            const groups = {
+                'requested': { label: 'En attente', color: '#8E8E93', icon: '⏳' },
+                'ordered': { label: 'Commandé', color: '#007AFF', icon: '📦' },
+                'refused': { label: 'Refusé', color: '#FF3B30', icon: '❌' },
+                'received': { label: 'Reçu / Acquitté', color: '#34C759', icon: '✅' }
+            };
+
+            const sortedKeys = ['requested', 'ordered', 'refused', 'received'];
+            
+            sortedKeys.forEach(status => {
+                const groupRequests = requests.filter(r => r.status === status);
+                if (groupRequests.length > 0) {
+                    html += `<h3 style="color: ${groups[status].color}; font-size: 14px; text-transform: uppercase; margin: 20px 0 10px 4px; display: flex; align-items: center; gap: 8px;">
+                                ${groups[status].icon} ${groups[status].label}
+                            </h3>`;
+                    
+                    groupRequests.forEach(req => {
+                        html += `
+                            <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                    <div style="font-weight: bold; font-size: 17px; color: ${textColor};">${window.escapeHTML(req.material_name)}</div>
+                                    <div style="font-size: 12px; color: #8E8E93;">${new Date(req.created_at).toLocaleDateString('fr-FR')}</div>
+                                </div>
+                                <div style="font-size: 14px; color: #8E8E93; margin-bottom: 8px;">Catégorie: ${window.escapeHTML(req.category || 'Non classé')}</div>
+                                ${req.comment ? `<div style="font-size: 14px; color: ${textColor}; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; padding: 10px; border-radius: 12px; line-height: 1.4;">${window.escapeHTML(req.comment)}</div>` : ''}
+                            </div>
+                        `;
+                    });
+                }
+            });
+        }
+
+        html += `</div>`;
+        container.innerHTML = html;
+
+        window.openNewMaterialRequestModal = () => {
+            const _dk = document.documentElement.getAttribute('data-theme') === 'dark';
+            const _inputBg = _dk ? '#2C2C2E' : '#f2f2f7';
+            const _textColor = _dk ? '#FFFFFF' : '#000000';
+
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.style.zIndex = "10000";
+            
+            let categoryOptions = categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+            
+            modal.innerHTML = `
+                <div class="modal-box" style="padding: 24px; border-radius: 28px; width: 90%; max-width: 400px;">
+                    <h2 style="margin-top: 0; margin-bottom: 20px; color: ${_textColor};">Nouvelle demande</h2>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px; text-align: left;">Matériel désiré</label>
+                        <input type="text" id="req-name" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${_inputBg}; color: ${_textColor}; font-size: 16px;" placeholder="Ex: Perceuse, Gants...">
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px; text-align: left;">Catégorie</label>
+                        <select id="req-category" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${_inputBg}; color: ${_textColor}; font-size: 16px;">
+                            ${categoryOptions}
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 24px;">
+                        <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px; text-align: left;">Commentaire / Pourquoi ?</label>
+                        <textarea id="req-comment" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${_inputBg}; color: ${_textColor}; font-size: 16px; height: 100px; resize: none;" placeholder="Expliquez votre besoin..."></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 24px;">
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex: 1;">Annuler</button>
+                        <button class="btn-primary" id="submit-req-btn" style="flex: 1; background: #FF9500;">Envoyer</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            document.getElementById('submit-req-btn').onclick = async () => {
+                const name = document.getElementById('req-name').value.trim();
+                const category = document.getElementById('req-category').value;
+                const comment = document.getElementById('req-comment').value.trim();
+
+                if (!name) {
+                    alert("Veuillez indiquer le nom du matériel.");
+                    return;
+                }
+
+                const btn = document.getElementById('submit-req-btn');
+                btn.disabled = true;
+                btn.innerText = "Envoi...";
+
+                try {
+                    await api.createMaterialRequest({
+                        material_name: name,
+                        category: category,
+                        comment: comment
+                    });
+                    modal.remove();
+                    renderMobileMaterialRequests();
+                } catch (e) {
+                    alert("Erreur: " + e.message);
+                    btn.disabled = false;
+                    btn.innerText = "Envoyer";
+                }
+            };
+        };
+
+    } catch (e) {
+        container.innerHTML = `<div style="color:red; margin:20px;">Erreur: ${e.message}</div>`;
+    }
+};
 
 window.renderMobilePlanning = async function (dateStr = new Date().toISOString().split('T')[0]) {
     document.getElementById('categories-view').classList.add('hidden');
@@ -691,6 +861,7 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material">📦 Demande de matériel</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -3428,6 +3599,260 @@ window.handleAdminGlobalSearch = function (query) {
 
     html += `</tbody></table></div>`;
     content.innerHTML = html;
+};
+
+window.renderAdminMaterialRequests = async function () {
+    adminCurrentFolder = null;
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('nav-material').classList.add('active');
+
+    const content = document.getElementById('admin-content');
+    content.innerHTML = `<div style="text-align:center; padding: 50px;"><div class="loader-spinner"></div></div>`;
+
+    try {
+        const [requests, categories, configData, allUsers] = await Promise.all([
+            api.getMaterialRequests(),
+            api.getMaterialCategories(),
+            api.getMaterialConfig(),
+            api.listUsers()
+        ]);
+
+        const groups = {
+            'requested': { label: 'En attente', color: '#ffec99', icon: '⏳' },
+            'ordered': { label: 'Commandé', color: '#a5d8ff', icon: '📦' },
+            'refused': { label: 'Refusé', color: '#ffc9c9', icon: '❌' },
+            'received': { label: 'Reçu / Acquitté', color: '#b2f2bb', icon: '✅' }
+        };
+
+        let html = `
+            <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+                <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">Demande de matériel</h1>
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()">⚙️ Catégories</button>
+                    <button class="btn-secondary" onclick="openAdminAlertConfigModal()">🔔 Config Alertes</button>
+                </div>
+            </header>
+
+            <div class="material-admin-container" style="display: grid; gap: 40px; padding-bottom: 60px;">
+        `;
+
+        // Filter out acquitted requests if they are 'received'? 
+        // User says "L'admin peux aquitter une demande pour la faire disparaitre"
+        // So we filter 'received' out of the main list, but maybe have a toggle?
+        const mainRequests = requests.filter(r => r.status !== 'received');
+        const archivedRequests = requests.filter(r => r.status === 'received');
+
+        // Group by category
+        const catMap = new Map();
+        mainRequests.forEach(r => {
+            const cat = r.category || 'Non classé';
+            if (!catMap.has(cat)) catMap.set(cat, []);
+            catMap.get(cat).push(r);
+        });
+
+        if (mainRequests.length === 0) {
+            html += `<div style="text-align:center; padding: 50px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">
+                        <p style="font-size: 18px; color: #888;">Aucune demande en cours</p>
+                    </div>`;
+        } else {
+            for (const [catName, catRequests] of catMap) {
+                html += `
+                    <section class="mat-admin-section">
+                        <div class="mat-admin-header" style="margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 16px;">
+                            <h2 style="font-size: 20px; font-weight: 700; color: #fff; margin:0;">📁 ${catName}</h2>
+                            <span style="background: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 20px; font-size: 13px; color: #fff; font-weight:600;">${catRequests.length} demandes</span>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Utilisateur</th>
+                                        <th>Matériel</th>
+                                        <th>Commentaire</th>
+                                        <th>Statut</th>
+                                        <th>Date</th>
+                                        <th style="text-align: right;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+
+                catRequests.forEach(req => {
+                    const userName = [req.profiles?.first_name, req.profiles?.last_name].filter(Boolean).join(' ') || 'Inconnu';
+                    const statusInfo = groups[req.status] || { label: req.status, color: '#fff' };
+                    
+                    html += `
+                        <tr>
+                            <td><div style="font-weight: 600;">${userName}</div></td>
+                            <td><div style="color: #fff; font-weight: 500;">${window.escapeHTML(req.material_name)}</div></td>
+                            <td style="max-width: 300px;"><div style="font-size: 13px; color: #bbb; white-space: pre-wrap;">${window.escapeHTML(req.comment || '')}</div></td>
+                            <td>
+                                <span class="mat-status-badge" style="background: ${statusInfo.color}; color: #000;">
+                                    ${statusInfo.icon} ${statusInfo.label}
+                                </span>
+                            </td>
+                            <td style="font-size: 13px; color: #888;">${new Date(req.created_at).toLocaleString('fr-FR')}</td>
+                            <td style="text-align: right;">
+                                <div class="mat-btn-group">
+                                    <button class="mat-btn ordered" onclick="updateReqStatus('${req.id}', 'ordered')" title="Commander">📦 Commander</button>
+                                    <button class="mat-btn refused" onclick="updateReqStatus('${req.id}', 'refused')" title="Refuser">❌ Refuser</button>
+                                    <button class="mat-btn received" onclick="updateReqStatus('${req.id}', 'received')" title="Acquitter">✅ Acquitter</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                `;
+            }
+        }
+
+        if (archivedRequests.length > 0) {
+            html += `
+                <details style="margin-top: 40px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px;">
+                    <summary style="cursor: pointer; color: #888; font-weight: 600; margin-bottom: 20px;">📜 Voir les demandes acquittées (${archivedRequests.length})</summary>
+                    <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Utilisateur</th>
+                                    <th>Matériel</th>
+                                    <th>Date</th>
+                                    <th>Statut</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${archivedRequests.map(req => `
+                                    <tr style="opacity: 0.6;">
+                                        <td>${[req.profiles?.first_name, req.profiles?.last_name].filter(Boolean).join(' ') || 'Inconnu'}</td>
+                                        <td>${window.escapeHTML(req.material_name)}</td>
+                                        <td style="font-size: 13px; color: #888;">${new Date(req.created_at).toLocaleDateString('fr-FR')}</td>
+                                        <td><span class="mat-status-badge" style="background: #b2f2bb; color: #2b8a3e; font-size: 11px;">ACQUITTÉE</span></td>
+                                        <td style="text-align: right;"><button class="mat-btn restore" onclick="updateReqStatus('${req.id}', 'requested')" style="font-size: 11px; padding: 4px 10px;">Rétablir</button></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            `;
+        }
+
+        html += `</div>`;
+        content.innerHTML = html;
+
+        window.updateReqStatus = async (id, status) => {
+            try {
+                await api.updateMaterialRequestStatus(id, status);
+                renderAdminMaterialRequests();
+            } catch (e) {
+                alert("Erreur: " + e.message);
+            }
+        };
+
+        window.openAdminCategoryMgmtModal = () => {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-box glass-panel" style="width: 450px; padding: 40px;">
+                    <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white;">Gérer les catégories</h2>
+                    <div style="margin-bottom: 32px; max-height: 300px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 16px; padding: 8px;">
+                        ${categories.map(c => `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <span style="font-weight: 500; font-size: 15px;">${c.name}</span>
+                                <button onclick="deleteCat('${c.id}')" style="background: transparent; color: #fa5252; border: none; cursor: pointer; padding: 8px; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'">🗑️</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="new-cat-name" class="form-input" style="flex:1;" placeholder="Nouvelle catégorie...">
+                        <button class="btn-primary" onclick="addCat()">Ajouter</button>
+                    </div>
+                    <div style="margin-top: 32px; text-align: right;">
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            window.deleteCat = async (id) => {
+                if (!confirm("Supprimer cette catégorie ?")) return;
+                try {
+                    await api.deleteMaterialCategory(id);
+                    modal.remove();
+                    renderAdminMaterialRequests();
+                } catch (e) {
+                    alert(e.message);
+                }
+            };
+
+            window.addCat = async () => {
+                const name = document.getElementById('new-cat-name').value.trim();
+                if (!name) return;
+                try {
+                    await api.addMaterialCategory(name);
+                    modal.remove();
+                    renderAdminMaterialRequests();
+                } catch (e) {
+                    alert(e.message);
+                }
+            };
+        };
+
+        window.openAdminAlertConfigModal = () => {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            
+            const currentAlertUsers = new Set(configData.alert_users || []);
+            
+            modal.innerHTML = `
+                <div class="modal-box glass-panel" style="width: 550px; padding: 40px;">
+                    <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white;">Configuration des alertes Planning</h2>
+                    <p style="color: #aaa; font-size: 14px; margin-bottom: 24px;">Sélectionnez les personnes qui recevront une tâche "Check besoin de matériel" sur leur planning dès qu'une demande est faite.</p>
+                    
+                    <div style="max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 20px; padding: 16px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.05);">
+                        ${allUsers.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || '')).map(u => `
+                            <label style="display: flex; align-items: center; gap: 16px; padding: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; border-radius: 12px; margin-bottom: 4px;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+                                <input type="checkbox" class="alert-user-cb" value="${u.id}" ${currentAlertUsers.has(u.id) ? 'checked' : ''} style="width: 20px; height: 20px; accent-color: var(--primary);">
+                                <div style="display:flex; flex-direction:column;">
+                                    <span style="font-weight: 600; font-size: 15px; color: #eee;">${u.first_name || ''} ${u.last_name || ''}</span>
+                                    <span style="font-size: 12px; color: #777;">${u.email}</span>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                        <button class="btn-primary" onclick="saveAlertConfig()">Enregistrer</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            window.saveAlertConfig = async () => {
+                const cbs = document.querySelectorAll('.alert-user-cb:checked');
+                const selectedIds = Array.from(cbs).map(cb => cb.value);
+                
+                try {
+                    await api.saveMaterialConfig(selectedIds);
+                    modal.remove();
+                    renderAdminMaterialRequests();
+                } catch (e) {
+                    alert(e.message);
+                }
+            };
+        };
+
+    } catch (e) {
+        content.innerHTML = `<div style="color:red; margin:50px;">Erreur lors du chargement: ${e.message}</div>`;
+    }
 };
 
 // Start

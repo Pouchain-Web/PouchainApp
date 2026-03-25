@@ -338,5 +338,94 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    // --- Material Request Management ---
+    async getMaterialRequests(userId = null) {
+        let url = `${config.api.workerUrl}${userId ? '/material/requests' : '/admin/material/requests'}`;
+        const response = await fetch(url, { headers: await getAuthHeaders() });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async createMaterialRequest(data) {
+        const response = await fetch(`${config.api.workerUrl}/material/requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMaterialRequestStatus(id, status) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, status })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialCategories() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async addMaterialCategory(name) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ name })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialCategory(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialConfig() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/config`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveMaterialConfig(alertUsers) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/config`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ alert_users: alertUsers })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

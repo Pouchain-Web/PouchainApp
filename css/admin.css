@@ -380,29 +380,57 @@ header h1 {
     gap: 12px;
 }
 
+.btn,
+.btn-primary,
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 25px; /* Fully rounded "pill" style */
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.btn:hover,
+.btn-primary:hover,
+.btn-secondary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.btn:active,
+.btn-primary:active,
+.btn-secondary:active {
+    transform: translateY(0);
+}
+
 .btn-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    color: white;
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Base btn falls back to primary-ish look or generic */
+.btn {
     background-color: var(--primary);
     color: white;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 24px;
-    /* Pill shape */
-    cursor: pointer;
-    font-weight: 600;
-    box-shadow: var(--shadow-md);
-    transition: transform 0.1s, background-color 0.2s;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.btn-primary:hover {
-    background-color: var(--primary-hover);
-    transform: translateY(-1px);
-}
-
-.btn-primary:active {
-    transform: scale(0.98);
 }
 
 /* --- Table / File List --- */
@@ -815,4 +843,149 @@ td:last-child {
 
 .upload-queue-item.success .file-progress-fill {
     background: var(--success);
+}
+
+/* --- Loader Spinner --- */
+.loader-spinner {
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top: 4px solid var(--primary);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Material Admin Table Overrides */
+.admin-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.admin-table th {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #888;
+    text-transform: uppercase;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.admin-table td {
+    padding: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 14px;
+    vertical-align: top;
+}
+
+.admin-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* --- Premium Material Request Buttons --- */
+.mat-btn-group {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.mat-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    color: white !important;
+}
+
+.mat-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
+
+.mat-btn:active {
+    transform: translateY(0);
+}
+
+.mat-btn.ordered {
+    background: linear-gradient(135deg, #4dabf7 0%, #228be6 100%);
+}
+
+.mat-btn.refused {
+    background: linear-gradient(135deg, #ff8787 0%, #fa5252 100%);
+}
+
+.mat-btn.received {
+    background: linear-gradient(135deg, #69db7c 0%, #40c057 100%);
+}
+
+.mat-btn.restore {
+    background: rgba(255, 255, 255, 0.1);
+    color: #bbb !important;
+}
+
+/* Badges for Material Status */
+.mat-status-badge {
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Overrides for mobile requests (using the same principles) */
+.mobile-mat-card {
+    transition: transform 0.2s;
+}
+.mobile-mat-card:active {
+    transform: scale(0.98);
+}
+
+/* Glassmorphism Effect */
+.glass-panel {
+    background: rgba(10, 10, 12, 0.85) !important;
+    backdrop-filter: blur(25px) !important;
+    -webkit-backdrop-filter: blur(25px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 20px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+}
+
+.mat-admin-section {
+    margin-bottom: 32px;
+    padding: 32px;
+    background: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.mat-admin-header {
+    margin-bottom: 24px;
+}
+
+.mat-admin-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--primary);
 }
