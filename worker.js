@@ -897,6 +897,37 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            if (method === "DELETE" && url.pathname.endsWith("/admin/material/requests")) {
+                const body = await request.json();
+                const { id } = body;
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Fetch image path before delete
+                const checkRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}&select=image_path`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (checkRes.ok) {
+                    const data = await checkRes.json();
+                    if (data && data[0] && data[0].image_path) {
+                        try {
+                            await env.MY_BUCKET.delete(data[0].image_path);
+                        } catch (e) {
+                            console.error("R2 Delete Error:", e);
+                        }
+                    }
+                }
+
+                // 2. Delete from Supabase
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: MATERIAL CATEGORIES (Admin) ---
             if (method === "GET" && url.pathname.endsWith("/admin/material/categories")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -983,7 +1014,7 @@ export default {
             if (method === "POST" && url.pathname.endsWith("/material/requests")) {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
                 const body = await request.json();
-                const { material_name, comment, category } = body;
+                const { material_name, comment, category, image_path } = body;
                 if (!material_name) return new Response("Missing material_name", { status: 400, headers: corsHeaders });
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -993,7 +1024,7 @@ export default {
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_requests`, {
                     method: "POST",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: user.id, material_name, comment, category, status: 'requested' })
+                    body: JSON.stringify({ user_id: user.id, material_name, comment, category, image_path, status: 'requested' })
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
 

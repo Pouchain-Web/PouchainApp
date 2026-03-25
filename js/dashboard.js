@@ -428,7 +428,7 @@ window.renderMobileMaterialRequests = async function () {
                 'received': { label: 'Reçu / Acquitté', color: '#34C759', icon: '✅' }
             };
 
-            const sortedKeys = ['requested', 'ordered', 'refused', 'received'];
+            const sortedKeys = ['requested', 'ordered'];
             
             sortedKeys.forEach(status => {
                 const groupRequests = requests.filter(r => r.status === status);
@@ -488,6 +488,14 @@ window.renderMobileMaterialRequests = async function () {
                         <textarea id="req-comment" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${_inputBg}; color: ${_textColor}; font-size: 16px; height: 100px; resize: none;" placeholder="Expliquez votre besoin..."></textarea>
                     </div>
 
+                    <div style="margin-bottom: 24px;">
+                        <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px; text-align: left;">Photo (Optionnel)</label>
+                        <label id="photo-label" for="req-photo-input" style="display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 16px; border-radius: 16px; background: ${_inputBg}; color: ${_textColor}; text-align: center; border: 2px dashed rgba(255,255,255,0.1); cursor: pointer; transition: 0.3s; font-weight: 600;">
+                            <span>📷 Prendre une photo</span>
+                        </label>
+                        <input type="file" id="req-photo-input" accept="image/*" capture="environment" style="display: none;" onchange="handleMaterialPhotoSelection(this)">
+                    </div>
+
                     <div style="display: flex; gap: 12px; margin-top: 24px;">
                         <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex: 1;">Annuler</button>
                         <button class="btn-primary" id="submit-req-btn" style="flex: 1; background: #FF9500;">Envoyer</button>
@@ -495,6 +503,18 @@ window.renderMobileMaterialRequests = async function () {
                 </div>
             `;
             document.body.appendChild(modal);
+
+            let selectedFile = null;
+            window.handleMaterialPhotoSelection = (input) => {
+                if (input.files && input.files[0]) {
+                    selectedFile = input.files[0];
+                    const label = document.getElementById('photo-label');
+                    label.innerHTML = `<span>✅ ${selectedFile.name.substring(0, 20)}${selectedFile.name.length > 20 ? '...' : ''}</span>`;
+                    label.style.borderColor = "#FF9500";
+                    label.style.color = "#FF9500";
+                    label.style.background = "rgba(255, 149, 0, 0.05)";
+                }
+            };
 
             document.getElementById('submit-req-btn').onclick = async () => {
                 const name = document.getElementById('req-name').value.trim();
@@ -511,10 +531,24 @@ window.renderMobileMaterialRequests = async function () {
                 btn.innerText = "Envoi...";
 
                 try {
+                    let image_path = null;
+                    if (selectedFile) {
+                        btn.innerText = "Upload photo...";
+                        const timestamp = Date.now();
+                        const safeFileName = selectedFile.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+                        const fileName = `${timestamp}_${safeFileName}`;
+                        const renamedFile = new File([selectedFile], fileName, { type: selectedFile.type });
+                        
+                        await api.uploadFile(renamedFile, 'material_requests/');
+                        image_path = 'material_requests/' + fileName;
+                    }
+
+                    btn.innerText = "Création...";
                     await api.createMaterialRequest({
                         material_name: name,
                         category: category,
-                        comment: comment
+                        comment: comment,
+                        image_path: image_path
                     });
                     modal.remove();
                     renderMobileMaterialRequests();
@@ -3675,7 +3709,7 @@ window.renderAdminMaterialRequests = async function () {
                                 <thead>
                                     <tr>
                                         <th>Utilisateur</th>
-                                        <th>Matériel</th>
+                                        <th>Matériel / Photo</th>
                                         <th>Commentaire</th>
                                         <th>Statut</th>
                                         <th>Date</th>
@@ -3692,7 +3726,16 @@ window.renderAdminMaterialRequests = async function () {
                     html += `
                         <tr>
                             <td><div style="font-weight: 600;">${userName}</div></td>
-                            <td><div style="color: #fff; font-weight: 500;">${window.escapeHTML(req.material_name)}</div></td>
+                            <td>
+                                <div style="color: #fff; font-weight: 700; font-size: 15px;">${window.escapeHTML(req.material_name)}</div>
+                                ${req.image_path ? `
+                                    <div style="margin-top: 10px;">
+                                        <a href="${config.api.workerUrl}/get/${encodeURIComponent(req.image_path)}" target="_blank" style="text-decoration: none; color: #58a6ff; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: rgba(88, 166, 255, 0.1); border: 1px solid rgba(88, 166, 255, 0.2); border-radius: 12px; width: fit-content; transition: 0.2s;" onmouseover="this.style.background='rgba(88, 166, 255, 0.2)'" onmouseout="this.style.background='rgba(88, 166, 255, 0.1)'">
+                                            🖼️ Voir la photo
+                                        </a>
+                                    </div>
+                                ` : '<div style="margin-top: 6px; color: #444; font-size: 11px; font-style: italic;">Sans photo</div>'}
+                            </td>
                             <td style="max-width: 300px;"><div style="font-size: 13px; color: #bbb; white-space: pre-wrap;">${window.escapeHTML(req.comment || '')}</div></td>
                             <td>
                                 <span class="mat-status-badge" style="background: ${statusInfo.color}; color: #000;">
@@ -3720,44 +3763,17 @@ window.renderAdminMaterialRequests = async function () {
             }
         }
 
-        if (archivedRequests.length > 0) {
-            html += `
-                <details style="margin-top: 40px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px;">
-                    <summary style="cursor: pointer; color: #000000ff; font-weight: 600; margin-bottom: 20px;">📜 Voir les demandes acquittées (${archivedRequests.length})</summary>
-                    <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>Utilisateur</th>
-                                    <th>Matériel</th>
-                                    <th>Date</th>
-                                    <th>Statut</th>
-                                    <th style="text-align: right;">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${archivedRequests.map(req => `
-                                    <tr style="opacity: 0.6;">
-                                        <td>${[req.profiles?.first_name, req.profiles?.last_name].filter(Boolean).join(' ') || 'Inconnu'}</td>
-                                        <td>${window.escapeHTML(req.material_name)}</td>
-                                        <td style="font-size: 13px; color: #888;">${new Date(req.created_at).toLocaleDateString('fr-FR')}</td>
-                                        <td><span class="mat-status-badge" style="background: #b2f2bb; color: #2b8a3e; font-size: 11px;">ACQUITTÉE</span></td>
-                                        <td style="text-align: right;"><button class="mat-btn restore" onclick="updateReqStatus('${req.id}', 'requested')" style="font-size: 11px; padding: 4px 10px;">Rétablir</button></td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </details>
-            `;
-        }
-
         html += `</div>`;
         content.innerHTML = html;
 
         window.updateReqStatus = async (id, status) => {
             try {
-                await api.updateMaterialRequestStatus(id, status);
+                if (status === 'refused' || status === 'received') {
+                    // Permanently delete these ones as requested
+                    await api.deleteMaterialRequest(id);
+                } else {
+                    await api.updateMaterialRequestStatus(id, status);
+                }
                 renderAdminMaterialRequests();
                 window.updateMaterialBadge(); // Update sidebar badge
             } catch (e) {
