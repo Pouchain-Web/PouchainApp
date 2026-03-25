@@ -1149,27 +1149,54 @@ window.renderAdminPlanning = async function (mondayStr = null) {
 };
 
 window.archivePlanningData = async function() {
-    if (!confirm("Voulez-vous archiver toutes les semaines de planning passées (tout ce qui précède ce lundi) vers Cloudflare (CSV) et les supprimer de Supabase ? Cela permet de garder l'application rapide.")) return;
-    
-    try {
-        const btn = document.querySelector('button[onclick="archivePlanningData()"]');
-        if (btn) btn.disabled = true;
-        
-        const result = await api.archiveOldTasks();
-        if (result.count > 0) {
-            showInfoModal("Archivage Terminé", `Succès ! <b>${result.count}</b> tâches ont été ajoutées aux journaux annuels CSV sur Cloudflare.<br><br>Votre historique reste consultable via le planning.`);
-        } else {
-            showInfoModal("Information", "Aucune semaine passée à archiver pour le moment.");
+    showConfirmModal(
+        "Confirmation d'archivage",
+        "Voulez-vous archiver toutes les semaines de planning passées (tout ce qui précède ce lundi) vers Cloudflare (CSV) et les supprimer de Supabase ? <br><br>Ceci est irréversible dans la base active mais l'historique restera consultable.",
+        async () => {
+            try {
+                const btn = document.querySelector('button[onclick="archivePlanningData()"]');
+                if (btn) btn.disabled = true;
+                
+                const result = await api.archiveOldTasks();
+                if (result.count > 0) {
+                    showInfoModal("Archivage Terminé", `Succès ! <b>${result.count}</b> tâches ont été ajoutées aux journaux annuels CSV sur Cloudflare.<br><br>Votre historique reste consultable via le planning.`);
+                } else {
+                    showInfoModal("Information", "Aucune semaine passée à archiver pour le moment.");
+                }
+                
+                const currentMonday = document.querySelector('[data-monday]');
+                const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
+                renderAdminPlanning(mondayToUse);
+                
+                if (btn) btn.disabled = false;
+            } catch (e) {
+                showInfoModal("Erreur", "Erreur lors de l'archivage : " + e.message);
+            }
         }
-        
-        const currentMonday = document.querySelector('[data-monday]');
-        const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
-        renderAdminPlanning(mondayToUse);
-        
-        if (btn) btn.disabled = false;
-    } catch (e) {
-        showInfoModal("Erreur", "Erreur lors de l'archivage : " + e.message);
-    }
+    );
+};
+
+window.showConfirmModal = function(title, message, callback) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.zIndex = '100007';
+    overlay.innerHTML = `
+        <div class="modal-box" style="max-width:450px; text-align:center; animation: modalPop 0.3s ease-out;">
+            <div class="modal-header" style="justify-content:center; border-bottom:none; font-size:20px;">${title}</div>
+            <div style="padding: 15px; font-size:15px; line-height:1.5; color:rgba(255,255,255,0.85);">${message}</div>
+            <div class="modal-actions" style="justify-content:center; margin-top:10px; border-top:none; gap:15px;">
+                <button class="btn-secondary" id="confirm-cancel" style="min-width:100px;">Annuler</button>
+                <button class="btn-primary" id="confirm-ok" style="min-width:100px;">Confirmer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    document.getElementById('confirm-cancel').onclick = () => overlay.remove();
+    document.getElementById('confirm-ok').onclick = () => {
+        overlay.remove();
+        callback();
+    };
 };
 
 window.showInfoModal = function(title, message) {
