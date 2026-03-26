@@ -454,6 +454,19 @@ export const api = {
         return await response.json();
     },
 
+    async deleteArchivedMaterialRequest(id, key) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/requests/archived`, {
+            method: "DELETE",
+            headers: {
+                "Content-Type": "application/json",
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, key })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async deleteMaterialRequest(id) {
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
             method: 'DELETE',

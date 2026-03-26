@@ -1152,6 +1152,31 @@ export default {
                 return new Response(JSON.stringify(list.objects), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            if (method === "DELETE" && url.pathname.endsWith("/admin/material/requests/archived")) {
+                const body = await request.json();
+                const { id, key } = body;
+                if (!id || !key) return new Response("Missing id or key", { status: 400, headers: corsHeaders });
+
+                const obj = await env.MY_BUCKET.get(key);
+                if (!obj) return new Response("Archive not found", { status: 404, headers: corsHeaders });
+
+                let csv = await obj.text();
+                const lines = csv.split('\n');
+                const header = lines[0];
+                const rows = lines.slice(1);
+
+                const filtered = rows.filter(row => {
+                    if (!row.trim()) return false;
+                    const cols = row.split(',');
+                    return cols[0] !== id; // First column is ID
+                });
+
+                const newCsv = [header, ...filtered].join('\n');
+                await env.MY_BUCKET.put(key, newCsv, { httpMetadata: { contentType: "text/csv" } });
+
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: VEHICLE LOGS (Admin) ---
             if (method === "GET" && url.pathname.endsWith("/admin/vehicle/all-logs")) {
                 const vehicle_id = url.searchParams.get('vehicle_id');

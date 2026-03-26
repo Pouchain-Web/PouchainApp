@@ -4144,6 +4144,7 @@ window.renderAdminMaterialRequests = async function () {
                     const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
                     const status = clean(cols[7]);
                     const item = {
+                        id: clean(cols[0]),
                         user_name: clean(cols[2]),
                         material_name: clean(cols[4]),
                         quantity: clean(cols[5]),
@@ -4284,12 +4285,13 @@ window.renderAdminMaterialRequests = async function () {
                                 <th>Quantité</th>
                                 <th>Traité par (Admin)</th>
                                 <th>Date</th>
+                                <th style="text-align: right;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${items.length === 0 ? `
                                 <tr>
-                                    <td colspan="5" style="text-align:center; padding: 40px; color: #555; background: rgba(0,0,0,0.1);">
+                                    <td colspan="6" style="text-align:center; padding: 40px; color: #555; background: rgba(0,0,0,0.1);">
                                         <div style="font-size: 24px; margin-bottom: 8px;">📑</div>
                                         Aucune donnée archivée dans cette catégorie
                                     </td>
@@ -4301,6 +4303,9 @@ window.renderAdminMaterialRequests = async function () {
                                     <td><div style="font-weight: 800; color: #fff;">${item.quantity}</div></td>
                                     <td><div style="color: #34C759; font-size: 13px; display:flex; align-items:center; gap:6px;">🛡️ ${item.handled_by}</div></td>
                                     <td><div style="font-size: 12px; color: #555;">${new Date(item.date).toLocaleDateString()}</div></td>
+                                    <td style="text-align: right;">
+                                        <button class="mat-btn refused" onclick="deleteArchivedRequest('${item.id}', '${item.date}')" style="padding: 6px 12px; font-size: 12px;" title="Supprimer de l'historique">🗑️</button>
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -4324,6 +4329,17 @@ window.renderAdminMaterialRequests = async function () {
         html += `</div>`; // Close material-admin-container
 
         content.innerHTML = html;
+
+        window.deleteArchivedRequest = async (id, date) => {
+            try {
+                const year = new Date(date).getFullYear();
+                const key = `archives/material_requests/${year}.csv`;
+                await api.deleteArchivedMaterialRequest(id, key);
+                renderAdminMaterialRequests(); // Refresh
+            } catch (e) {
+                alert("Erreur lors de la suppression: " + e.message);
+            }
+        };
 
         window.updateReqStatus = async (id, status) => {
             try {
