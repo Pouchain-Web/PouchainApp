@@ -4080,23 +4080,6 @@ window.handleAdminGlobalSearch = function (query) {
     content.innerHTML = html;
 };
 
-window.handleArchiveMaterialRequests = async () => {
-    const btn = document.getElementById('archive-mat-btn');
-    if (!confirm("Voulez-vous archiver toutes les demandes 'Recu' et 'Refusée' ? Elles seront déplacées vers Cloudflare R2.")) return;
-    
-    try {
-        btn.disabled = true;
-        btn.innerText = "Archivage en cours...";
-        const res = await api.archiveMaterialRequests();
-        alert(`${res.count} demandes ont été archivées avec succès.`);
-        renderAdminMaterialRequests();
-    } catch (e) {
-        alert("Erreur: " + e.message);
-        btn.disabled = false;
-        btn.innerText = "📦 Archiver les demandes terminées";
-    }
-};
-
 window.renderAdminMaterialRequests = async function () {
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
@@ -4125,7 +4108,6 @@ window.renderAdminMaterialRequests = async function () {
             <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
                 <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">Demande de matériel</h1>
                 <div style="display: flex; gap: 12px;">
-                    <button class="btn-secondary" style="border-color: #ff9500; color: #ff9500;" onclick="handleArchiveMaterialRequests()" id="archive-mat-btn">📦 Archiver les demandes terminées</button>
                     <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()">⚙️ Catégories</button>
                     <button class="btn-secondary" onclick="openAdminAlertConfigModal()">🔔 Config Alertes</button>
                 </div>
