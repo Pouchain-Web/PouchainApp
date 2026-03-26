@@ -925,7 +925,7 @@ export default {
 
             if (method === "PATCH" && url.pathname === "/admin/material/requests") {
                 const body = await request.json();
-                const { id, status } = body;
+                const { id, status, adminName } = body;
                 if (!id || !status) return new Response("Missing id or status", { status: 400, headers: corsHeaders });
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
@@ -949,7 +949,7 @@ export default {
                             } catch(e) {}
 
                             if (!csvContent) {
-                                csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path\n";
+                                csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path,handled_by\n";
                             }
 
                             const userName = r.profiles ? `${r.profiles.first_name} ${r.profiles.last_name}` : 'Inconnu';
@@ -961,9 +961,10 @@ export default {
                                 `"${(r.material_name || '').replace(/"/g, '""')}"`, 
                                 r.quantity || '', 
                                 `"${(r.comment || '').replace(/"/g, '""')}"`, 
-                                status, // Use the new status
+                                status, 
                                 r.created_at, 
-                                r.image_path || ''
+                                r.image_path || '',
+                                `"${(adminName || 'Admin').replace(/"/g, '""')}"`
                             ].join(',');
                             csvContent += line + "\n";
 

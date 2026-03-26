@@ -4089,13 +4089,65 @@ window.renderAdminMaterialRequests = async function () {
     content.innerHTML = `<div style="text-align:center; padding: 50px;"><div class="loader-spinner"></div></div>`;
 
     try {
-        const [requests, categories, configData, allUsers, archives] = await Promise.all([
+        const [requests, categories, configData, allUsers, archivedFiles] = await Promise.all([
             api.getMaterialRequests(),
             api.getMaterialCategories(),
             api.getMaterialConfig(),
             api.listUsers(),
             api.getArchivedMaterialRequests()
         ]);
+
+        // Process archives: Fetch content of each CSV and parse it
+        let historyConfirmed = [];
+        let historyRefused = [];
+        
+        try {
+            console.log("Chargement de l'historique R2...", archivedFiles);
+            const archiveContents = await Promise.all(
+                archivedFiles.map(async f => {
+                    try {
+                        const r = await fetch(`${config.api.workerUrl}/get/${f.key}`);
+                        if (!r.ok) return null;
+                        return await r.text();
+                    } catch(e) { 
+                        console.error(`Echec fetch archive ${f.key}:`, e);
+                        return null; 
+                    }
+                })
+            );
+            
+            archiveContents.forEach(csv => {
+                if (!csv) return;
+                const lines = csv.split('\n').filter(l => l.trim());
+                if (lines.length <= 1) return; // Only header
+                const rows = lines.slice(1);
+                const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
+                
+                rows.forEach(row => {
+                    const cols = row.match(/("[^"]*"|[^,]+)/g);
+                    if (!cols || cols.length < 8) return;
+                    const status = clean(cols[7]);
+                    const item = {
+                        user_name: clean(cols[2]),
+                        material_name: clean(cols[4]),
+                        quantity: clean(cols[5]),
+                        comment: clean(cols[6]),
+                        status: status,
+                        date: clean(cols[8]),
+                        handled_by: clean(cols[10]) || 'Admin'
+                    };
+                    if (status === 'received') historyConfirmed.push(item);
+                    else if (status === 'refused') historyRefused.push(item);
+                });
+            });
+            
+            // Sort history by date desc
+            historyConfirmed.sort((a,b) => new Date(b.date) - new Date(a.date));
+            historyRefused.sort((a,b) => new Date(b.date) - new Date(a.date));
+            
+        } catch (err) {
+            console.error("Erreur générale archives:", err);
+        }
 
         const groups = {
             'requested': { label: 'En attente', color: '#ffec99', icon: '⏳' },
@@ -4200,91 +4252,70 @@ window.renderAdminMaterialRequests = async function () {
             }
         }
 
-        // --- Archives (R2) ---
-        if (archives && archives.length > 0) {
-            html += `
-                <section class="mat-admin-section" style="margin-top: 60px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 40px;">
-                    <div class="mat-admin-header" style="margin-bottom: 24px;">
-                        <h2 style="font-size: 20px; font-weight: 700; color: #888; margin:0;">📚 Archives Historiques (Cloudflare R2)</h2>
-                    </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
-                        ${archives.map(a => `
-                            <div onclick="openMaterialArchive('${a.key}')" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); padding: 16px; border-radius: 16px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 12px;" onmouseover="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.1)';" onmouseout="this.style.background='rgba(255,255,255,0.03)'; this.style.borderColor='rgba(255,255,255,0.05)';">
-                                <div style="font-size: 24px;">📄</div>
-                                <div>
-                                    <div style="font-weight: 700; color: #fff;">${a.key.split('/').pop()}</div>
-                                    <div style="font-size: 11px; color: #666;">Dernière modification: ${new Date(a.uploaded).toLocaleDateString()}</div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </section>
-            `;
-        }
+        // --- Historique (Archives R2) ---
+        const renderHistoryTable = (items, title, color) => `
+            <div style="margin-bottom: 40px;">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+                    <h3 style="color: ${color}; font-size: 16px; font-weight: 800; margin:0; text-transform: uppercase; border-left: 4px solid ${color}; padding-left: 12px;">${title}</h3>
+                    <span style="background: rgba(255,255,255,0.05); padding: 2px 10px; border-radius: 12px; font-size: 12px; color: #888;">${items.length} entrées</span>
+                </div>
+                <div style="overflow-x: auto; background: rgba(0,0,0,0.2); border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(10px);">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Émetteur (Demandeur)</th>
+                                <th>Matériel</th>
+                                <th>Quantité</th>
+                                <th>Traité par (Admin)</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.length === 0 ? `
+                                <tr>
+                                    <td colspan="5" style="text-align:center; padding: 40px; color: #555; background: rgba(0,0,0,0.1);">
+                                        <div style="font-size: 24px; margin-bottom: 8px;">📑</div>
+                                        Aucune donnée archivée dans cette catégorie
+                                    </td>
+                                </tr>
+                            ` : items.map(item => `
+                                <tr>
+                                    <td><div style="font-weight: 700; color: #eee;">${item.user_name}</div></td>
+                                    <td><div style="font-size: 14px; color: #bbb;">${item.material_name}</div></td>
+                                    <td><div style="font-weight: 800; color: #fff;">${item.quantity}</div></td>
+                                    <td><div style="color: #34C759; font-size: 13px; display:flex; align-items:center; gap:6px;">🛡️ ${item.handled_by}</div></td>
+                                    <td><div style="font-size: 12px; color: #555;">${new Date(item.date).toLocaleDateString()}</div></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        html += `
+            <section class="mat-admin-section" style="margin-top: 60px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 40px;">
+                <header style="margin-bottom: 32px;">
+                    <h2 style="font-size: 22px; font-weight: 800; color: #fff; margin:0; display:flex; align-items:center; gap:12px;">📊 Historique des demandes (Archives R2)</h2>
+                    <p style="color: #666; font-size: 13px; margin-top: 4px;">Ces données sont extraites en temps réel de votre stockage d'archives Cloudflare R2.</p>
+                </header>
+
+                ${renderHistoryTable(historyConfirmed, 'Confirmées / Livrées', '#34C759')}
+                ${renderHistoryTable(historyRefused, 'Demandes Refusées', '#FF3B30')}
+            </section>
+        `;
         
         html += `</div>`; // Close material-admin-container
 
         content.innerHTML = html;
 
-        window.openMaterialArchive = async (key) => {
-            const modal = document.createElement('div');
-            modal.className = 'modal-overlay';
-            modal.innerHTML = `<div class="modal-box glass-panel" style="width: 1000px; padding: 40px;"><div class="loader-spinner" style="margin: 50px auto;"></div></div>`;
-            document.body.appendChild(modal);
-
-            try {
-                const response = await fetch(`${config.api.workerUrl}/get/${key}`);
-                const csv = await response.text();
-                const lines = csv.split('\n').filter(l => l.trim());
-                const rows = lines.slice(1); // skip header
-                
-                modal.querySelector('.modal-box').innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
-                        <h2 style="margin:0;">Archive: ${key.split('/').pop()}</h2>
-                        <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
-                    </div>
-                    <div style="overflow-x: auto; max-height: 600px;">
-                        <table class="admin-table">
-                            <thead>
-                                <tr>
-                                    <th>Utilisateur</th>
-                                    <th>Matériel</th>
-                                    <th>Quantité</th>
-                                    <th>Commentaire</th>
-                                    <th>Statut</th>
-                                    <th>Date</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${rows.map(row => {
-                                    // Super simple CSV parser (handle quotes)
-                                    const cols = row.match(/("[^"]*"|[^,]+)/g);
-                                    if(!cols) return '';
-                                    const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
-                                    return `
-                                        <tr>
-                                            <td style="font-weight: 600;">${clean(cols[2])}</td>
-                                            <td>${clean(cols[4])}</td>
-                                            <td style="font-weight: 700;">${clean(cols[5])}</td>
-                                            <td style="font-size: 13px; color: #aaa; max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${clean(cols[6])}</td>
-                                            <td><span style="font-size: 11px; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; background: rgba(255,255,255,0.05);">${clean(cols[7])}</span></td>
-                                            <td style="font-size: 12px; color: #666;">${new Date(clean(cols[8])).toLocaleDateString()}</td>
-                                        </tr>
-                                    `;
-                                }).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            } catch (e) {
-                modal.querySelector('.modal-box').innerHTML = `<div style="color:red;">Erreur: ${e.message}</div>`;
-            }
-        };
-
         window.updateReqStatus = async (id, status) => {
             try {
+                const profile = await auth.getCurrentProfile();
+                const adminName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : 'Admin';
+                
                 // Now we just update status, deletion happens during archiving
-                await api.updateMaterialRequestStatus(id, status);
+                await api.updateMaterialRequestStatus(id, status, adminName);
                 renderAdminMaterialRequests();
                 window.updateMaterialBadge(); // Update sidebar badge
             } catch (e) {

@@ -386,14 +386,14 @@ export const api = {
         return await response.json();
     },
 
-    async updateMaterialRequestStatus(id, status) {
+    async updateMaterialRequestStatus(id, status, adminName = null) {
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, status })
+            body: JSON.stringify({ id, status, adminName })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

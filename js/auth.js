@@ -71,5 +71,18 @@ export const auth = {
             password: newPassword
         });
         if (error) throw error;
+    },
+
+    // Get current user profile
+    async getCurrentProfile() {
+        const session = await this.getSession();
+        if (!session) return null;
+        const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+        if (error) return null;
+        return profile;
     }
 };
