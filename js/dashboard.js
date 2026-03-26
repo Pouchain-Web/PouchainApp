@@ -4121,11 +4121,27 @@ window.renderAdminMaterialRequests = async function () {
                 const lines = csv.split('\n').filter(l => l.trim());
                 if (lines.length <= 1) return; // Only header
                 const rows = lines.slice(1);
-                const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
-                
                 rows.forEach(row => {
-                    const cols = row.match(/("[^"]*"|[^,]+)/g);
-                    if (!cols || cols.length < 8) return;
+                    // Robust CSV splitting: handle commas inside quotes and empty fields
+                    const cols = [];
+                    let current = '';
+                    let inQuotes = false;
+                    for (let i = 0; i < row.length; i++) {
+                        const char = row[i];
+                        if (char === '"') inQuotes = !inQuotes;
+                        else if (char === ',' && !inQuotes) {
+                            cols.push(current);
+                            current = '';
+                        } else current += char;
+                    }
+                    cols.push(current);
+
+                    if (cols.length < 11) {
+                        console.warn("Ligne archive corrompue ou courte:", cols);
+                        return;
+                    }
+
+                    const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
                     const status = clean(cols[7]);
                     const item = {
                         user_name: clean(cols[2]),
