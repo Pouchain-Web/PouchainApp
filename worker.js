@@ -1093,6 +1093,70 @@ export default {
                 });
             }
 
+            // 5. Archive Material Requests (Admin)
+            if (method === "POST" && url.pathname.endsWith("/admin/material/requests/archive")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                
+                // Fetch all completed/refused requests
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_requests?status=in.(received,refused)&select=*,profiles(first_name,last_name)`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                const requests = await res.json();
+                if (requests.length === 0) return new Response(JSON.stringify({ success: true, count: 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+                const year = new Date().getFullYear();
+                const key = `archives/material_requests/${year}.csv`;
+                
+                // Fetch existing CSV file from R2
+                let csvContent = "";
+                try {
+                    const obj = await env.MY_BUCKET.get(key);
+                    if (obj) csvContent = await obj.text();
+                } catch(e) {}
+
+                if (!csvContent) {
+                    csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path\n";
+                }
+
+                requests.forEach(r => {
+                    const userName = r.profiles ? `${r.profiles.first_name} ${r.profiles.last_name}` : 'Inconnu';
+                    const line = [
+                        r.id, 
+                        r.user_id, 
+                        `"${userName.replace(/"/g, '""')}"`, 
+                        `"${(r.category || '').replace(/"/g, '""')}"`, 
+                        `"${(r.material_name || '').replace(/"/g, '""')}"`, 
+                        r.quantity || '', 
+                        `"${(r.comment || '').replace(/"/g, '""')}"`, 
+                        r.status, 
+                        r.created_at, 
+                        r.image_path || ''
+                    ].join(',');
+                    csvContent += line + "\n";
+                });
+
+                // Save back to R2
+                await env.MY_BUCKET.put(key, csvContent, { httpMetadata: { contentType: "text/csv" } });
+
+                // Delete from Supabase
+                const ids = requests.map(r => r.id);
+                // Supabase DELETE with in.()
+                await fetch(`${supabaseUrl}/rest/v1/material_requests?id=in.(${ids.join(',')})`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                return new Response(JSON.stringify({ success: true, count: requests.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // 6. List Archived Material Requests (Admin)
+            if (method === "GET" && url.pathname.endsWith("/admin/material/requests/archived")) {
+                const list = await env.MY_BUCKET.list({ prefix: "archives/material_requests/" });
+                return new Response(JSON.stringify(list.objects), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: VEHICLE LOGS (Admin) ---
             if (method === "GET" && url.pathname.endsWith("/admin/vehicle/all-logs")) {
                 const vehicle_id = url.searchParams.get('vehicle_id');

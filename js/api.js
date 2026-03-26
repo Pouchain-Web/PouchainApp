@@ -467,6 +467,23 @@ export const api = {
         return await response.json();
     },
 
+    async archiveMaterialRequests() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/requests/archive`, {
+            method: 'POST',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getArchivedMaterialRequests() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/requests/archived`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     // --- Vehicle Management ---
     async getVehicles() {
         const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {

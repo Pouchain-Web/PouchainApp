@@ -4080,6 +4080,23 @@ window.handleAdminGlobalSearch = function (query) {
     content.innerHTML = html;
 };
 
+window.handleArchiveMaterialRequests = async () => {
+    const btn = document.getElementById('archive-mat-btn');
+    if (!confirm("Voulez-vous archiver toutes les demandes 'Recu' et 'Refusée' ? Elles seront déplacées vers Cloudflare R2.")) return;
+    
+    try {
+        btn.disabled = true;
+        btn.innerText = "Archivage en cours...";
+        const res = await api.archiveMaterialRequests();
+        alert(`${res.count} demandes ont été archivées avec succès.`);
+        renderAdminMaterialRequests();
+    } catch (e) {
+        alert("Erreur: " + e.message);
+        btn.disabled = false;
+        btn.innerText = "📦 Archiver les demandes terminées";
+    }
+};
+
 window.renderAdminMaterialRequests = async function () {
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
@@ -4089,11 +4106,12 @@ window.renderAdminMaterialRequests = async function () {
     content.innerHTML = `<div style="text-align:center; padding: 50px;"><div class="loader-spinner"></div></div>`;
 
     try {
-        const [requests, categories, configData, allUsers] = await Promise.all([
+        const [requests, categories, configData, allUsers, archives] = await Promise.all([
             api.getMaterialRequests(),
             api.getMaterialCategories(),
             api.getMaterialConfig(),
-            api.listUsers()
+            api.listUsers(),
+            api.getArchivedMaterialRequests()
         ]);
 
         const groups = {
@@ -4107,6 +4125,7 @@ window.renderAdminMaterialRequests = async function () {
             <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
                 <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">Demande de matériel</h1>
                 <div style="display: flex; gap: 12px;">
+                    <button class="btn-secondary" style="border-color: #ff9500; color: #ff9500;" onclick="handleArchiveMaterialRequests()" id="archive-mat-btn">📦 Archiver les demandes terminées</button>
                     <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()">⚙️ Catégories</button>
                     <button class="btn-secondary" onclick="openAdminAlertConfigModal()">🔔 Config Alertes</button>
                 </div>
@@ -4118,8 +4137,7 @@ window.renderAdminMaterialRequests = async function () {
         // Filter out acquitted requests if they are 'received'? 
         // User says "L'admin peux aquitter une demande pour la faire disparaitre"
         // So we filter 'received' out of the main list, but maybe have a toggle?
-        const mainRequests = requests.filter(r => r.status !== 'received');
-        const archivedRequests = requests.filter(r => r.status === 'received');
+        const mainRequests = requests;
 
         // Group by category
         const catMap = new Map();
@@ -4200,16 +4218,91 @@ window.renderAdminMaterialRequests = async function () {
             }
         }
 
+        // --- Archives (R2) ---
+        if (archives && archives.length > 0) {
+            html += `
+                <section class="mat-admin-section" style="margin-top: 60px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 40px;">
+                    <div class="mat-admin-header" style="margin-bottom: 24px;">
+                        <h2 style="font-size: 20px; font-weight: 700; color: #888; margin:0;">📚 Archives Historiques (Cloudflare R2)</h2>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+                        ${archives.map(a => `
+                            <div onclick="openMaterialArchive('${a.key}')" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); padding: 16px; border-radius: 16px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 12px;" onmouseover="this.style.background='rgba(255,255,255,0.06)'; this.style.borderColor='rgba(255,255,255,0.1)';" onmouseout="this.style.background='rgba(255,255,255,0.03)'; this.style.borderColor='rgba(255,255,255,0.05)';">
+                                <div style="font-size: 24px;">📄</div>
+                                <div>
+                                    <div style="font-weight: 700; color: #fff;">${a.key.split('/').pop()}</div>
+                                    <div style="font-size: 11px; color: #666;">Dernière modification: ${new Date(a.uploaded).toLocaleDateString()}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </section>
+            `;
+        }
+        
+        html += `</div>`; // Close material-admin-container
+
         content.innerHTML = html;
+
+        window.openMaterialArchive = async (key) => {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `<div class="modal-box glass-panel" style="width: 1000px; padding: 40px;"><div class="loader-spinner" style="margin: 50px auto;"></div></div>`;
+            document.body.appendChild(modal);
+
+            try {
+                const response = await fetch(`${config.api.workerUrl}/get/${key}`);
+                const csv = await response.text();
+                const lines = csv.split('\n').filter(l => l.trim());
+                const rows = lines.slice(1); // skip header
+                
+                modal.querySelector('.modal-box').innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
+                        <h2 style="margin:0;">Archive: ${key.split('/').pop()}</h2>
+                        <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="overflow-x: auto; max-height: 600px;">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Utilisateur</th>
+                                    <th>Matériel</th>
+                                    <th>Quantité</th>
+                                    <th>Commentaire</th>
+                                    <th>Statut</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows.map(row => {
+                                    // Super simple CSV parser (handle quotes)
+                                    const cols = row.match(/("[^"]*"|[^,]+)/g);
+                                    if(!cols) return '';
+                                    const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
+                                    return `
+                                        <tr>
+                                            <td style="font-weight: 600;">${clean(cols[2])}</td>
+                                            <td>${clean(cols[4])}</td>
+                                            <td style="font-weight: 700;">${clean(cols[5])}</td>
+                                            <td style="font-size: 13px; color: #aaa; max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${clean(cols[6])}</td>
+                                            <td><span style="font-size: 11px; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; background: rgba(255,255,255,0.05);">${clean(cols[7])}</span></td>
+                                            <td style="font-size: 12px; color: #666;">${new Date(clean(cols[8])).toLocaleDateString()}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (e) {
+                modal.querySelector('.modal-box').innerHTML = `<div style="color:red;">Erreur: ${e.message}</div>`;
+            }
+        };
 
         window.updateReqStatus = async (id, status) => {
             try {
-                if (status === 'refused' || status === 'received') {
-                    // Permanently delete these ones as requested
-                    await api.deleteMaterialRequest(id);
-                } else {
-                    await api.updateMaterialRequestStatus(id, status);
-                }
+                // Now we just update status, deletion happens during archiving
+                await api.updateMaterialRequestStatus(id, status);
                 renderAdminMaterialRequests();
                 window.updateMaterialBadge(); // Update sidebar badge
             } catch (e) {
@@ -4396,7 +4489,6 @@ window.renderAdminVehicles = async function() {
                                 </div>
                                 <div style="flex: 1;">
                                     <div style="font-weight: 700; color: white; font-size: 15px;">${v.make || ''} ${v.model || 'Inconnu'}</div>
-                                    <div style="font-size: 11px; color: #666;">ID: ${v.id.split('-')[0]}</div>
                                 </div>
                             </div>
                         </td>
