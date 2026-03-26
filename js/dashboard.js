@@ -4851,7 +4851,6 @@ window.renderMobileVehicleApp = async function(vehicle) {
                     </div>
                     <div style="padding: 20px; display: flex; gap: 12px; align-items: center; background: rgba(52, 199, 89, 0.1);">
                         <span style="background: white; color: black; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 16px;">${vehicle.plate_number}</span>
-                        <span style="font-size: 14px; opacity: 0.9;">${vehicle.year || ''}</span>
                     </div>
                 </div>
 
