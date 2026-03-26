@@ -294,6 +294,19 @@ export const api = {
         return await response.json();
     },
 
+    async updateTaskAdmin(id, done) {
+        const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, done })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async getAdminTasks(startDate = null, endDate = null) {
         let url = `${config.api.workerUrl}/admin/tasks`;
         if (startDate && endDate) {
@@ -520,6 +533,74 @@ export const api = {
 
     async deleteVehicleLog(id) {
         const response = await fetch(`${config.api.workerUrl}/admin/vehicle/log`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getDkvCards() {
+        const response = await fetch(`${config.api.workerUrl}/admin/dkv-cards`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveDkvCard(data) {
+        const response = await fetch(`${config.api.workerUrl}/admin/dkv-cards`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteDkvCard(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/dkv-cards`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getTollCards() {
+        const response = await fetch(`${config.api.workerUrl}/admin/toll-cards`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveTollCard(data) {
+        const response = await fetch(`${config.api.workerUrl}/admin/toll-cards`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteTollCard(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/toll-cards`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',

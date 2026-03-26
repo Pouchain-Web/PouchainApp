@@ -44,6 +44,7 @@ window.openFile = function (key) {
 
 // --- Mobile View (User / Mobile) ---
 let mobileFilesCache = []; // Cache for search
+let mobileVehicleCache = null; // Track vehicle data for the list
 let mobileCurrentPath = null; // Track current folder path
 let isMobileView = false; // Flag to know which view is active
 
@@ -161,6 +162,10 @@ async function renderMobileView() {
     // Back Button Logic
     // Back Button Logic
     document.getElementById('back-btn').onclick = () => {
+        if (mobileCurrentPath === 'auto_detail') {
+            window.renderMobileVehiclesList(mobileVehicleCache);
+            return;
+        }
         if (mobileCurrentPath && mobileCurrentPath.includes('/')) {
             // Go up one level
             const parts = mobileCurrentPath.split('/');
@@ -171,7 +176,8 @@ async function renderMobileView() {
             // Back to Categories
             document.getElementById('categories-view').classList.remove('hidden');
             document.getElementById('document-list').classList.add('hidden');
-            document.querySelector('.mobile-search-container').classList.remove('hidden');
+            const searchContainer = document.querySelector('.mobile-search-container');
+            if (searchContainer) searchContainer.classList.remove('hidden');
             mobileCurrentPath = null;
         }
     };
@@ -237,7 +243,108 @@ async function renderMobileView() {
             api.getMyVehicle()
         ]);
         mobileFilesCache = files;
+        mobileVehicleCache = myVehicle;
         generateMobileCategories(files, myVehicle);
+
+        // Check for missing vehicle information ONLY for assigned vehicle
+        const assignedVehicle = myVehicle ? myVehicle.assigned : null;
+        if (assignedVehicle) {
+            const missing = [];
+            if (!assignedVehicle.next_maintenance_date) missing.push("Date limite d'entretien");
+            if (!assignedVehicle.next_maintenance_km && assignedVehicle.next_maintenance_km !== 0) missing.push("Prochain entretien (km)");
+            if (!assignedVehicle.toll_card) missing.push("Badge Télépéage");
+            if (!assignedVehicle.dkv_card) missing.push("Carte DKV");
+
+            if (missing.length > 0) {
+                const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+                const bg = dk ? '#1C1C1E' : '#ffffff';
+                const textColor = dk ? '#ffffff' : '#1c1c1e';
+                const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+                
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay';
+                modal.style.zIndex = "10000";
+                
+                modal.innerHTML = `
+                    <div id="missing-info-alert" class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                        <div style="font-size: 40px; margin-bottom: 16px;">⚠️</div>
+                        <h2 style="margin-top: 0; margin-bottom: 16px; color: ${textColor}; font-size: 20px;">Informations manquantes</h2>
+                        <div style="font-size: 15px; color: #8E8E93; margin-bottom: 24px; line-height: 1.5;">
+                            Votre véhicule (<strong>${window.escapeHTML(assignedVehicle.plate_number)}</strong>) requiert la mise à jour des informations suivantes :
+                            <ul style="text-align: left; margin-top: 12px; color: ${textColor}; padding-left: 20px;">
+                                ${missing.map(m => `<li>${m}</li>`).join('')}
+                            </ul>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <button id="fill-info-btn" class="btn-primary" style="width: 100%; padding: 14px; font-size: 16px; background: #FF9500;">Remplir les informations</button>
+                            <button class="btn-primary" style="width: 100%; padding: 14px; font-size: 16px; background: #8E8E93;" onclick="this.closest('.modal-overlay').remove()">Ignorer pour le moment</button>
+                        </div>
+                    </div>
+                    
+                    <div id="missing-info-form" class="modal-box hidden" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                        <h2 style="margin-top: 0; margin-bottom: 20px; color: ${textColor}; font-size: 20px;">Mettre à jour mon auto</h2>
+                        
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Date limite d'entretien</label>
+                            <input type="date" id="mi-date" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" value="${assignedVehicle.next_maintenance_date || ''}">
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Prochain entretien (km)</label>
+                            <input type="number" id="mi-km" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="Ex: 50000" value="${assignedVehicle.next_maintenance_km || ''}">
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Badge Télépéage</label>
+                            <input type="text" id="mi-toll" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="N° du badge" value="${assignedVehicle.toll_card || ''}">
+                        </div>
+                        <div style="margin-bottom: 24px;">
+                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Carte DKV</label>
+                            <input type="text" id="mi-dkv" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="N° de carte" value="${assignedVehicle.dkv_card || ''}">
+                        </div>
+                        
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn-secondary" style="flex: 1;" onclick="document.getElementById('missing-info-form').classList.add('hidden'); document.getElementById('missing-info-alert').classList.remove('hidden');">Retour</button>
+                            <button id="submit-mi-btn" class="btn-primary" style="flex: 1; background: #2da140;">Enregistrer</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+                document.getElementById('fill-info-btn').onclick = () => {
+                    document.getElementById('missing-info-alert').classList.add('hidden');
+                    document.getElementById('missing-info-form').classList.remove('hidden');
+                };
+
+                document.getElementById('submit-mi-btn').onclick = async () => {
+                    const btn = document.getElementById('submit-mi-btn');
+                    btn.disabled = true;
+                    btn.innerText = "En cours...";
+                    try {
+                        const payload = {
+                            id: assignedVehicle.id,
+                            next_maintenance_date: document.getElementById('mi-date').value || null,
+                            next_maintenance_km: document.getElementById('mi-km').value || null,
+                            toll_card: document.getElementById('mi-toll').value || null,
+                            dkv_card: document.getElementById('mi-dkv').value || null
+                        };
+                        const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
+                            method: "PATCH",
+                            headers: {
+                                "Content-Type": "application/json",
+                                'Authorization': `Bearer ${session.access_token}`
+                            },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!response.ok) throw new Error(await response.text());
+                        
+                        modal.remove();
+                    } catch (e) {
+                        alert("Erreur: " + e.message);
+                        btn.disabled = false;
+                        btn.innerText = "Enregistrer";
+                    }
+                };
+            }
+        }
     } catch (e) {
         console.error(e);
         document.getElementById('categories-grid').innerHTML = `<div style="color:red; text-align:center;">Erreur de chargement: ${e.message}</div>`;
@@ -379,14 +486,14 @@ function generateMobileCategories(files, myVehicle = null) {
     `;
     matosCard.onclick = () => renderMobileMaterialRequests();
 
-    if (myVehicle) {
+    if (myVehicle && (myVehicle.assigned || (myVehicle.common && myVehicle.common.length > 0))) {
         const autoCard = document.createElement('div');
         autoCard.className = 'category-card';
         autoCard.innerHTML = `
             <div class="category-icon" style="background-color: #34C759;">🚗</div>
-            <div class="category-title" style="font-weight:bold;">Mon Auto</div>
+            <div class="category-title" style="font-weight:bold;">Véhicules</div>
         `;
-        autoCard.onclick = () => renderMobileVehicleApp(myVehicle);
+        autoCard.onclick = () => window.renderMobileVehiclesList(myVehicle);
         grid.prepend(autoCard);
     }
 
@@ -1122,14 +1229,15 @@ window.renderAdminAbout = async function () {
 window.renderAdminPlanning = async function (mondayStr = null) {
     if (window.planningRefreshInterval) clearInterval(window.planningRefreshInterval);
     
-    // Auto-refresh every 15 seconds if we are on the planning page
+    // Auto-refresh every 15 seconds if we are on the planning page AND in fullscreen (TV Wall mode)
     window.planningRefreshInterval = setInterval(() => {
         const navPlanning = document.getElementById('nav-planning');
-        if (navPlanning && navPlanning.classList.contains('active')) {
+        const isFS = !!document.fullscreenElement;
+        if (isFS && navPlanning && navPlanning.classList.contains('active')) {
             const currentMonday = document.querySelector('[data-monday]');
             const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
             renderAdminPlanning(mondayToUse);
-        } else {
+        } else if (!navPlanning || !navPlanning.classList.contains('active')) {
             clearInterval(window.planningRefreshInterval);
         }
     }, 15000);
@@ -1227,8 +1335,12 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                 .planning-inline .p-head { background: #2a2a2a !important; color: white !important; border-top:none; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-user { background: #202020 !important; color: white !important; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-cell { border-color: rgba(255,255,255,0.05) !important; border-right: 1px solid rgba(255,255,255,0.05) !important; }
-                .planning-inline .p-task { border-left: 3px solid var(--primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05); }
-                .planning-inline .p-task-title { color: white !important; }
+                .planning-inline .p-task { border-left: 3px solid var(--primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05); display: flex !important; align-items: flex-start !important; justify-content: space-between !important; gap: 4px !important; position: relative !important; overflow: hidden !important; cursor: default !important; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease; z-index: 1; min-height: 24px; padding: 4px 6px !important; transform-origin: top left; }
+                .planning-inline .p-task:hover { z-index: 100 !important; overflow: visible !important; background: #1a1a1a !important; transform: scale(1.04); box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+                .planning-inline .p-task-title { color: white !important; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; font-size: 11px; font-weight: 800; }
+                .p-task:hover .p-task-title { white-space: normal !important; overflow: visible !important; text-overflow: unset !important; opacity: 1 !important; }
+                .p-task-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; align-items: center; }
+                .p-task:hover .p-task-actions { opacity: 1; pointer-events: auto; }
                 .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border: 1px dashed rgba(255,255,255,0.2) !important; }
                 .planning-inline .p-add-btn:hover { background: rgba(255,255,255,0.1) !important; color: white !important; }
                 
@@ -1295,8 +1407,20 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                     border-radius: 8px !important;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
                     border: 1px solid rgba(0,0,0,0.03) !important;
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    position: relative;
+                    z-index: 1;
+                    overflow: hidden;
+                    transform-origin: top left;
                 }
-                .planning-fullscreen .p-task-title { color: #212529 !important; font-size: 15px !important; font-weight: 700 !important; line-height: 1.3 !important; }
+                .planning-fullscreen .p-task:hover {
+                    z-index: 100;
+                    transform: scale(1.04);
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important;
+                    overflow: visible;
+                }
+                .planning-fullscreen .p-task-title { color: #212529 !important; font-size: 15px !important; font-weight: 700 !important; line-height: 1.3 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .planning-fullscreen .p-task:hover .p-task-title { white-space: normal; overflow: visible; text-overflow: unset; }
                 .planning-fullscreen .p-task-time { font-size: 13px !important; font-weight: 800 !important; margin-bottom: 4px !important; color: #495057 !important; }
                 .planning-fullscreen .p-add-btn { display: none !important; }
                 .planning-fullscreen .p-task button { display: none !important; }
@@ -1397,16 +1521,21 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                 dayTasks.forEach(t => {
                     const parsedTitle = t.title.split(':::DESC:::')[0];
                     const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
-                    const isDone = t.done === 'true';
+                    const isDone = t.done === 'true' || t.done === true;
                     let timeHtml = '';
                     if (!isAllDay) {
                         timeHtml = `<div class="p-task-time" style="font-size: 10px; font-weight:bold; margin-bottom: 2px;">${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>`;
                     }
                     rowsHTML += `
-                        <div class="p-task" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; position: relative; border-left: 4px solid ${userColor} !important; color: ${userColor}; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
-                            ${timeHtml}
-                            <div class="p-task-title" style="font-size: 11px; font-weight: 500; word-break: break-word; line-height: 1.2; ${isDone ? 'text-decoration: line-through;' : ''}">${window.escapeHTML(parsedTitle)}</div>
-                            <button class="btn-sm" style="position: absolute; top: 0px; right: 2px; background: transparent; border:none; color: #ff6b6b; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="deleteAdminTask('${t.id}', '${startStr}')" title="Supprimer">×</button>
+                        <div class="p-task" data-task-done="${isDone}" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; border-left: 4px solid ${userColor} !important; color: ${userColor}; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
+                            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+                                ${timeHtml}
+                                <div class="p-task-title" style="font-size: 11px; font-weight: 800; line-height: 1.2; ${isDone ? 'text-decoration: line-through;' : ''}" title="${window.escapeHTML(parsedTitle)}">${window.escapeHTML(parsedTitle)}</div>
+                            </div>
+                            <div class="p-task-actions">
+                                <button class="btn-sm" style="background: transparent; border:none; color: ${isDone ? '#34C759' : '#fff'}; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="window.toggleAdminTaskStatus('${t.id}', ${isDone}, '${startStr}', event)" title="${isDone ? 'Marquer comme en cours' : 'Valider la tâche'}">${isDone ? '✅' : '✔️'}</button>
+                                <button class="btn-sm" style="background: transparent; border:none; color: #ff6b6b; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="window.deleteAdminTask('${t.id}', '${startStr}')" title="Supprimer">×</button>
+                            </div>
                         </div>
                     `;
                 });
@@ -1721,11 +1850,60 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 window.deleteAdminTask = async function (taskId, currentWeekStartStr) {
+    if (confirm("Voulez-vous vraiment supprimer cette tâche ?")) {
+        try {
+            await api.deleteAdminTask(taskId);
+            renderAdminPlanning(currentWeekStartStr);
+        } catch (e) {
+            alert("Erreur de suppression: " + e.message);
+        }
+    }
+};
+
+window.toggleAdminTaskStatus = async function (taskId, currentStatusLegacy, currentWeekStartStr, event) {
+    // Optimistic UI Update
+    const btn = event ? event.target.closest('button') : null;
+    const taskEl = event ? event.target.closest('.p-task') : null;
+    
+    // Check current state from DOM if available, otherwise use legacy param
+    const currentStatus = taskEl ? (taskEl.getAttribute('data-task-done') === 'true') : !!currentStatusLegacy;
+    const nextStatus = !currentStatus;
+
+    if (taskEl) {
+        taskEl.setAttribute('data-task-done', nextStatus);
+        const titleEl = taskEl.querySelector('.p-task-title');
+        if (nextStatus) {
+            taskEl.style.opacity = '0.4';
+            taskEl.style.filter = 'grayscale(0.8)';
+            if (titleEl) titleEl.style.textDecoration = 'line-through';
+            if (btn) {
+                btn.innerHTML = '✅';
+                btn.style.color = '#34C759';
+                btn.title = 'Marquer comme en cours';
+            }
+        } else {
+            taskEl.style.opacity = '1';
+            taskEl.style.filter = 'none';
+            if (titleEl) titleEl.style.textDecoration = 'none';
+            if (btn) {
+                btn.innerHTML = '✔️';
+                btn.style.color = '#fff';
+                btn.title = 'Valider la tâche';
+            }
+        }
+    }
+
     try {
-        await api.deleteAdminTask(taskId);
-        renderAdminPlanning(currentWeekStartStr);
+        await api.updateTaskAdmin(taskId, nextStatus);
+        
+        // Refresh only in fullscreen mode
+        const isFS = !!document.fullscreenElement;
+        if (isFS) renderAdminPlanning(currentWeekStartStr);
     } catch (e) {
-        alert("Erreur: " + e.message);
+        console.error("Task Update Error:", e);
+        alert("Erreur de mise à jour: " + e.message);
+        // Rollback on error
+        renderAdminPlanning(currentWeekStartStr);
     }
 };
 
@@ -4049,7 +4227,19 @@ window.renderAdminVehicles = async function() {
     document.getElementById('nav-vehicles').classList.add('active');
 
     const content = document.getElementById('admin-content');
-    content.innerHTML = `<div style="text-align:center; padding: 50px;"><div class="loader-spinner"></div></div>`;
+    content.innerHTML = `
+        <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">🚐 Flotte Automobile</h1>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-primary" onclick="openAddVehicleModal()">➕ Ajouter un véhicule</button>
+                <button class="btn-secondary" style="border-color: #34C759; color: #34C759;" onclick="openDkvManagementModal()">💳 Gestion DKV</button>
+                <button class="btn-secondary" style="border-color: #007AFF; color: #007AFF;" onclick="openTollManagementModal()">🛣️ Badges</button>
+            </div>
+        </header>
+        <div id="admin-vehicle-list-wrapper">
+            <div class="loader-spinner" style="margin: 50px auto;"></div>
+        </div>
+    `;
 
     try {
         const [vehicles, users] = await Promise.all([
@@ -4058,11 +4248,6 @@ window.renderAdminVehicles = async function() {
         ]);
 
         let html = `
-            <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
-                <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">Gestion du parc véhicule</h1>
-                <button class="btn-primary" onclick="openAddVehicleModal()">+ Ajouter un véhicule</button>
-            </header>
-
             <div class="admin-table-container glass-panel" style="padding: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
                 <table class="admin-table">
                     <thead>
@@ -4114,7 +4299,7 @@ window.renderAdminVehicles = async function() {
                         </td>
                         <td><span style="background: #FFF; color: #000; padding: 4px 10px; border-radius: 6px; font-weight: 800; font-family: 'JetBrains Mono', monospace; border: 2px solid #222; font-size: 13px; letter-spacing: 1px;">${v.plate_number}</span></td>
                         <td>
-                            <div style="font-weight: 600; font-size: 15px;">${v.last_mileage.toLocaleString()} <span style="font-size: 12px; color: #666;">km</span></div>
+                            <div style="font-weight: 600; font-size: 15px;">${(v.last_mileage || 0).toLocaleString()} <span style="font-size: 12px; color: #666;">km</span></div>
                         </td>
                         <td><div style="color: #bbb; font-weight: 500;">${userName}</div></td>
                         <td>
@@ -4134,7 +4319,8 @@ window.renderAdminVehicles = async function() {
         }
 
         html += `</tbody></table></div>`;
-        content.innerHTML = html;
+        const wrapper = document.getElementById('admin-vehicle-list-wrapper');
+        if (wrapper) wrapper.innerHTML = html;
 
         // Add hover effect style if missing
         if (!document.getElementById('vehicle-table-style')) {
@@ -4150,13 +4336,165 @@ window.renderAdminVehicles = async function() {
         updateVehicleSidebarBadge(vehicles);
 
     } catch (e) {
-        content.innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
+        const wrapper = document.getElementById('admin-vehicle-list-wrapper');
+        if (wrapper) wrapper.innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
+        else content.innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
     }
+};
+
+window.openDkvManagementModal = async function() {
+    const renderDkvList = async (container) => {
+        try {
+            const cards = await api.getDkvCards();
+            if (cards.length === 0) {
+                container.innerHTML = `<div style="text-align:center; color:#888; padding:20px;">Aucune carte enregistrée</div>`;
+                return;
+            }
+            container.innerHTML = cards.map(c => `
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 12px; padding: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: 700; color: white;">${c.card_number}</div>
+                        <div style="font-size: 11px; color: #888;">${c.description || 'Pas de description'}</div>
+                    </div>
+                    <button onclick="handleDeleteDkvCard('${c.id}')" style="background:none; border:none; color:#FF3B30; cursor:pointer; font-size:18px;">🗑️</button>
+                </div>
+            `).join('');
+        } catch (e) {
+            container.innerHTML = `<div style="color:red;">Erreur lors du chargement: ${e.message}</div>`;
+        }
+    };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '100010';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 450px; padding: 32px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h2 style="margin:0;">💳 Cartes DKV</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+            </div>
+
+            <div style="margin-bottom: 24px; border-bottom: 1px solid #333; padding-bottom: 20px;">
+                <h4 style="margin:0 0 12px 0; color:#34C759;">Ajouter une carte</h4>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <input type="text" id="new-dkv-number" class="form-input" placeholder="N° de carte">
+                    <input type="text" id="new-dkv-desc" class="form-input" placeholder="Description">
+                </div>
+                <button class="btn-primary" style="width:100%; height:40px; padding:0; background:#34C759;" onclick="handleAddDkvCard()">Ajouter la carte</button>
+            </div>
+
+            <div id="dkv-list-container" style="max-height:300px; overflow-y:auto;">
+                <div class="loader-spinner" style="margin:20px auto;"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const listContainer = document.getElementById('dkv-list-container');
+    renderDkvList(listContainer);
+
+    window.handleAddDkvCard = async () => {
+        const cardNumber = document.getElementById('new-dkv-number').value.trim();
+        const description = document.getElementById('new-dkv-desc').value.trim();
+        if(!cardNumber) return alert("N° de carte obligatoire");
+        
+        try {
+            await api.saveDkvCard({ card_number: cardNumber, description });
+            document.getElementById('new-dkv-number').value = '';
+            document.getElementById('new-dkv-desc').value = '';
+            renderDkvList(listContainer);
+        } catch(e) { alert(e.message); }
+    };
+
+    window.handleDeleteDkvCard = async (id) => {
+        if(!confirm("Supprimer cette carte ?")) return;
+        try {
+            await api.deleteDkvCard(id);
+            renderDkvList(listContainer);
+        } catch(e) { alert(e.message); }
+    };
+};
+
+window.openTollManagementModal = async function() {
+    const renderTollList = async (container) => {
+        try {
+            const cards = await api.getTollCards();
+            if (cards.length === 0) {
+                container.innerHTML = `<div style="text-align:center; color:#888; padding:20px;">Aucun badge enregistré</div>`;
+                return;
+            }
+            container.innerHTML = cards.map(c => `
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 12px; padding: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: 700; color: white;">${c.card_number}</div>
+                        <div style="font-size: 11px; color: #888;">${c.description || 'Pas de description'}</div>
+                    </div>
+                    <button onclick="handleDeleteTollCard('${c.id}')" style="background:none; border:none; color:#FF3B30; cursor:pointer; font-size:18px;">🗑️</button>
+                </div>
+            `).join('');
+        } catch (e) {
+            container.innerHTML = `<div style="color:red;">Erreur lors du chargement: ${e.message}</div>`;
+        }
+    };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '100011';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 450px; padding: 32px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+                <h2 style="margin:0;">🛣️ Badges Télépéage</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+            </div>
+
+            <div style="margin-bottom: 24px; border-bottom: 1px solid #333; padding-bottom: 20px;">
+                <h4 style="margin:0 0 12px 0; color:#007AFF;">Ajouter un badge</h4>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <input type="text" id="new-toll-number" class="form-input" placeholder="N° de badge">
+                    <input type="text" id="new-toll-desc" class="form-input" placeholder="Description">
+                </div>
+                <button class="btn-primary" style="width:100%; height:40px; padding:0; background:#007AFF;" onclick="handleAddTollCard()">Ajouter le badge</button>
+            </div>
+
+            <div id="toll-list-container" style="max-height:300px; overflow-y:auto;">
+                <div class="loader-spinner" style="margin:20px auto;"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const listContainer = document.getElementById('toll-list-container');
+    renderTollList(listContainer);
+
+    window.handleAddTollCard = async () => {
+        const cardNumber = document.getElementById('new-toll-number').value.trim();
+        const description = document.getElementById('new-toll-desc').value.trim();
+        if(!cardNumber) return alert("N° de badge obligatoire");
+        
+        try {
+            await api.saveTollCard({ card_number: cardNumber, description });
+            document.getElementById('new-toll-number').value = '';
+            document.getElementById('new-toll-desc').value = '';
+            renderTollList(listContainer);
+        } catch(e) { alert(e.message); }
+    };
+
+    window.handleDeleteTollCard = async (id) => {
+        if(!confirm("Supprimer ce badge ?")) return;
+        try {
+            await api.deleteTollCard(id);
+            renderTollList(listContainer);
+        } catch(e) { alert(e.message); }
+    };
 };
 
 window.openAddVehicleModal = async function(vehicleId = null) {
     try {
-        const users = await api.listUsers();
+        const [users, dkvCards, tollCards] = await Promise.all([
+            api.listUsers(),
+            api.getDkvCards(),
+            api.getTollCards()
+        ]);
         users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
         
         let existing = null;
@@ -4192,21 +4530,26 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                     <div>
                         <label class="form-label">Collaborateur affecté</label>
                         <select id="v-user" class="form-input">
-                            <option value="">-- Non affecté --</option>
+                            <option value="">-- Sans propriétaire (Véhicule Commun) --</option>
                             ${users.map(u => `<option value="${u.id}" ${existing?.assigned_user_id === u.id ? 'selected' : ''}>${u.first_name || ''} ${u.last_name || ''}</option>`).join('')}
                         </select>
                     </div>
                 </div>
 
-                <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Cartes & Administration</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
                     <div>
                         <label class="form-label">Carte DKV / Essence</label>
-                        <input type="text" id="v-dkv" class="form-input" value="${existing?.dkv_card || ''}" placeholder="N° de carte">
+                        <select id="v-dkv" class="form-input">
+                            <option value="">-- Aucune --</option>
+                            ${dkvCards.map(c => `<option value="${c.card_number}" ${existing?.dkv_card === c.card_number ? 'selected' : ''}>${c.card_number} (${c.description || 'DKV'})</option>`).join('')}
+                        </select>
                     </div>
                     <div>
                         <label class="form-label">Badge Télépéage</label>
-                        <input type="text" id="v-toll" class="form-input" value="${existing?.toll_card || ''}" placeholder="N° du badge">
+                        <select id="v-toll" class="form-input">
+                            <option value="">-- Aucun --</option>
+                            ${tollCards.map(c => `<option value="${c.card_number}" ${existing?.toll_card === c.card_number ? 'selected' : ''}>${c.card_number} (${c.description || 'Badge'})</option>`).join('')}
+                        </select>
                     </div>
                 </div>
 
@@ -4290,6 +4633,61 @@ window.updateMaterialBadge = async function() {
     }
 };
 
+// --- MOBILE VEHICLES LIST ---
+window.renderMobileVehiclesList = async function(myVehicleData) {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Véhicules";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    mobileCurrentPath = "vehicule_list";
+
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const border = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    let html = `<div style="padding: 16px;">`;
+
+    if (myVehicleData && myVehicleData.assigned) {
+        html += `
+            <h3 style="color: #8E8E93; font-size: 13px; text-transform: uppercase; margin: 10px 0 12px 4px; letter-spacing: 0.5px;">Mon Véhicule</h3>
+            <div onclick="window.renderMobileVehicleApp(${JSON.stringify(myVehicleData.assigned).replace(/"/g, '&quot;')})" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 16px; display: flex; align-items: center; gap: 16px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
+                <div style="width: 48px; height: 48px; background: #34C759; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px;">🚗</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 700; color: ${textColor}; font-size: 17px;">${myVehicleData.assigned.make} ${myVehicleData.assigned.model}</div>
+                    <div style="font-size: 14px; color: #8E8E93; font-family: monospace;">${myVehicleData.assigned.plate_number}</div>
+                </div>
+                <div style="color: #8E8E93; font-size: 20px;">›</div>
+            </div>
+        `;
+    }
+
+    if (myVehicleData && myVehicleData.common && myVehicleData.common.length > 0) {
+        html += `<h3 style="color: #8E8E93; font-size: 13px; text-transform: uppercase; margin: 0 0 12px 4px; letter-spacing: 0.5px;">Véhicules Communs</h3>`;
+        myVehicleData.common.forEach(cv => {
+            html += `
+                <div onclick="window.renderMobileVehicleApp(${JSON.stringify(cv).replace(/"/g, '&quot;')})" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 16px; display: flex; align-items: center; gap: 16px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
+                    <div style="width: 48px; height: 48px; background: #007AFF; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px;">🚙</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 700; color: ${textColor}; font-size: 17px;">${cv.make} ${cv.model}</div>
+                        <div style="font-size: 14px; color: #8E8E93; font-family: monospace;">${cv.plate_number}</div>
+                    </div>
+                    <div style="color: #8E8E93; font-size: 20px;">›</div>
+                </div>
+            `;
+        });
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+};
+
 // --- MOBILE VEHICLE APP ---
 window.renderMobileVehicleApp = async function(vehicle) {
     document.getElementById('categories-view').classList.add('hidden');
@@ -4298,10 +4696,10 @@ window.renderMobileVehicleApp = async function(vehicle) {
     if (searchContainer) searchContainer.classList.add('hidden');
     document.getElementById('document-list').classList.remove('hidden');
 
-    document.getElementById('selected-category-title').innerText = "Mon Auto";
+    document.getElementById('selected-category-title').innerText = "Véhicule";
     document.getElementById('mobile-upload-btn').style.display = 'none';
 
-    mobileCurrentPath = "auto";
+    mobileCurrentPath = "auto_detail";
 
     const container = document.getElementById('list-content');
     container.innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader-spinner"></div></div>`;
@@ -4317,7 +4715,7 @@ window.renderMobileVehicleApp = async function(vehicle) {
             <div style="padding: 16px; padding-bottom: 100px;">
                 <!-- Vehicle Card -->
                 <div style="background: linear-gradient(135deg, #34C759, #28a745); border-radius: 24px; padding: 24px; color: white; margin-bottom: 24px; box-shadow: 0 8px 16px rgba(52, 199, 89, 0.2);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 4px;">Mon véhicule</div>
+                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 4px;">${vehicle.assigned_user_id ? 'Mon véhicule' : 'Véhicule commun'}</div>
                     <div style="font-size: 24px; font-weight: 800; margin-bottom: 16px;">${vehicle.make || ''} ${vehicle.model || 'Auto'}</div>
                     <div style="display: flex; gap: 12px; align-items: center;">
                         <span style="background: white; color: black; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 16px;">${vehicle.plate_number}</span>
@@ -4330,11 +4728,11 @@ window.renderMobileVehicleApp = async function(vehicle) {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                         <div>
                             <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 600;">Kilométrage actuel</div>
-                            <div style="font-size: 32px; font-weight: 800; color: ${textColor};">${vehicle.last_mileage.toLocaleString()} <span style="font-size: 16px; font-weight: 600; color: #8E8E93;">km</span></div>
+                            <div style="font-size: 32px; font-weight: 800; color: ${textColor};">${(vehicle.last_mileage || 0).toLocaleString()} <span style="font-size: 16px; font-weight: 600; color: #8E8E93;">km</span></div>
                         </div>
-                        <button class="btn-primary" onclick="updateMobileMileage('${vehicle.id}', ${vehicle.last_mileage})" style="padding: 10px 20px; border-radius: 12px; background: #34C759;">Mettre à jour</button>
+                        <button class="btn-primary" onclick="window.updateMobileMileage('${vehicle.id}', ${vehicle.last_mileage || 0})" style="padding: 10px 20px; border-radius: 12px; background: #34C759;">Mettre à jour</button>
                     </div>
-                    <div style="font-size: 12px; color: #8E8E93;">Dernier relevé : ${new Date(vehicle.updated_at).toLocaleDateString('fr-FR')}</div>
+                    <div style="font-size: 12px; color: #8E8E93;">Dernier relevé : ${vehicle.updated_at ? new Date(vehicle.updated_at).toLocaleDateString('fr-FR') : '--'}</div>
                 </div>
 
                 <!-- Quick Actions -->
@@ -4343,7 +4741,7 @@ window.renderMobileVehicleApp = async function(vehicle) {
                         <span style="font-size: 24px;">⚠️</span>
                         <span style="font-weight: 600; color: ${textColor}; font-size: 14px;">Signaler un souci</span>
                     </button>
-                    <button style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; cursor: pointer; filter: grayscale(1); opacity: 0.5;" onclick="alert('Bientôt disponible')">
+                    <button style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; cursor: pointer;" onclick="window.logMobileFuel('${vehicle.id}', '${vehicle.dkv_card || ''}')">
                         <span style="font-size: 24px;">⛽</span>
                         <span style="font-weight: 600; color: ${textColor}; font-size: 14px;">Plein essence</span>
                     </button>
@@ -4357,13 +4755,13 @@ window.renderMobileVehicleApp = async function(vehicle) {
             html += `<div style="text-align:center; padding: 24px; color: #8E8E93;">Aucun historique</div>`;
         } else {
             logs.slice(0, 5).forEach(log => {
-                const icon = log.type === 'mileage' ? '📍' : (log.type === 'issue' ? '⚠️' : '🔧');
+                const icon = log.type === 'mileage' ? '📍' : (log.type === 'issue' ? '⚠️' : (log.type === 'fuel' ? '⛽' : '🔧'));
                 html += `
                     <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 16px; padding: 14px; margin-bottom: 10px; display: flex; gap: 14px; align-items: center;">
                         <div style="font-size: 20px; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 12px;">${icon}</div>
                         <div style="flex: 1;">
                             <div style="font-weight: 600; color: ${textColor}; font-size: 14px;">
-                                ${log.type === 'mileage' ? `Mise à jour : ${parseInt(log.value).toLocaleString()} km` : log.description}
+                                ${log.type === 'mileage' ? `Mise à jour : ${parseInt(log.value).toLocaleString()} km` : (log.type === 'fuel' ? `Plein : ${log.value} €` : log.description)}
                             </div>
                             <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</div>
                         </div>
@@ -4380,26 +4778,238 @@ window.renderMobileVehicleApp = async function(vehicle) {
     }
 };
 
-window.updateMobileMileage = function(vehicleId, current) {
-    const val = prompt("Entrez le kilométrage actuel au compteur :", current);
-    if (val === null) return;
-    const newMileage = parseInt(val);
-    if (isNaN(newMileage) || newMileage < current) return alert("Veuillez entrer un kilométrage valide (supérieur ou égal à l'actuel).");
+window.mobileAlert = function(title, message) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
 
-    api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: newMileage.toString() })
-        .then(() => api.getMyVehicle())
-        .then(updated => renderMobileVehicleApp(updated))
-        .catch(e => alert("Erreur: " + e.message));
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10005";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 80%; max-width: 320px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h3 style="margin-top: 0; margin-bottom: 12px; color: ${textColor}; font-size: 18px;">${title}</h3>
+            <p style="font-size: 14px; color: #8E8E93; margin-bottom: 20px; line-height: 1.4;">${message}</p>
+            <button class="btn-primary" style="width: 100%; padding: 12px; border-radius: 12px; clip-path: inset(0 round 12px);" onclick="this.closest('.modal-overlay').remove()">OK</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+};
+
+window.updateMobileMileage = function(vehicleId, current) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h2 style="margin-top: 0; margin-bottom: 20px; color: ${textColor}; font-size: 20px;">Mettre à jour le compteur</h2>
+            
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 8px;">Kilométrage actuel (km)</label>
+                <input type="number" id="new-mileage-input" style="width: 100%; padding: 16px; border: none; border-radius: 16px; background: ${inputBg}; color: ${textColor}; font-size: 20px; font-weight: bold;" value="${current || 0}">
+                <p style="font-size: 11px; color: #8E8E93; margin-top: 8px;">Dernier relevé : ${current || 0} km</p>
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="save-mileage-btn" class="btn-primary" style="flex: 1; background: #34C759;">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const input = document.getElementById('new-mileage-input');
+    input.focus();
+    input.select();
+
+    document.getElementById('save-mileage-btn').onclick = async () => {
+        const val = parseInt(input.value);
+        if (isNaN(val) || val < current) {
+            window.mobileAlert("Kilométrage invalide", "Veuillez entrer un kilométrage supérieur ou égal à l'actuel (" + current + " km).");
+            return;
+        }
+
+        const btn = document.getElementById('save-mileage-btn');
+        btn.disabled = true;
+        btn.innerText = "Enregistrement...";
+
+        try {
+            await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: val.toString() });
+            const updatedData = await api.getMyVehicle();
+            mobileVehicleCache = updatedData;
+            
+            let targetVehicle = null;
+            if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
+            else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
+
+            modal.remove();
+            if (targetVehicle) window.renderMobileVehicleApp(targetVehicle);
+            else window.renderMobileVehiclesList(updatedData);
+        } catch (e) {
+            window.mobileAlert("Erreur", e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
 };
 
 window.reportMobileVehicleIssue = function(vehicleId) {
-    const desc = prompt("Décrivez brièvement le problème (bruit, choc, voyant...) :");
-    if (!desc) return;
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
 
-    api.submitVehicleLog({ vehicle_id: vehicleId, type: 'issue', description: desc })
-        .then(() => api.getMyVehicle())
-        .then(updated => renderMobileVehicleApp(updated))
-        .catch(e => alert("Erreur: " + e.message));
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h2 style="margin-top: 0; margin-bottom: 20px; color: ${textColor}; font-size: 20px;">Signaler un souci</h2>
+            
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 8px;">Description du problème</label>
+                <textarea id="issue-desc-input" style="width: 100%; height: 120px; padding: 16px; border: none; border-radius: 16px; background: ${inputBg}; color: ${textColor}; font-size: 15px; resize: none;" placeholder="Bruit suspect, voyant moteur, choc carrosserie..."></textarea>
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="save-issue-btn" class="btn-primary" style="flex: 1; background: #FF3B30;">Signaler</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('issue-desc-input').focus();
+
+    document.getElementById('save-issue-btn').onclick = async () => {
+        const desc = document.getElementById('issue-desc-input').value.trim();
+        if (!desc) {
+            window.mobileAlert("Description manquante", "Veuillez décrire brièvement le problème rencontré.");
+            return;
+        }
+
+        const btn = document.getElementById('save-issue-btn');
+        btn.disabled = true;
+        btn.innerText = "Envoi...";
+
+        try {
+            await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'issue', description: desc });
+            const updatedData = await api.getMyVehicle();
+            mobileVehicleCache = updatedData;
+            
+            let targetVehicle = null;
+            if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
+            else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
+
+            modal.remove();
+            if (targetVehicle) window.renderMobileVehicleApp(targetVehicle);
+            else window.renderMobileVehiclesList(updatedData);
+        } catch (e) {
+            window.mobileAlert("Erreur", e.message);
+            btn.disabled = false;
+            btn.innerText = "Signaler";
+        }
+    };
+};
+
+window.logMobileFuel = async function(vehicleId, dkvCard) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    // Fetch DKV cards for selection if it's a common vehicle OR if we want to allow picking
+    let allCards = [];
+    try { allCards = await api.getDkvCards(); } catch(e) {}
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h2 style="margin-top: 0; margin-bottom: 20px; color: ${textColor}; font-size: 20px;">Enregistrer un plein</h2>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 6px;">Carte DKV utilisée</label>
+                <select id="fuel-dkv" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor}; font-size: 15px; font-weight: bold;">
+                    ${dkvCard ? `<option value="${dkvCard}">Carte du véhicule (${dkvCard})</option>` : ''}
+                    <option value="">-- Utiliser une autre carte --</option>
+                    ${allCards.map(c => `<option value="${c.card_number}" ${dkvCard === c.card_number ? 'disabled' : ''}>${c.card_number} (${c.description || 'DKV'})</option>`).join('')}
+                </select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                <div>
+                    <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 6px;">Volume (Litre)</label>
+                    <input type="number" id="fuel-volume" step="0.01" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor}; font-size: 16px; font-weight: bold;" placeholder="Ex: 45.5">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 6px;">Montant (€)</label>
+                    <input type="number" id="fuel-amount" step="0.01" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor}; font-size: 16px; font-weight: bold;" placeholder="Ex: 85.20">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 6px;">Kilométrage au compteur</label>
+                <input type="number" id="fuel-km" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor}; font-size: 16px; font-weight: bold;" placeholder="Km actuel">
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="save-fuel-btn" class="btn-primary" style="flex: 1; background: #34C759;">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('fuel-volume').focus();
+
+    document.getElementById('save-fuel-btn').onclick = async () => {
+        const volume = document.getElementById('fuel-volume').value;
+        const amount = document.getElementById('fuel-amount').value;
+        const km = document.getElementById('fuel-km').value;
+        const usedDkv = document.getElementById('fuel-dkv').value;
+
+        if (!volume || !amount || !km || !usedDkv) {
+            window.mobileAlert("Champs manquants", "Veuillez remplir le volume, le montant, le kilométrage et sélectionner la carte.");
+            return;
+        }
+
+        const btn = document.getElementById('save-fuel-btn');
+        btn.disabled = true;
+        btn.innerText = "Envoi...";
+
+        const description = `Plein : ${volume} L pour ${amount} € à ${km} km (Carte : ${usedDkv})`;
+
+        try {
+            await api.submitVehicleLog({ 
+                vehicle_id: vehicleId, 
+                type: 'fuel', 
+                value: amount, 
+                description: description,
+                current_mileage: km
+            });
+            const updatedData = await api.getMyVehicle();
+            mobileVehicleCache = updatedData;
+            
+            let targetVehicle = null;
+            if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
+            else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
+
+            modal.remove();
+            if (targetVehicle) window.renderMobileVehicleApp(targetVehicle);
+            else window.renderMobileVehiclesList(updatedData);
+        } catch (e) {
+            window.mobileAlert("Erreur", e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
 };
 
 window.updateVehicleSidebarBadge = function(vehicles) {
@@ -4509,23 +5119,45 @@ window.openVehicleDetailModal = async function(vehicleId) {
                         </div>
                     </div>
 
-                    <!-- Right Column: Chart -->
-                    <div style="padding: 40px; display: flex; flex-direction: column; gap: 32px; overflow-y: auto; background: #fcfcfd;">
-                        <div style="flex: 1; min-height: 350px; background: #ffffff; border-radius: 24px; padding: 24px; border: 1px solid #eee; box-shadow: 0 4px 15px rgba(0,0,0,0.02);">
-                            <h3 style="margin-top: 0; font-size: 16px; color: #1a1a1c; font-weight: 800; margin-bottom: 24px;">📈 Évolution du kilométrage</h3>
-                            <canvas id="mileageChart"></canvas>
-                        </div>
+                    <!-- Right Column: Charts & Stats -->
+                    <div style="padding: 32px; display: flex; flex-direction: column; gap: 20px; overflow: hidden; background: #fcfcfd;">
                         
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                            <div style="padding: 24px; border-radius: 24px; background: #fff; border: 1px solid #eee;">
-                                <div style="font-size: 11px; color: #888; margin-bottom: 8px; font-weight: 700; text-transform: uppercase;">Dernière Activité</div>
-                                <div style="font-size: 20px; font-weight: 800; color: #1a1a1c;">${v.profiles ? v.profiles.first_name + ' ' + v.profiles.last_name : 'N/A'}</div>
-                                <div style="font-size: 12px; color: #adb5bd; font-weight: 500;">${v.updated_at ? new Date(v.updated_at).toLocaleString() : ''}</div>
+                        <!-- Tab Switcher -->
+                        <div style="display: flex; background: #f0f0f0; padding: 4px; border-radius: 14px; width: fit-content;">
+                            <button id="tab-mil" onclick="window.switchVehicleView('mileage')" style="border: none; background: #fff; padding: 8px 20px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; color: #1a1a1c; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: 0.2s;">📍 Kilométrage</button>
+                            <button id="tab-fue" onclick="window.switchVehicleView('fuel')" style="border: none; background: transparent; padding: 8px 20px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; color: #888; transition: 0.2s;">⛽ Essence</button>
+                        </div>
+
+                        <!-- View Container -->
+                        <div id="vehicle-tabs-container" style="flex: 1; display: flex; flex-direction: column;">
+                            
+                            <!-- Mileage View -->
+                            <div id="view-mileage" style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                                <div style="flex: 1; background: #ffffff; border-radius: 24px; padding: 24px; border: 1px solid #eee; box-shadow: 0 4px 15px rgba(0,0,0,0.02); display: flex; flex-direction: column; min-height: 0;">
+                                    <h3 style="margin-top: 0; font-size: 16px; color: #1a1a1c; font-weight: 800; margin-bottom: 24px;">📈 Historique du compteur</h3>
+                                    <div style="flex: 1; position: relative;"><canvas id="mileageChart"></canvas></div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                    <div style="padding: 20px; border-radius: 20px; background: #fff; border: 1px solid #eee;">
+                                        <div style="font-size: 10px; color: #888; font-weight: 800; text-transform: uppercase; margin-bottom: 4px;">Dernière Activité</div>
+                                        <div style="font-size: 16px; font-weight: 800;">${v.profiles ? v.profiles.first_name + ' ' + v.profiles.last_name : 'N/A'}</div>
+                                    </div>
+                                    <div style="padding: 20px; border-radius: 20px; background: #fff; border: 1px solid #eee;">
+                                        <div style="font-size: 10px; color: #888; font-weight: 800; text-transform: uppercase; margin-bottom: 4px;">Compteur Actuel</div>
+                                        <div style="font-size: 22px; font-weight: 900; color: #34C759;">${(v.last_mileage || 0).toLocaleString()} km</div>
+                                    </div>
+                                </div>
                             </div>
-                            <div style="padding: 24px; border-radius: 24px; background: #fff; border: 1px solid #eee;">
-                                <div style="font-size: 11px; color: #888; margin-bottom: 8px; font-weight: 700; text-transform: uppercase;">Compteur Actuel</div>
-                                <div style="font-size: 32px; font-weight: 950; color: #34C759;">${v.last_mileage.toLocaleString()} <span style="font-size: 16px; opacity: 0.3; font-weight: 400;">km</span></div>
+
+                            <!-- Fuel View (Hidden by default) -->
+                            <div id="view-fuel" style="flex: 1; display: none; flex-direction: column; gap: 20px;">
+                                <div id="fuel-stats-grid-tabs" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;"></div>
+                                <div style="flex: 1; background: #ffffff; border-radius: 24px; padding: 24px; border: 1px solid #eee; box-shadow: 0 4px 15px rgba(0,0,0,0.02); display: flex; flex-direction: column; min-height: 0;">
+                                    <h3 style="margin-top: 0; font-size: 16px; color: #007AFF; font-weight: 800; margin-bottom: 24px;">⛽ Évolution des Coûts (€)</h3>
+                                    <div style="flex: 1; position: relative;"><canvas id="fuelChart"></canvas></div>
+                                </div>
                             </div>
+
                         </div>
                     </div>
                 </div>
@@ -4533,46 +5165,94 @@ window.openVehicleDetailModal = async function(vehicleId) {
         `;
         document.body.appendChild(modal);
 
-        // Render Chart
+        // --- Data Processing ---
+        const fuelLogs = logs.filter(l => l.type === 'fuel').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
         const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-        const ctx = document.getElementById('mileageChart').getContext('2d');
-        
-        new Chart(ctx, {
+
+        let totalEuro = 0, totalLiters = 0, avgCons = 0;
+        const fuelDataPoints = fuelLogs.map(l => {
+            const match = l.description.match(/Plein : ([\d.]+) L pour ([\d.]+) € à ([\d.]+) km/);
+            if (match) {
+                const [_, vol, eur, kms] = match;
+                totalEuro += parseFloat(eur);
+                totalLiters += parseFloat(vol);
+                return { date: l.created_at, vol: parseFloat(vol), eur: parseFloat(eur), kms: parseFloat(kms) };
+            }
+            return null;
+        }).filter(d => d !== null);
+
+        if (fuelDataPoints.length >= 2) {
+            const totalKm = fuelDataPoints[fuelDataPoints.length - 1].kms - fuelDataPoints[0].kms;
+            const litersForPeriod = fuelDataPoints.slice(1).reduce((sum, d) => sum + d.vol, 0);
+            if (totalKm > 0) avgCons = (litersForPeriod / totalKm) * 100;
+        }
+
+        // --- View Switching Logic ---
+        window.switchVehicleView = (view) => {
+            const vMil = document.getElementById('view-mileage');
+            const vFue = document.getElementById('view-fuel');
+            const tMil = document.getElementById('tab-mil');
+            const tFue = document.getElementById('tab-fue');
+
+            if (view === 'mileage') {
+                vMil.style.display = 'flex'; vFue.style.display = 'none';
+                tMil.style.background = '#fff'; tMil.style.color = '#1a1a1c'; tMil.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+                tFue.style.background = 'transparent'; tFue.style.color = '#888'; tFue.style.boxShadow = 'none';
+            } else {
+                vMil.style.display = 'none'; vFue.style.display = 'flex';
+                tFue.style.background = '#fff'; tFue.style.color = '#007AFF'; tFue.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+                tMil.style.background = 'transparent'; tMil.style.color = '#888'; tMil.style.boxShadow = 'none';
+                
+                // Init Fuel Stats if in fuel view
+                document.getElementById('fuel-stats-grid-tabs').innerHTML = `
+                    <div style="background: rgba(52, 199, 89, 0.05); padding: 12px; border-radius: 16px; border: 1px solid rgba(52,199,89,0.1); text-align: center;">
+                        <div style="font-size: 9px; color: #34C759; font-weight: 800; text-transform: uppercase;">Conso. (L/100)</div>
+                        <div style="font-size: 16px; font-weight: 900;">${avgCons > 0 ? avgCons.toFixed(1) : '--'}</div>
+                    </div>
+                    <div style="background: rgba(0, 122, 255, 0.05); padding: 12px; border-radius: 16px; border: 1px solid rgba(0,122,255,0.1); text-align: center;">
+                        <div style="font-size: 9px; color: #007AFF; font-weight: 800; text-transform: uppercase;">Budget (€)</div>
+                        <div style="font-size: 16px; font-weight: 900;">${totalEuro.toLocaleString()}</div>
+                    </div>
+                    <div style="background: rgba(255, 149, 0, 0.05); padding: 12px; border-radius: 16px; border: 1px solid rgba(255,149,0,0.1); text-align: center;">
+                        <div style="font-size: 9px; color: #FF9500; font-weight: 800; text-transform: uppercase;">Volume (L)</div>
+                        <div style="font-size: 16px; font-weight: 900;">${totalLiters.toLocaleString()}</div>
+                    </div>
+                `;
+            }
+        };
+
+        // --- Initial Charts ---
+        // 1. Mileage
+        new Chart(document.getElementById('mileageChart').getContext('2d'), {
             type: 'line',
             data: {
                 labels: mileageLogs.map(l => new Date(l.created_at).toLocaleDateString()),
                 datasets: [{
-                    label: 'Kilométrage',
+                    label: 'Compteur',
                     data: mileageLogs.map(l => parseInt(l.value)),
                     borderColor: '#34C759',
                     backgroundColor: 'rgba(52, 199, 89, 0.05)',
-                    borderWidth: 4,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#fff',
-                    pointBorderColor: '#34C759',
-                    pointBorderWidth: 2,
-                    pointRadius: 5,
-                    pointHoverRadius: 7
+                    borderWidth: 3, fill: true, tension: 0.4,
+                    pointRadius: 4, pointBackgroundColor: '#fff', pointBorderColor: '#34C759'
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#adb5bd', font: { weight: '600', size: 10 } }
-                    },
-                    y: {
-                        grid: { color: '#f1f3f5' },
-                        ticks: { color: '#adb5bd', font: { weight: '600', size: 10 } }
-                    }
-                }
-            }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+
+        // 2. Fuel
+        new Chart(document.getElementById('fuelChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: fuelDataPoints.map(d => new Date(d.date).toLocaleDateString()),
+                datasets: [{
+                    label: 'Coût (€)',
+                    data: fuelDataPoints.map(d => d.eur),
+                    backgroundColor: 'rgba(0, 122, 255, 0.2)',
+                    borderColor: '#007AFF',
+                    borderWidth: 2, borderRadius: 6
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
 
     } catch (e) {
