@@ -36,9 +36,14 @@ export default {
 
             // Check Admin for /admin/ routes
             if (url.pathname.startsWith('/admin/')) {
-                const admin = await isAdmin(user, env);
-                if (!admin) {
-                    return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
+                // EXCEPTION: allow GET on vehicles/logs for non-admins to pick their car / see logs
+                const isVehiclesRead = method === "GET" && (url.pathname.endsWith("/admin/vehicles") || url.pathname.endsWith("/admin/vehicle/all-logs"));
+                
+                if (!isVehiclesRead) {
+                    const admin = await isAdmin(user, env);
+                    if (!admin) {
+                        return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
+                    }
                 }
             }
         }

@@ -1335,10 +1335,9 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                 .planning-inline .p-head { background: #2a2a2a !important; color: white !important; border-top:none; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-user { background: #202020 !important; color: white !important; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-cell { border-color: rgba(255,255,255,0.05) !important; border-right: 1px solid rgba(255,255,255,0.05) !important; }
-                .planning-inline .p-task { border-left: 3px solid var(--primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05); display: flex !important; align-items: flex-start !important; justify-content: space-between !important; gap: 4px !important; position: relative !important; overflow: hidden !important; cursor: default !important; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease; z-index: 1; min-height: 24px; padding: 4px 6px !important; transform-origin: top left; }
-                .planning-inline .p-task:hover { z-index: 100 !important; overflow: visible !important; background: #1a1a1a !important; transform: scale(1.04); box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+                .planning-inline .p-task { border-left: 3px solid var(--primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05); display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 4px !important; position: relative !important; overflow: hidden !important; cursor: pointer !important; transition: background 0.2s ease; z-index: 1; min-height: 24px; padding: 4px 6px !important; }
+                .planning-inline .p-task:hover { background: rgba(255,255,255,0.1) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
                 .planning-inline .p-task-title { color: white !important; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; font-size: 11px; font-weight: 800; }
-                .p-task:hover .p-task-title { white-space: normal !important; overflow: visible !important; text-overflow: unset !important; opacity: 1 !important; }
                 .p-task-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; align-items: center; }
                 .p-task:hover .p-task-actions { opacity: 1; pointer-events: auto; }
                 .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border: 1px dashed rgba(255,255,255,0.2) !important; }
@@ -1407,18 +1406,12 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                     border-radius: 8px !important;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
                     border: 1px solid rgba(0,0,0,0.03) !important;
-                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    transition: all 0.2s ease;
                     position: relative;
                     z-index: 1;
                     overflow: hidden;
-                    transform-origin: top left;
                 }
-                .planning-fullscreen .p-task:hover {
-                    z-index: 100;
-                    transform: scale(1.04);
-                    box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important;
-                    overflow: visible;
-                }
+                .planning-fullscreen .p-task:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important; }
                 .planning-fullscreen .p-task-title { color: #212529 !important; font-size: 15px !important; font-weight: 700 !important; line-height: 1.3 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                 .planning-fullscreen .p-task:hover .p-task-title { white-space: normal; overflow: visible; text-overflow: unset; }
                 .planning-fullscreen .p-task-time { font-size: 13px !important; font-weight: 800 !important; margin-bottom: 4px !important; color: #495057 !important; }
@@ -1520,14 +1513,19 @@ window.renderAdminPlanning = async function (mondayStr = null) {
 
                 dayTasks.forEach(t => {
                     const parsedTitle = t.title.split(':::DESC:::')[0];
+                    const taskDesc = t.title.includes(':::DESC:::') ? t.title.split(':::DESC:::')[1] : '';
                     const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
                     const isDone = t.done === 'true' || t.done === true;
+                    
+                    // Store task data for click handler
+                    const taskDataEscaped = JSON.stringify(t).replace(/"/g, '&quot;');
+
                     let timeHtml = '';
                     if (!isAllDay) {
                         timeHtml = `<div class="p-task-time" style="font-size: 10px; font-weight:bold; margin-bottom: 2px;">${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>`;
                     }
                     rowsHTML += `
-                        <div class="p-task" data-task-done="${isDone}" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; border-left: 4px solid ${userColor} !important; color: ${userColor}; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
+                        <div class="p-task" data-task-id="${t.id}" data-task-done="${isDone}" onclick="window.openEditTaskModal(${taskDataEscaped}, '${startStr}', event)" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; border-left: 4px solid ${userColor} !important; color: ${userColor}; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
                             <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
                                 ${timeHtml}
                                 <div class="p-task-title" style="font-size: 11px; font-weight: 800; line-height: 1.2; ${isDone ? 'text-decoration: line-through;' : ''}" title="${window.escapeHTML(parsedTitle)}">${window.escapeHTML(parsedTitle)}</div>
@@ -2016,6 +2014,104 @@ window.submitNewTask = async function (refWeekStr) {
         renderAdminPlanning(refWeekStr);
     } catch (e) {
         alert("Erreur lors de l'ajout: " + e.message);
+    }
+};
+
+
+window.openEditTaskModal = async function (task, refWeek, event) {
+    if (event) event.stopPropagation();
+
+    // Split title and description
+    const parts = task.title.split(':::DESC:::');
+    const title = parts[0];
+    const desc = parts[1] || '';
+    const isAllDay = (task.start_time.indexOf('00:00') === 0 && task.end_time.indexOf('00:00') === 0);
+
+    try {
+        const users = await api.listUsers();
+        
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.id = 'edit-task-modal';
+        overlay.innerHTML = `
+            <div class="modal-box" style="width: 480px;">
+                <div class="modal-header">Modifier la Tâche</div>
+                <form id="edit-task-form" onsubmit="event.preventDefault(); submitEditTask('${task.id}', '${refWeek}')">
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" class="form-input" id="edit-task-date" required value="${task.date}">
+                    </div>
+                    <div class="form-group">
+                        <label>Salarié Assigné</label>
+                        <select class="form-input" id="edit-task-user-id" required>
+                            ${users.map(u => `<option value="${u.id}" ${u.id === task.user_id ? 'selected' : ''}>${window.escapeHTML(u.first_name || '')} ${window.escapeHTML(u.last_name || '')}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Titre de la tâche</label>
+                        <input type="text" class="form-input" id="edit-task-title" required value="${window.escapeHTML(title)}" maxlength="38">
+                    </div>
+                    <div class="form-group">
+                        <label>Description détaillée</label>
+                        <textarea class="form-input" id="edit-task-desc" rows="3">${window.escapeHTML(desc)}</textarea>
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">
+                        <input type="checkbox" id="edit-task-has-time" style="width:16px; height:16px;" ${!isAllDay ? 'checked' : ''} onchange="document.getElementById('edit-task-time-container').style.display = this.checked ? 'flex' : 'none'">
+                        <label for="edit-task-has-time" style="margin:0; font-weight:normal; cursor:pointer;">Définir des horaires précis</label>
+                    </div>
+                    <div id="edit-task-time-container" style="display: ${!isAllDay ? 'flex' : 'none'}; gap: 16px; margin-bottom: 20px;">
+                        <div style="flex:1;">
+                            <label style="display:block; font-size:12px; color:#888; margin-bottom:4px;">Heure de début</label>
+                            <input type="time" class="form-input" id="edit-task-start" value="${task.start_time.substring(0, 5)}">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="display:block; font-size:12px; color:#888; margin-bottom:4px;">Heure de fin</label>
+                            <input type="time" class="form-input" id="edit-task-end" value="${task.end_time.substring(0, 5)}">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" onclick="closeModal('edit-task-modal')">Annuler</button>
+                        <button type="submit" class="btn-primary">Enregistrer les modifications</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        window.submitEditTask = async (taskId, refWeekStr) => {
+            const userId = document.getElementById('edit-task-user-id').value;
+            const newTitle = document.getElementById('edit-task-title').value;
+            const newDesc = document.getElementById('edit-task-desc').value;
+            const newDate = document.getElementById('edit-task-date').value;
+            const hasTime = document.getElementById('edit-task-has-time').checked;
+            
+            let startTime = "00:00:00";
+            let endTime = "00:00:00";
+            if (hasTime) {
+                startTime = document.getElementById('edit-task-start').value + ":00";
+                endTime = document.getElementById('edit-task-end').value + ":00";
+            }
+
+            const fullTitle = newDesc ? `${newTitle}:::DESC:::${newDesc}` : newTitle;
+
+            try {
+                await api.saveAdminTask({
+                    id: taskId,
+                    user_id: userId,
+                    title: fullTitle,
+                    date: newDate,
+                    start_time: startTime,
+                    end_time: endTime
+                });
+                closeModal('edit-task-modal');
+                renderAdminPlanning(refWeekStr);
+            } catch (e) {
+                alert("Erreur lors de la modification: " + e.message);
+            }
+        };
+
+    } catch (e) {
+        alert("Erreur: " + e.message);
     }
 };
 
