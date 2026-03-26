@@ -501,6 +501,20 @@ export const api = {
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
+    
+    async uploadVehiclePhoto(vehicleId, file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('vehicleId', vehicleId);
+        
+        const response = await fetch(`${config.api.workerUrl}/admin/vehicles/photo`, {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: formData
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
 
     async getVehicleAllLogs(vehicleId = null) {
         let url = `${config.api.workerUrl}/admin/vehicle/all-logs`;

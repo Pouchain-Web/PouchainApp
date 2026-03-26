@@ -59,6 +59,7 @@ export default {
                 let objects = listing.objects.filter(obj => 
                     !obj.key.startsWith('material_requests/') && 
                     !obj.key.startsWith('fleet/') &&
+                    !obj.key.startsWith('vehicles/') &&
                     !obj.key.startsWith('archives/')
                 );
 
@@ -1045,12 +1046,13 @@ export default {
                         "apikey": serviceKey, 
                         "Authorization": `Bearer ${serviceKey}`, 
                         "Content-Type": "application/json",
-                        "Prefer": "resolution=merge-duplicates"
+                        "Prefer": "return=representation,resolution=merge-duplicates"
                     },
                     body: JSON.stringify(upsertBody)
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                const savedArr = await res.json();
+                return new Response(JSON.stringify(savedArr[0] || { success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             if (method === "DELETE" && url.pathname.endsWith("/admin/vehicles")) {
@@ -1059,12 +1061,36 @@ export default {
                 if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Try to delete photo from R2 if exists
+                try {
+                    await env.MY_BUCKET.delete(`vehicles/photos/${id}.png`);
+                } catch(e) {}
+
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
                     method: "DELETE",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // 4. Upload Vehicle Photo (Admin)
+            if (method === "POST" && url.pathname.endsWith("/admin/vehicles/photo")) {
+                const formData = await request.formData();
+                const file = formData.get("file");
+                const vehicleId = formData.get("vehicleId");
+
+                if (!file || !vehicleId) {
+                    return new Response("Missing file or vehicleId", { status: 400, headers: corsHeaders });
+                }
+
+                const key = `vehicles/photos/${vehicleId}.png`;
+                await env.MY_BUCKET.put(key, file);
+
+                return new Response(JSON.stringify({ message: "Photo uploaded successfully" }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
             }
 
             // --- ROUTE: VEHICLE LOGS (Admin) ---

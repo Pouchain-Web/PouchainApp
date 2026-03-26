@@ -4390,8 +4390,15 @@ window.renderAdminVehicles = async function() {
                 html += `
                     <tr class="vehicle-row" style="cursor: pointer;" onclick="if(!event.target.closest('button')) openVehicleDetailModal('${v.id}')">
                         <td>
-                            <div style="font-weight: 700; color: white; font-size: 15px;">${v.make || ''} ${v.model || 'Inconnu'}</div>
-                            <div style="font-size: 11px; color: #666;">ID: ${v.id.split('-')[0]}</div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="width: 40px; height: 40px; background: rgba(255,255,255,0.05); border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.1);">
+                                    <img src="${config.api.workerUrl}/get/vehicles/photos/${v.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.filter='invert(1)'; this.style.opacity='0.2';" style="width: 100%; height: 100%; object-fit: cover;">
+                                </div>
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 700; color: white; font-size: 15px;">${v.make || ''} ${v.model || 'Inconnu'}</div>
+                                    <div style="font-size: 11px; color: #666;">ID: ${v.id.split('-')[0]}</div>
+                                </div>
+                            </div>
                         </td>
                         <td><span style="background: #FFF; color: #000; padding: 4px 10px; border-radius: 6px; font-weight: 800; font-family: 'JetBrains Mono', monospace; border: 2px solid #222; font-size: 13px; letter-spacing: 1px;">${v.plate_number}</span></td>
                         <td>
@@ -4661,6 +4668,16 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                     </div>
                 </div>
 
+                <div style="margin-bottom: 24px;">
+                    <label class="form-label">Photo du véhicule (PNG recommandé)</label>
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <div id="v-photo-preview" style="width: 60px; height: 60px; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                            <img src="${existing ? `${config.api.workerUrl}/get/vehicles/photos/${existing.id}.png?t=${Date.now()}` : ''}" onerror="this.style.display='none'" onload="this.style.display='block'" style="width: 100%; height: 100%; object-fit: cover;">
+                        </div>
+                        <input type="file" id="v-photo" accept="image/png, image/jpeg" class="form-input" style="flex: 1;" onchange="const reader = new FileReader(); reader.onload = (e) => { const img = document.querySelector('#v-photo-preview img'); img.src = e.target.result; img.style.display='block'; }; reader.readAsDataURL(this.files[0])">
+                    </div>
+                </div>
+
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
                     <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
                     <button id="save-v-btn" class="btn-primary" style="padding: 10px 24px;">🚀 Enregistrer</button>
@@ -4685,13 +4702,23 @@ window.openAddVehicleModal = async function(vehicleId = null) {
             if (!data.plate_number) return alert("L'immatriculation est obligatoire.");
 
             document.getElementById('save-v-btn').disabled = true;
+            document.getElementById('save-v-btn').innerText = "Enregistrement...";
+
             try {
-                await api.saveVehicle(data);
+                const savedVehicle = await api.saveVehicle(data);
+                
+                // Photo upload
+                const photoInput = document.getElementById('v-photo');
+                if (photoInput.files.length > 0) {
+                    await api.uploadVehiclePhoto(savedVehicle.id, photoInput.files[0]);
+                }
+
                 modal.remove();
                 renderAdminVehicles();
             } catch (e) {
                 alert("Erreur: " + e.message);
                 document.getElementById('save-v-btn').disabled = false;
+                document.getElementById('save-v-btn').innerText = "🚀 Enregistrer";
             }
         };
 
@@ -4754,7 +4781,9 @@ window.renderMobileVehiclesList = async function(myVehicleData) {
         html += `
             <h3 style="color: #8E8E93; font-size: 13px; text-transform: uppercase; margin: 10px 0 12px 4px; letter-spacing: 0.5px;">Mon Véhicule</h3>
             <div onclick="window.renderMobileVehicleApp(${JSON.stringify(myVehicleData.assigned).replace(/"/g, '&quot;')})" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 16px; display: flex; align-items: center; gap: 16px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
-                <div style="width: 48px; height: 48px; background: #34C759; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px;">🚗</div>
+                <div style="width: 48px; height: 48px; background: #34C759; border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow:hidden;">
+                    <img src="${config.api.workerUrl}/get/vehicles/photos/${myVehicleData.assigned.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.filter='invert(1)'; this.style.opacity='0.2'; this.style.width='24px';" style="width: 100%; height: 100%; object-fit: cover;">
+                </div>
                 <div style="flex: 1;">
                     <div style="font-weight: 700; color: ${textColor}; font-size: 17px;">${myVehicleData.assigned.make} ${myVehicleData.assigned.model}</div>
                     <div style="font-size: 14px; color: #8E8E93; font-family: monospace;">${myVehicleData.assigned.plate_number}</div>
@@ -4769,7 +4798,9 @@ window.renderMobileVehiclesList = async function(myVehicleData) {
         myVehicleData.common.forEach(cv => {
             html += `
                 <div onclick="window.renderMobileVehicleApp(${JSON.stringify(cv).replace(/"/g, '&quot;')})" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 16px; display: flex; align-items: center; gap: 16px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
-                    <div style="width: 48px; height: 48px; background: #007AFF; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px;">🚙</div>
+                    <div style="width: 48px; height: 48px; background: #007AFF; border-radius: 14px; display: flex; align-items: center; justify-content: center; overflow:hidden;">
+                        <img src="${config.api.workerUrl}/get/vehicles/photos/${cv.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.filter='invert(1)'; this.style.opacity='0.2'; this.style.width='24px';" style="width: 100%; height: 100%; object-fit: cover;">
+                    </div>
                     <div style="flex: 1;">
                         <div style="font-weight: 700; color: ${textColor}; font-size: 17px;">${cv.make} ${cv.model}</div>
                         <div style="font-size: 14px; color: #8E8E93; font-family: monospace;">${cv.plate_number}</div>
@@ -4810,10 +4841,15 @@ window.renderMobileVehicleApp = async function(vehicle) {
         let html = `
             <div style="padding: 16px; padding-bottom: 100px;">
                 <!-- Vehicle Card -->
-                <div style="background: linear-gradient(135deg, #34C759, #28a745); border-radius: 24px; padding: 24px; color: white; margin-bottom: 24px; box-shadow: 0 8px 16px rgba(52, 199, 89, 0.2);">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 4px;">${vehicle.assigned_user_id ? 'Mon véhicule' : 'Véhicule commun'}</div>
-                    <div style="font-size: 24px; font-weight: 800; margin-bottom: 16px;">${vehicle.make || ''} ${vehicle.model || 'Auto'}</div>
-                    <div style="display: flex; gap: 12px; align-items: center;">
+                <div style="background: linear-gradient(135deg, #1a1a1c, #2a2a2c); border-radius: 28px; overflow: hidden; margin-bottom: 24px; box-shadow: 0 12px 24px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="width: 100%; height: 160px; position: relative;">
+                         <img src="${config.api.workerUrl}/get/vehicles/photos/${vehicle.id}.png?t=${Date.now()}" onerror="this.src='https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&q=80&w=800'; this.style.opacity='0.1';" style="width: 100%; height: 100%; object-fit: cover;">
+                         <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.8));">
+                             <div style="font-size: 13px; color: rgba(255,255,255,0.7); font-weight: 500;">${vehicle.assigned_user_id ? 'Mon véhicule' : 'Véhicule commun'}</div>
+                             <div style="font-size: 22px; font-weight: 800; color: white;">${vehicle.make || ''} ${vehicle.model || 'Auto'}</div>
+                         </div>
+                    </div>
+                    <div style="padding: 20px; display: flex; gap: 12px; align-items: center; background: rgba(52, 199, 89, 0.1);">
                         <span style="background: white; color: black; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 16px;">${vehicle.plate_number}</span>
                         <span style="font-size: 14px; opacity: 0.9;">${vehicle.year || ''}</span>
                     </div>
@@ -5171,6 +5207,11 @@ window.openVehicleDetailModal = async function(vehicleId) {
                 <div style="display: grid; grid-template-columns: 320px 1fr; height: 600px;">
                     <!-- Left Column: Info -->
                     <div style="padding: 32px; background: #ffffff; border-right: 1px solid #eee; overflow-y: auto;">
+                        <!-- Vehicle Image -->
+                        <div style="width: 100%; height: 180px; background: #f8f9fa; border-radius: 20px; overflow: hidden; margin-bottom: 24px; border: 1px solid #eee; display: flex; align-items: center; justify-content: center;">
+                            <img src="${config.api.workerUrl}/get/vehicles/photos/${v.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.1'; this.style.width='64px'; this.style.height='64px';" style="width: 100%; height: 100%; object-fit: cover;">
+                        </div>
+
                         <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Cartes & Badges</h3>
                         <div style="padding: 20px; border-radius: 20px; margin-bottom: 32px; background: #f8f9fa; border: 1px solid #f1f3f5;">
                             <div style="margin-bottom: 16px;">
