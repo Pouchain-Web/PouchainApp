@@ -1237,7 +1237,7 @@ window.renderAdminAbout = async function () {
     `;
 };
 
-window.renderAdminPlanning = async function (mondayStr = null, isV2 = false) {
+window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isRefresh = false) {
     const content = document.getElementById('admin-content');
     if (!content && !isV2) {
         if (currentAdminSession) renderAdminView(currentAdminSession);
@@ -1256,10 +1256,10 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false) {
             const currentMonday = document.querySelector('[data-monday]');
             const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
 
-            // 1. Auto-refresh (15s) only if in a fullscreen mode
+            // 1. Auto-refresh (30s) only if in a fullscreen mode
             if (isAnyFS) {
-                const isV2 = !!document.getElementById('planning-v2-container');
-                renderAdminPlanning(mondayToUse, isV2, true);
+                const isV2Active = !!document.getElementById('planning-v2-container');
+                renderAdminPlanning(mondayToUse, isV2Active, true);
             }
 
             // 2. Auto-sort every 60 seconds (always if page open)
@@ -1269,26 +1269,22 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false) {
                 console.log("Auto-tri du planning en arrière-plan...");
                 await window.autoSortPlanningUsers(mondayToUse, true); // true = silent (no full reload)
                 if (!isAnyFS) {
-                    // Just update the main grid without touching the footer
-                    const navPlanning = document.getElementById('nav-planning');
-                    if (navPlanning && navPlanning.classList.contains('active')) {
-                        renderAdminPlanning(mondayToUse, false, true);
-                    }
+                    renderAdminPlanning(mondayToUse, false, true);
                 }
             }
         } else {
             clearInterval(window.planningRefreshInterval);
         }
-    }, 15000);
+    }, 30000);
 
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     const navItem = document.getElementById('nav-planning');
     if (navItem) navItem.classList.add('active');
-    const existingContainer = document.getElementById('planning-fullscreen-container');
-    const isCurrentlyFullscreen = existingContainer && (!!document.fullscreenElement);
+    const existingContainer = document.getElementById('planning-v2-container') || document.getElementById('integrated-planning-container');
+    const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-v2-container');
     
-    if (!existingContainer) {
+    if (!existingContainer && !isRefresh) {
         content.innerHTML = `<div style="display:flex; justify-content:center; padding: 40px;"><div class="loader" style="border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div></div>`;
     }
 
@@ -1684,18 +1680,24 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false) {
 
         if (existingContainer) {
             existingContainer.setAttribute('data-monday', startStr);
-            existingContainer.innerHTML = `
-                <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
-                    <div id="planning-main-desktop" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
-                        ${finalContent}
-                    </div>
-                    <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0;">
-                        <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
-                            ${slideshowConfigHTML}
+            const mainArea = document.getElementById('planning-main-desktop');
+            if (mainArea) {
+                mainArea.innerHTML = finalContent;
+            } else {
+                // Fallback for V2 or if structure changed
+                existingContainer.innerHTML = `
+                    <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
+                        <div id="planning-main-desktop" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                            ${finalContent}
+                        </div>
+                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0;">
+                            <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
+                                ${slideshowConfigHTML}
+                            </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
         } else {
             content.innerHTML = `
                 <div id="integrated-planning-container" class="planning-inline" data-monday="${startStr}" style="height: calc(100vh - 80px); width: 100%; display: flex; flex-direction: column; overflow: hidden; border-radius: 8px;">
