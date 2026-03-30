@@ -1,5 +1,37 @@
+/* App State Utilities */
+body.hide-main-nav nav, 
+body.hide-main-nav .mobile-nav,
+body.hide-main-nav .nav-header,
+body.hide-main-nav .bottom-nav { 
+    display: none !important; 
+}
+body.hide-main-nav {
+    background: #000 !important;
+    overflow: hidden !important;
+}
+
+.landscape-mode {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: 100vh !important;
+    height: 100vw !important;
+    transform: translate(-50%, -50%) rotate(90deg) !important;
+    z-index: 10000 !important;
+    background: #000 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.landscape-mode #schematic-container {
+    transform: scale(0.8) !important;
+}
+
 :root {
-    /* iOS Inspired Color Palette */
     --primary-color: #2da140;
     /* iOS Blue */
     --background-color: #F2F2F7;
@@ -794,6 +826,59 @@ body {
 }
 
 /* --- Document Items (file rows) --- */
+/* --- Machines & Schematics --- */
+.machine-pin {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: pinPulse 2s infinite ease-in-out;
+}
+
+.machine-pin:hover {
+    transform: scale(1.3);
+    z-index: 1000 !important;
+}
+
+@keyframes pinPulse {
+    0% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0.4); }
+    70% { box-shadow: 0 0 0 15px rgba(88, 86, 214, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(88, 86, 214, 0); }
+}
+
+@keyframes pinFlash {
+    0%, 100% { transform: scale(1); background: rgba(255,59,48,0.3); border-color: white; }
+    50% { transform: scale(1.5); background: rgba(255,59,48,0.9); border-color: #FF3B30; box-shadow: 0 0 30px #FF3B30; z-index: 5000; }
+}
+
+.pin-searched {
+    animation: pinFlash 1s infinite ease-in-out !important;
+    z-index: 5000 !important;
+    border-width: 4px !important;
+}
+
+#schematic-viewport {
+    background-color: #000;
+    background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+    border-radius: 20px;
+    margin: 10px;
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.5);
+}
+
+#schematic-img {
+    transition: transform 0.3s ease;
+    cursor: crosshair;
+}
+
+.category-card[onclick*="renderBuildingSchematic"] {
+    background: linear-gradient(135deg, rgba(88, 86, 214, 0.1), rgba(0, 0, 0, 0.2)) !important;
+    border: 1px solid rgba(88, 86, 214, 0.2) !important;
+}
+
 :root[data-theme="dark"] .document-item {
     background: rgba(28, 28, 30, 0.85);
     border-bottom-color: rgba(255, 255, 255, 0.06);
