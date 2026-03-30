@@ -1080,7 +1080,6 @@ async function renderAdminView(session) {
                     <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFullscreenConfig()" id="nav-fs-config">📺 Config Plein Écran</a>
             </nav>
             <div style="margin-top: auto;">
                 <div id="cloud-storage-usage" style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: rgba(255,255,255,0.8);">
@@ -1227,7 +1226,14 @@ window.renderAdminAbout = async function () {
     `;
 };
 
-window.renderAdminPlanning = async function (mondayStr = null) {
+window.renderAdminPlanning = async function (mondayStr = null, isV2 = false) {
+    const content = document.getElementById('admin-content');
+    if (!content && !isV2) {
+        if (currentAdminSession) renderAdminView(currentAdminSession);
+        setTimeout(() => window.renderAdminPlanning(mondayStr, isV2), 300);
+        return;
+    }
+
     if (window.planningRefreshInterval) clearInterval(window.planningRefreshInterval);
     
     // Auto-refresh logic
@@ -1241,7 +1247,8 @@ window.renderAdminPlanning = async function (mondayStr = null) {
 
             // 1. Auto-refresh (15s) only if in a fullscreen mode
             if (isAnyFS) {
-                renderAdminPlanning(mondayToUse);
+                const isV2 = !!document.getElementById('planning-v2-container');
+                renderAdminPlanning(mondayToUse, isV2, true);
             }
 
             // 2. Auto-sort every 60 seconds (always if page open)
@@ -1250,7 +1257,13 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                 window.lastAutoSortTime = now;
                 console.log("Auto-tri du planning en arrière-plan...");
                 await window.autoSortPlanningUsers(mondayToUse, true); // true = silent (no full reload)
-                if (!isAnyFS) renderAdminPlanning(mondayToUse); // Re-render once to apply sort if not already rendering
+                if (!isAnyFS) {
+                    // Just update the main grid without touching the footer
+                    const navPlanning = document.getElementById('nav-planning');
+                    if (navPlanning && navPlanning.classList.contains('active')) {
+                        renderAdminPlanning(mondayToUse, false, true);
+                    }
+                }
             }
         } else {
             clearInterval(window.planningRefreshInterval);
@@ -1259,9 +1272,8 @@ window.renderAdminPlanning = async function (mondayStr = null) {
 
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
-    document.getElementById('nav-planning').classList.add('active');
-
-    const content = document.getElementById('admin-content');
+    const navItem = document.getElementById('nav-planning');
+    if (navItem) navItem.classList.add('active');
     const existingContainer = document.getElementById('planning-fullscreen-container');
     const isCurrentlyFullscreen = existingContainer && (!!document.fullscreenElement);
     
@@ -1460,14 +1472,15 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                     overflow: hidden;
                 }
                 #planning-v2-container.active { display: flex; }
-                #p-v2-main { flex: 3; display: flex; flex-direction: column; overflow: hidden; border-right: 2px solid #ddd; }
+                #p-v2-main { flex: 3; display: flex; flex-direction: column; overflow: hidden; border-right: 2px solid #ddd; background: #fff; }
                 #p-v2-side { flex: 1; min-width: 400px; background: #000; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-                #p-v2-slideshow { width: 100%; height: 100%; object-fit: contain; transition: opacity 0.5s ease-in-out; }
+                #p-v2-slideshow { width: 100%; height: 100%; object-fit: contain; transition: opacity 0.5s ease-in-out; background: #000; }
+                #p-v2-pdfviewer { width: 100%; height: 100%; border: none; display: none; }
                 
                 .v2-exit-btn {
                     position: absolute;
                     top: 20px; right: 20px;
-                    z-index: 100;
+                    z-index: 100001;
                     background: rgba(0,0,0,0.5);
                     color: white;
                     border: none;
@@ -1479,6 +1492,9 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                     backdrop-filter: blur(4px);
                 }
                 .v2-exit-btn:hover { background: rgba(255,0,0,0.7); }
+                
+                /* Classic Fullscreen: Hide footer */
+                .planning-fullscreen #planning-footer-config { display: none !important; }
             `;
             document.head.appendChild(style);
         }
@@ -1510,9 +1526,9 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                     </div>
                     <div class="p-header-controls" style="display:flex; gap: 12px;">
                         <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Exporter les données</button>
+                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ Plein Écran</button>
                         <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ Plein Écran N°2</button>
                         <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Nouvelle Tâche</button>
-                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ Plein Écran</button>
                     </div>
                 </header>
         `;
@@ -1600,7 +1616,7 @@ window.renderAdminPlanning = async function (mondayStr = null) {
         
         const finalContent = headerHTML + gridHTML + rowsHTML;
 
-        // --- Fullscreen V2 (Planning 3/4 + Slideshow 1/4) injection point ---
+        // --- Fullscreen V2 (Planning 75% + Slideshow 25%) injection point ---
         const v2Container = document.getElementById('planning-v2-container');
         if (v2Container && v2Container.classList.contains('active')) {
             const v2Main = document.getElementById('p-v2-main');
@@ -1611,24 +1627,83 @@ window.renderAdminPlanning = async function (mondayStr = null) {
                         ${finalContent}
                     </div>
                 `;
-                return; // Stop here, no need to render to main admin-content
+                return; 
             }
         }
 
+        // --- Integrated Slideshow Configuration Section (Bottom of Planning) ---
+        let fsConfig = { timer: 10, files: [] };
+        try {
+            const saved = localStorage.getItem('planning_fs_config');
+            if (saved) fsConfig = JSON.parse(saved);
+        } catch (e) {}
+
+        const slideshowConfigHTML = `
+            <div id="integrated-fs-config" style="display: flex; align-items: center; gap: 40px; width: 100%;">
+                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 250px;">
+                    <h2 style="margin: 0; font-size: 16px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">📺 Slideshow <small style="font-weight: 400; opacity: 0.5;">(V2)</small></h2>
+                    <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <button class="btn-sm btn-secondary" onclick="openFSDocPicker()" style="background: rgba(255,255,255,0.05); font-size: 10px; padding: 4px 10px;">Cloud</button>
+                        <button class="btn-sm btn-primary" onclick="document.getElementById('fs-upload-input').click()" style="font-size: 10px; padding: 4px 10px;">Upload</button>
+                        <input type="file" id="fs-upload-input" style="display:none;" multiple accept="image/*,application/pdf" onchange="handleFSDirectUpload(this)">
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.02); padding: 10px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
+                    <label style="font-weight: 700; color: var(--primary); font-size: 11px; text-transform: uppercase;">⏱️ Temporisation</label>
+                    <input type="number" id="fs-timer" class="form-input" value="${fsConfig.timer}" min="3" style="width: 60px; text-align: center; height: 30px; font-size: 13px;" onchange="saveFSConfig(true)">
+                    <button class="btn-primary" onclick="saveFSConfig()" style="height: 30px; font-size: 11px; padding: 0 15px;">💾</button>
+                </div>
+
+                <div id="fs-files-mini-grid" style="flex: 1; display: flex; gap: 10px; overflow-x: auto; padding: 5px; scrollbar-width: thin;">
+                    ${fsConfig.files.map((f, i) => {
+                            const isPdf = f.toLowerCase().endsWith('.pdf');
+                            const url = `${config.api.workerUrl}/get/${f}`;
+                        return `
+                            <div style="position: relative; height: 60px; aspect-ratio: 16/10; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
+                                ${isPdf ? `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; background: #1a1a1a; font-size: 14px;">📕</div>` : `<img src="${url}" loading="lazy" style="width:100%; height:100%; object-fit: cover;">`}
+                                <button onclick="removeFSFile(${i})" style="position:absolute; top:2px; right:2px; background: rgba(220,38,38,0.9); border:none; color:white; width:18px; height:18px; border-radius:4px; cursor:pointer; font-size:9px;">✕</button>
+                            </div>
+                        `;
+                    }).join('')}
+                    ${fsConfig.files.length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
+                </div>
+            </div>
+        `;
+
         if (existingContainer) {
             existingContainer.setAttribute('data-monday', startStr);
-            // Don't replace the element, just its content to keep fullscreen alive
-            existingContainer.innerHTML = finalContent;
+            existingContainer.innerHTML = `
+                <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
+                    <div id="planning-main-desktop" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                        ${finalContent}
+                    </div>
+                    <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0;">
+                        <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
+                            ${slideshowConfigHTML}
+                        </div>
+                    </div>
+                </div>
+            `;
         } else {
             content.innerHTML = `
-                <div id="planning-fullscreen-container" class="planning-inline" data-monday="${startStr}" style="height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; border-radius: 8px; transition: 0.3s;">
-                    ${finalContent}
+                <div id="integrated-planning-container" class="planning-inline" data-monday="${startStr}" style="height: calc(100vh - 80px); width: 100%; display: flex; flex-direction: column; overflow: hidden; border-radius: 8px;">
+                    <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
+                        <div id="planning-main-desktop" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                            ${finalContent}
+                        </div>
+                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0;">
+                            <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
+                                ${slideshowConfigHTML}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
         }
-
     } catch (e) {
-        content.innerHTML = `<div style="color:var(--danger); padding:20px;">Erreur lors du chargement du planning : ${e.message}</div>`;
+        console.error("Planning Error:", e);
+        if (content) content.innerHTML = `<div style="color:var(--danger); padding:20px;">Erreur lors du chargement du planning : ${e.message}</div>`;
     }
 };
 
@@ -1915,103 +1990,112 @@ document.addEventListener('fullscreenchange', () => {
 // --- Fullscreen V2 Logic (Split Screen) ---
 window.togglePlanningFullscreenV2 = function() {
     let v2 = document.getElementById('planning-v2-container');
+    
+    // If opening
     if (!v2) {
         v2 = document.createElement('div');
         v2.id = 'planning-v2-container';
+        v2.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; background:#fff; display:flex; overflow:hidden;";
         v2.innerHTML = `
-            <div id="p-v2-main"></div>
-            <div id="p-v2-side">
-                <button class="v2-exit-btn" onclick="togglePlanningFullscreenV2()">×</button>
-                <img id="p-v2-slideshow" src="favicon.png" alt="Slideshow">
+            <div id="p-v2-main" style="flex:3; height:100%; overflow:hidden; border-right:2px solid #ddd; display:flex; flex-direction:column; background:#fff;"></div>
+            <div id="p-v2-side" style="flex:1; height:100%; min-width:400px; background:#000; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                <button class="v2-exit-btn" onclick="togglePlanningFullscreenV2()" style="position:absolute; top:20px; right:20px; z-index:1001; background:rgba(0,0,0,0.6); color:#fff; border:none; border-radius:50%; width:44px; height:44px; cursor:pointer; font-size:24px; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(5px); transition:0.2s;">×</button>
+                <img id="p-v2-slideshow" src="logo-pouchain.svg" style="max-width:100%; max-height:100%; object-fit:contain; transition:opacity 0.6s ease-in-out; background:#000;">
+                <iframe id="p-v2-pdfviewer" style="width:100%; height:100%; border:none; display:none;"></iframe>
             </div>
         `;
         document.body.appendChild(v2);
-    }
-
-    if (!v2.classList.contains('active')) {
         v2.classList.add('active');
-        v2.requestFullscreen().catch(() => {});
+        v2.requestFullscreen().catch(e => console.warn("FS failed", e));
+        
         startSlideshow();
-        renderAdminPlanning(window.currentPlanningMonday);
+        renderAdminPlanning(window.currentPlanningMonday, true); // Render grid into p-v2-main
     } else {
+        // Closing
         v2.classList.remove('active');
-        if (document.fullscreenElement) document.exitFullscreen();
         stopSlideshow();
-        renderAdminPlanning(window.currentPlanningMonday);
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+        }
+        
+        setTimeout(() => {
+            if (v2 && v2.parentNode) v2.parentNode.removeChild(v2);
+            renderAdminPlanning(window.currentPlanningMonday);
+        }, 300);
     }
 };
 
 let slideInterval = null;
 function startSlideshow() {
-    const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
-    if (config.files.length === 0) {
-        document.getElementById('p-v2-slideshow').src = 'logo-pouchain.svg';
+    if (slideInterval) clearInterval(slideInterval);
+    
+    const configStr = localStorage.getItem('planning_fs_config');
+    let fsConfig = { timer: 10, files: [] };
+    try {
+        if (configStr) fsConfig = JSON.parse(saved);
+    } catch(e) {
+        // Fallback to reading the one we just saved if local storage parse fails
+        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch(e2) {}
+    }
+
+    const img = document.getElementById('p-v2-slideshow');
+    const pdf = document.getElementById('p-v2-pdfviewer');
+    if (!img && !pdf) return;
+
+    if (!fsConfig.files || fsConfig.files.length === 0) {
+        if (img) { img.src = 'logo-pouchain.svg'; img.style.display = 'block'; }
+        if (pdf) pdf.style.display = 'none';
         return;
     }
 
     let currentIndex = 0;
-    const img = document.getElementById('p-v2-slideshow');
 
     const showNext = () => {
-        img.style.opacity = '0';
-        setTimeout(() => {
-            img.src = `${window.config.api.workerUrl}/get/${config.files[currentIndex]}`;
-            img.onload = () => img.style.opacity = '1';
-            currentIndex = (currentIndex + 1) % config.files.length;
-        }, 500);
+        const fileKey = fsConfig.files[currentIndex];
+        if (!fileKey) {
+            currentIndex = 0;
+            return;
+        }
+
+        const url = `${config.api.workerUrl}/get/${fileKey.replace(/^\/+/, '')}`;
+        const isPdf = fileKey.toLowerCase().endsWith('.pdf');
+
+        if (isPdf) {
+            if (img) img.style.display = 'none';
+            if (pdf) {
+                pdf.style.display = 'block';
+                pdf.src = url;
+            }
+        } else {
+            if (pdf) { pdf.style.display = 'none'; pdf.src = ''; }
+            if (img) {
+                img.style.display = 'block';
+                // Direct update is more reliable than preloading for debugging
+                const nextImg = new Image();
+                nextImg.onload = () => {
+                    img.src = url;
+                    img.style.opacity = '1';
+                };
+                nextImg.onerror = () => {
+                    console.error("Slideshow error on:", url);
+                    img.src = 'logo-pouchain.svg';
+                };
+                nextImg.src = url;
+            }
+        }
+        currentIndex = (currentIndex + 1) % fsConfig.files.length;
     };
 
     showNext();
-    slideInterval = setInterval(showNext, config.timer * 1000);
+    if (fsConfig.files.length > 1) {
+        slideInterval = setInterval(showNext, Math.max(fsConfig.timer || 10, 3) * 1000);
+    }
 }
 
 function stopSlideshow() {
     if (slideInterval) clearInterval(slideInterval);
     slideInterval = null;
 }
-
-window.renderAdminFullscreenConfig = async function() {
-    adminCurrentFolder = null;
-    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
-    document.getElementById('nav-fs-config').classList.add('active');
-
-    const content = document.getElementById('admin-content');
-    const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
-
-    content.innerHTML = `
-        <header>
-            <h1>Config Plein Écran N°2</h1>
-        </header>
-        <div class="glass-panel" style="padding: 30px; max-width: 800px; margin: 0 auto;">
-            <div class="form-group">
-                <label>Temporisation entre les images (secondes)</label>
-                <input type="number" id="fs-timer" class="form-input" value="${config.timer}" min="3" style="width: 100px;">
-            </div>
-            
-            <div class="form-group">
-                <label>Images / Documents à défiler</label>
-                <div style="margin-bottom: 15px; display: flex; gap: 10px;">
-                    <button class="btn-secondary" onclick="openFSDocPicker()">📁 Sélectionner (Cloud)</button>
-                    <button class="btn-primary" onclick="document.getElementById('fs-upload-input').click()">📤 Téléverser depuis PC</button>
-                    <input type="file" id="fs-upload-input" style="display:none;" multiple accept="image/*,application/pdf" onchange="handleFSDirectUpload(this)">
-                </div>
-                <div id="fs-files-list" style="display: flex; flex-direction: column; gap: 10px;">
-                    ${config.files.map((f, i) => `
-                        <div style="display:flex; align-items:center; gap:12px; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
-                            <span style="flex:1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${f}</span>
-                            <button class="btn-sm btn-danger" onclick="removeFSFile(${i})">🗑️</button>
-                        </div>
-                    `).join('')}
-                    ${config.files.length === 0 ? '<p style="color:#888; font-style:italic;">Aucun document sélectionné.</p>' : ''}
-                </div>
-            </div>
-
-            <div style="margin-top: 30px;">
-                <button class="btn-primary" onclick="saveFSConfig()">Enregistrer la configuration</button>
-            </div>
-        </div>
-    `;
-};
 
 window.handleFSDirectUpload = async function(input) {
     if (!input.files || input.files.length === 0) return;
@@ -2025,7 +2109,7 @@ window.handleFSDirectUpload = async function(input) {
         const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
         
         for (const file of input.files) {
-            // Upload to a specific 'fullscreen' folder for organization
+            // The API returns the full key (path + filename)
             const res = await api.uploadFile(file, 'fullscreen_slides/');
             if (res && res.key && !config.files.includes(res.key)) {
                 config.files.push(res.key);
@@ -2034,7 +2118,14 @@ window.handleFSDirectUpload = async function(input) {
 
         localStorage.setItem('planning_fs_config', JSON.stringify(config));
         showSuccessModal(`${input.files.length} fichier(s) ajouté(s) au diaporama.`);
-        renderAdminFullscreenConfig();
+        
+        // Sync live V2
+        if (document.getElementById('planning-v2-container')) {
+            stopSlideshow();
+            startSlideshow();
+        }
+        
+        renderAdminPlanning(window.currentPlanningMonday);
     } catch (e) {
         alert("Erreur lors du téléchargement : " + e.message);
     } finally {
@@ -2045,31 +2136,44 @@ window.handleFSDirectUpload = async function(input) {
 };
 
 window.openFSDocPicker = async function() {
-    const files = await api.listFiles();
-    const images = files.filter(f => {
+    const allFiles = await api.listFiles();
+    const images = allFiles.filter(f => {
         const ext = f.key.split('.').pop().toLowerCase();
         return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'].includes(ext);
     });
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    overlay.style.zIndex = '1000001';
     overlay.innerHTML = `
-        <div class="modal-box" style="width: 600px; max-height: 80vh; display: flex; flex-direction: column;">
-            <div class="modal-header">Sélectionner des documents</div>
-            <div style="overflow-y: auto; flex: 1; padding: 15px;">
-                <input type="text" placeholder="Rechercher..." class="form-input" style="margin-bottom: 15px;" oninput="filterFSPicker(this.value)">
-                <div id="fs-picker-list">
-                    ${images.map(f => `
-                        <label style="display:flex; align-items:center; gap:12px; padding: 8px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05);">
+        <div class="modal-box glass-panel" style="width: 700px; max-height: 85vh; display: flex; flex-direction: column; padding:0; border: 1px solid rgba(255,255,255,0.1); background: #1a1a1a;">
+            <div class="modal-header" style="padding: 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight:800; font-size:18px;">☁️ Documents sur Cloudflare</div>
+            <div style="overflow-y: auto; flex: 1; padding: 20px 30px;">
+                <input type="text" id="fs-picker-search" placeholder="Rechercher un fichier..." class="form-input" style="margin-bottom: 20px; width: 100%;" oninput="window.filterFSPicker(this.value)">
+                
+                <div style="margin-bottom: 15px; font-size: 11px; text-transform: uppercase; color: var(--primary); font-weight: 800; letter-spacing: 1px;">📁 Dossier : fullscreen_slides/</div>
+                <div id="fs-picker-list-preferred" style="margin-bottom: 30px; display: grid; grid-template-columns: 1fr; gap: 8px;">
+                    ${images.filter(f => f.key.startsWith('fullscreen_slides/')).map(f => `
+                        <label style="display:flex; align-items:center; gap:12px; padding: 12px 15px; border-radius: 8px; cursor: pointer; background: rgba(45, 161, 64, 0.05); border: 1px solid rgba(45, 161, 64, 0.1); transition: 0.2s;">
                             <input type="checkbox" class="fs-pick-cb" value="${f.key}">
-                            <span style="font-size: 14px;">${f.key}</span>
+                            <span style="font-size: 14px; color: #eee; font-family: monospace;">${f.key.replace('fullscreen_slides/', '')}</span>
+                        </label>
+                    `).join('') || '<div style="color: #444; font-style: italic; padding-left: 15px;">Aucun fichier dans ce dossier</div>'}
+                </div>
+
+                <div style="margin-bottom: 15px; font-size: 11px; text-transform: uppercase; color: #666; font-weight: 800; letter-spacing: 1px;">📂 Autres fichiers</div>
+                <div id="fs-picker-list-other" style="display: grid; grid-template-columns: 1fr; gap: 4px;">
+                    ${images.filter(f => !f.key.startsWith('fullscreen_slides/')).map(f => `
+                        <label style="display:flex; align-items:center; gap:12px; padding: 8px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 1px solid transparent;">
+                            <input type="checkbox" class="fs-pick-cb" value="${f.key}">
+                            <span style="font-size: 12px; color: #888;">${f.key}</span>
                         </label>
                     `).join('')}
                 </div>
             </div>
-            <div class="modal-actions">
+            <div class="modal-footer" style="padding: 20px 30px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: flex-end; gap: 12px; background: rgba(0,0,0,0.1);">
                 <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                <button class="btn-primary" onclick="addSelectedFSDocs()">Ajouter</button>
+                <button class="btn-primary" onclick="window.addSelectedFSDocs()">Ajouter la sélection</button>
             </div>
         </div>
     `;
@@ -2077,34 +2181,63 @@ window.openFSDocPicker = async function() {
 
     window.filterFSPicker = (val) => {
         const q = val.toLowerCase();
-        document.querySelectorAll('#fs-picker-list label').forEach(l => {
-            l.style.display = l.innerText.toLowerCase().includes(q) ? 'flex' : 'none';
+        document.querySelectorAll('#fs-picker-list-preferred label, #fs-picker-list-other label').forEach(l => {
+            const txt = l.innerText.toLowerCase();
+            l.style.display = txt.includes(q) ? 'flex' : 'none';
         });
     };
 };
 
 window.addSelectedFSDocs = function() {
     const selected = Array.from(document.querySelectorAll('.fs-pick-cb:checked')).map(cb => cb.value);
-    const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
-    config.files = [...new Set([...config.files, ...selected])];
-    localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    document.querySelector('.modal-overlay').remove();
-    renderAdminFullscreenConfig();
+    const configStr = localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}';
+    const fsConfig = JSON.parse(configStr);
+    
+    fsConfig.files = [...new Set([...fsConfig.files, ...selected])];
+    localStorage.setItem('planning_fs_config', JSON.stringify(fsConfig));
+    
+    const overlay = document.querySelector('.modal-overlay');
+    if (overlay) overlay.remove();
+    
+    showSuccessModal(`${selected.length} document(s) ajouté(s).`);
+    
+    // Sync live V2
+    if (document.getElementById('planning-v2-container')) {
+        stopSlideshow();
+        startSlideshow();
+    }
+    
+    renderAdminPlanning(window.currentPlanningMonday);
 };
+
 
 window.removeFSFile = function(index) {
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.files.splice(index, 1);
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    renderAdminFullscreenConfig();
+    
+    // Sync live V2
+    if (document.getElementById('planning-v2-container')) {
+        stopSlideshow();
+        startSlideshow();
+    }
+    
+    renderAdminPlanning(window.currentPlanningMonday);
 };
 
-window.saveFSConfig = function() {
+window.saveFSConfig = function(silent = false) {
     const timer = parseInt(document.getElementById('fs-timer').value) || 10;
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.timer = timer;
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    showSuccessModal("Configuration enregistrée !");
+    
+    // Sync live V2
+    if (document.getElementById('planning-v2-container')) {
+        stopSlideshow();
+        startSlideshow();
+    }
+    
+    if (!silent) showSuccessModal("Configuration enregistrée !");
 };
 
 window.deleteAdminTask = async function (taskId, currentWeekStartStr) {
@@ -2376,11 +2509,15 @@ window.openEditTaskModal = async function (task, refWeek, event) {
 };
 
 window.renderAdminUsers = async function () {
+    const content = document.getElementById('admin-content');
+    if (!content) {
+        if (currentAdminSession) renderAdminView(currentAdminSession);
+        return;
+    }
+
     adminCurrentFolder = null; // Clear folder view state
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('nav-users').classList.add('active');
-
-    const content = document.getElementById('admin-content');
     content.innerHTML = '<div style="text-align:center; margin-top:50px;">Chargement des utilisateurs...</div>';
 
     try {

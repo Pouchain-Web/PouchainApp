@@ -225,12 +225,10 @@ export default {
             // --- ROUTE: GET FILE CONTENT ---
             // Usage: /get/FolderName/FileName.pdf
             if (method === "GET" && url.pathname.includes("/get/")) {
-                // extract key after /get/
                 const parts = url.pathname.split('/get/');
                 if (parts.length < 2) return new Response("Invalid Path", { status: 400, headers: corsHeaders });
 
                 const key = decodeURIComponent(parts[1]);
-                // CHANGED: Using env.MY_BUCKET
                 const object = await env.MY_BUCKET.get(key);
 
                 if (!object) {
@@ -239,8 +237,26 @@ export default {
 
                 const headers = new Headers(corsHeaders);
                 object.writeHttpMetadata(headers);
-                headers.set("etag", object.httpEtag);
+                
+                // FORCE CONTENT TYPE if missing or generic to ensure browser rendering
+                const ext = key.split('.').pop().toLowerCase();
+                const mimeTypes = {
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp',
+                    'pdf': 'application/pdf',
+                    'svg': 'image/svg+xml'
+                };
 
+                if (!headers.has("Content-Type") || headers.get("Content-Type") === "application/octet-stream") {
+                    if (mimeTypes[ext]) {
+                        headers.set("Content-Type", mimeTypes[ext]);
+                    }
+                }
+
+                headers.set("etag", object.httpEtag);
                 return new Response(object.body, { headers });
             }
 
