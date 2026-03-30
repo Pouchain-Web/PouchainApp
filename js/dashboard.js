@@ -496,7 +496,17 @@ function generateMobileCategories(files, myVehicle = null) {
         autoCard.onclick = () => window.renderMobileVehiclesList(myVehicle);
         grid.prepend(autoCard);
     }
+    
+    const mapCard = document.createElement('div');
+    mapCard.className = 'category-card';
+    mapCard.innerHTML = `
+        <div class="category-icon" style="background-color: #5856D6;">🗺️</div>
+        <div class="category-title" style="font-weight:bold;">Carte</div>
+    `;
+    mapCard.onclick = () => renderMobileMap();
 
+    grid.prepend(mapCard);
+    grid.prepend(autoCard);
     grid.prepend(matosCard);
     grid.prepend(planningCard);
 }
@@ -1079,6 +1089,7 @@ async function renderAdminView(session) {
                     <span>🚗 Gestion des véhicules</span>
                     <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
                 </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMap()" id="nav-map">🗺️ Carte des Machines</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -4505,7 +4516,7 @@ window.renderAdminMaterialRequests = async function () {
             const archiveContents = await Promise.all(
                 archivedFiles.map(async f => {
                     try {
-                        const r = await fetch(`${config.api.workerUrl}/get/${f.key}`);
+                        const r = await fetch(`${config.api.workerUrl}/get/${f.key}?t=${Date.now()}`);
                         if (!r.ok) return null;
                         return await r.text();
                     } catch(e) { 
@@ -6008,6 +6019,348 @@ window.handleDeleteVehicleLog = async function(id, vehicleId) {
         await api.deleteVehicleLog(id);
         // Refresh detail view
         await window.openVehicleDetailModal(vehicleId);
+    } catch(e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+// --- MACHINES & MAPPING ---
+window.machineMarkers = [];
+window.machineMap = null;
+
+window.renderAdminMap = async function() {
+    const content = document.getElementById('admin-content');
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    const navItem = document.getElementById('nav-map');
+    if (navItem) navItem.classList.add('active');
+
+    content.innerHTML = `
+        <div style="height: 100%; display: flex; flex-direction: column;">
+            <div style="padding: 20px; background: rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <h2 style="margin:0; color: white;">🗺️ Carte des Machines</h2>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="machine-search" placeholder="Rechercher MI..." class="form-input" style="width: 250px;">
+                    <button class="btn-primary" onclick="openAddMachineModal()">+ Ajouter Machine</button>
+                </div>
+            </div>
+            <div id="admin-map-container" style="flex: 1; min-height: 500px; position: relative;"></div>
+        </div>
+    `;
+
+    // Wait for DOM to catch up or Leaflet might bug
+    setTimeout(() => initMachineMap('admin-map-container', false), 100);
+
+    const searchInput = document.getElementById('machine-search');
+    searchInput.oninput = (e) => {
+        const val = e.target.value.toUpperCase();
+        window.machineMarkers.forEach(m => {
+            if (m.machine_id.includes(val)) {
+                m.marker.setOpacity(1);
+                if (val.length > 5 && m.machine_id === val) {
+                    window.machineMap.setView(m.marker.getLatLng(), 18);
+                }
+            } else {
+                m.marker.setOpacity(0.2);
+            }
+        });
+    };
+};
+
+window.renderMobileMap = async function() {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Carte terrain";
+    mobileCurrentPath = "map";
+
+    const container = document.getElementById('list-content');
+    container.innerHTML = `
+        <div style="height: calc(100vh - 160px); position: relative; border-radius: 20px; overflow: hidden; margin: 10px; border: 1px solid rgba(255,255,255,0.1);">
+             <div id="mobile-map-container" style="height: 100%; width: 100%;"></div>
+             <div style="position: absolute; top: 10px; left: 10px; right: 10px; z-index: 1000;">
+                <input type="text" id="mobile-machine-search" placeholder="🔍 Rechercher N° MI..." style="width:100%; padding: 12px 16px; border-radius: 12px; border:none; background: rgba(0,0,0,0.6); color: white; backdrop-filter: blur(8px); box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+             </div>
+             <button onclick="openAddMachineModal()" style="position: absolute; bottom: 20px; right: 20px; z-index: 1000; width: 60px; height: 60px; border-radius: 30px; background: #5856D6; color: white; border:none; font-size: 24px; box-shadow: 0 4px 20px rgba(88,86,214,0.4); display: flex; align-items: center; justify-content: center;">+</button>
+        </div>
+    `;
+
+    setTimeout(() => initMachineMap('mobile-map-container', true), 100);
+
+    const searchInput = document.getElementById('mobile-machine-search');
+    searchInput.oninput = (e) => {
+        const val = e.target.value.toUpperCase();
+        window.machineMarkers.forEach(m => {
+            if (m.machine_id.includes(val)) {
+                m.marker.setOpacity(1);
+                if (val.length > 5 && m.machine_id === val) {
+                    window.machineMap.setView(m.marker.getLatLng(), 18);
+                    m.marker.openPopup();
+                }
+            } else {
+                m.marker.setOpacity(0.1);
+            }
+        });
+    };
+};
+
+async function initMachineMap(id, isMobile) {
+    if (window.machineMap) {
+        window.machineMap.remove();
+    }
+
+    // Centered on a generic warehouse area or user location
+    // Default to a zoomed out view if location unknown
+    window.machineMap = L.map(id, {
+        zoomControl: !isMobile,
+        attributionControl: false
+    }).setView([46.2276, 2.2137], 6);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+    }).addTo(window.machineMap);
+
+    // Try geolocation
+    window.machineMap.locate({ setView: true, maxZoom: 16 });
+
+    // Load machines
+    try {
+        const machines = await api.getMachines();
+        window.machineMarkers = [];
+        
+        machines.forEach(m => {
+            if (m.latitude && m.longitude) {
+                const marker = L.marker([m.latitude, m.longitude]).addTo(window.machineMap);
+                
+                const popupContent = `
+                    <div style="font-family: sans-serif; text-align: center;">
+                        <h4 style="margin: 0 0 5px 0; color: #333;">${m.machine_id}</h4>
+                        <p style="margin: 0 0 10px 0; font-size: 12px; color: #666;">${m.type || 'Machine'}</p>
+                        <button class="btn-primary" style="padding: 5px 10px; font-size: 12px;" onclick="renderMachineDetailsUI('${m.id}')">Voir Fiche</button>
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+                window.machineMarkers.push({
+                    id: m.id,
+                    machine_id: m.machine_id,
+                    marker: marker
+                });
+            }
+        });
+    } catch (e) {
+        console.error("Load machines failed:", e);
+    }
+
+    // Long press/click to add machine
+    window.machineMap.on('contextmenu', (e) => {
+        openAddMachineModal(e.latlng.lat, e.latlng.lng);
+    });
+}
+
+window.renderMachineDetailsUI = async function(machineDbId) {
+    try {
+        const machines = await api.getMachines();
+        const machine = machines.find(m => m.id === machineDbId);
+        if (!machine) return;
+
+        const logs = await api.getMachineLogs(machineDbId);
+        const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+        const bg = dk ? '#1C1C1E' : '#FFFFFF';
+        const textColor = dk ? '#FFFFFF' : '#000000';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = "11000";
+        modal.innerHTML = `
+            <div class="modal-box" style="padding:0; border-radius: 28px; width: 95%; max-width: 500px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; background: ${bg};">
+                <div style="position: relative; height: 180px; background: #333;">
+                    ${machine.image_url ? `<img src="${machine.image_url}" style="width:100%; height:100%; object-fit: cover;">` : `<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size: 60px;">🔧</div>`}
+                    <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.8)); color: white;">
+                        <h2 style="margin: 0; font-size: 24px;">${machine.machine_id}</h2>
+                        <div style="font-size: 14px; opacity: 0.8;">${machine.type || 'Type inconnu'}</div>
+                    </div>
+                    <button onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.5); border: none; color: white; width: 32px; height: 32px; border-radius: 16px; font-weight: bold; cursor: pointer;">✕</button>
+                </div>
+                
+                <div style="flex: 1; overflow-y: auto; padding: 20px;">
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="font-size: 16px; color: ${textColor}; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">📜 Historique de maintenance</h3>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            ${logs.length === 0 ? `<p style="color:#8E8E93; font-size: 14px; text-align: center;">Aucun log pour le moment.</p>` : logs.map(l => `
+                                <div style="background: ${dk ? 'rgba(255,255,255,0.05)' : '#f2f2f7'}; padding: 12px; border-radius: 12px;">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                        <span style="font-weight: bold; font-size: 13px; color: ${textColor};">${l.action_type}</span>
+                                        <span style="font-size: 11px; color: #8E8E93;">${new Date(l.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                    <div style="font-size: 14px; color: ${textColor}; opacity: 0.8;">${l.description || ''}</div>
+                                    <div style="font-size: 11px; margin-top: 6px; color: #8E8E93; text-align: right;">— ${l.profiles ? l.profiles.first_name : 'Inconnu'}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="padding: 15px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 10px; background: ${bg};">
+                    <button class="btn-primary" style="flex:1;" onclick="openAddMachineLogModal('${machineDbId}')">Ajouter Log</button>
+                    ${localStorage.getItem('pouchain_role') === 'admin' ? `<button class="btn-danger" style="padding: 10px;" onclick="handleDeleteMachine('${machineDbId}')">🗑️</button>` : ''}
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } catch(e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.openAddMachineModal = function(lat, lng) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#FFFFFF';
+    const textColor = dk ? '#FFFFFF' : '#000000';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "12000";
+    modal.innerHTML = `
+        <div class="modal-box" style="background: ${bg}; color: ${textColor}; width: 90%; max-width: 400px; padding: 25px; border-radius: 25px;">
+            <h2 style="margin-top:0;">🤖 Nouvelle Machine</h2>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Identifiant (ex: MI7628728)</label>
+                <input type="text" id="new-m-id" style="width:100%; padding: 12px; border:none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="MI..." required>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Type de machine</label>
+                <input type="text" id="new-m-type" style="width:100%; padding: 12px; border:none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="ex: Hydraulique, Pompe...">
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <div style="flex:1;">
+                    <label style="display:block; font-size: 10px; opacity: 0.5;">Lat</label>
+                    <input type="number" id="new-m-lat" value="${lat || ''}" style="width:100%; padding: 8px; font-size: 12px; background: ${inputBg}; color: ${textColor}; border:none; border-radius: 8px;">
+                </div>
+                <div style="flex:1;">
+                    <label style="display:block; font-size: 10px; opacity: 0.5;">Lng</label>
+                    <input type="number" id="new-m-lng" value="${lng || ''}" style="width:100%; padding: 8px; font-size: 12px; background: ${inputBg}; color: ${textColor}; border:none; border-radius: 8px;">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Photo (Optionnel)</label>
+                <input type="file" id="new-m-photo" accept="image/*" style="width:100%; font-size: 12px; background: ${inputBg}; color: ${textColor}; padding: 10px; border-radius: 12px;">
+            </div>
+
+            <div style="display:flex; gap: 10px;">
+                <button class="btn-secondary" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button class="btn-primary" style="flex:2;" id="save-machine-btn">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('save-machine-btn').onclick = async () => {
+        const machine_id = document.getElementById('new-m-id').value.trim();
+        const type = document.getElementById('new-m-type').value.trim();
+        const latitude = document.getElementById('new-m-lat').value;
+        const longitude = document.getElementById('new-m-lng').value;
+        const photoInput = document.getElementById('new-m-photo');
+
+        if (!machine_id) return alert("Identifiant requis");
+
+        const btn = document.getElementById('save-machine-btn');
+        btn.disabled = true;
+        btn.innerText = "Envoi...";
+
+        try {
+            let image_url = null;
+            if (photoInput.files && photoInput.files[0]) {
+                const file = photoInput.files[0];
+                const key = `machines/${Date.now()}_${file.name}`;
+                await api.uploadFile(file, key);
+                image_url = `${config.api.workerUrl}/get/${key}`;
+            }
+
+            await api.saveMachine({ 
+                machine_id, 
+                type, 
+                latitude: latitude ? parseFloat(latitude) : null, 
+                longitude: longitude ? parseFloat(longitude) : null,
+                image_url
+            });
+            modal.remove();
+            if (isMobileView) renderMobileMap(); else renderAdminMap();
+        } catch(e) {
+            alert("Erreur: " + e.message);
+            document.getElementById('save-machine-btn').innerText = "Enregistrer";
+        }
+    };
+};
+
+window.openAddMachineLogModal = function(machineDbId) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#FFFFFF';
+    const textColor = dk ? '#FFFFFF' : '#000000';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "13000";
+    modal.innerHTML = `
+        <div class="modal-box" style="background: ${bg}; color: ${textColor}; width: 90%; max-width: 400px; padding: 25px; border-radius: 25px;">
+            <h2 style="margin-top:0;">📝 Nouveau Log</h2>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Type d'action</label>
+                <select id="log-action" style="width:100%; padding: 12px; border:none; border-radius: 12px; background: ${inputBg}; color: ${textColor};">
+                    <option value="Maintenance">🔧 Maintenance</option>
+                    <option value="Réparation">🛠️ Réparation</option>
+                    <option value="Contrôle">👁️ Contrôle</option>
+                    <option value="Déplacement">🚚 Déplacement</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Description</label>
+                <textarea id="log-desc" style="width:100%; height: 100px; padding: 12px; border:none; border-radius: 12px; background: ${inputBg}; color: ${textColor}; resize: none;"></textarea>
+            </div>
+
+            <div style="display:flex; gap: 10px;">
+                <button class="btn-secondary" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button class="btn-primary" style="flex:2;" id="save-log-btn">Valider</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('save-log-btn').onclick = async () => {
+        const actionType = document.getElementById('log-action').value;
+        const desc = document.getElementById('log-desc').value;
+
+        try {
+            document.getElementById('save-log-btn').innerText = "Envoi...";
+            await api.addMachineLog(machineDbId, actionType, desc);
+            modal.remove();
+            // Refresh details
+            const overlays = document.querySelectorAll('.modal-overlay');
+            overlays.forEach(o => o.remove()); // wipe all and reopen for fresh data
+            renderMachineDetailsUI(machineDbId);
+        } catch(e) {
+            alert("Erreur: " + e.message);
+            document.getElementById('save-log-btn').innerText = "Valider";
+        }
+    };
+};
+
+window.handleDeleteMachine = async function(id) {
+    if (!confirm("Voulez-vous vraiment supprimer cette machine et son historique ?")) return;
+    try {
+        await api.deleteMachine(id);
+        const overlays = document.querySelectorAll('.modal-overlay');
+        overlays.forEach(o => o.remove());
+        if (isMobileView) renderMobileMap(); else renderAdminMap();
     } catch(e) {
         alert("Erreur: " + e.message);
     }
