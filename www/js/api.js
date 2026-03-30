@@ -654,5 +654,64 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+    
+    // --- MACHINES & MAP ---
+    async getMachines() {
+        const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
+            headers: { 'Authorization': `Bearer ${auth.getToken()}` }
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveMachine(machineData) {
+        const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${auth.getToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(machineData)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMachine(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
+            method: 'DELETE',
+            headers: { 
+                'Authorization': `Bearer ${auth.getToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMachineLogs(machineDbId = null) {
+        let url = `${config.api.workerUrl}/admin/machines/logs`;
+        if (machineDbId) url += `?machine_db_id=${machineDbId}`;
+        
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${auth.getToken()}` }
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async addMachineLog(machineDbId, actionType, description) {
+        const response = await fetch(`${config.api.workerUrl}/admin/machines/logs`, {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${auth.getToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ machine_db_id: machineDbId, action_type: actionType, description })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

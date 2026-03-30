@@ -36,10 +36,17 @@ export default {
 
             // Check Admin for /admin/ routes
             if (url.pathname.startsWith('/admin/')) {
-                // EXCEPTION: allow GET on vehicles/logs for non-admins to pick their car / see logs
-                const isVehiclesRead = method === "GET" && (url.pathname.endsWith("/admin/vehicles") || url.pathname.endsWith("/admin/vehicle/all-logs"));
+                // EXCEPTION: allow GET on vehicles/logs/cards for non-admins to pick their car / see logs / select DKV
+                const isAdminRead = method === "GET" && (
+                    url.pathname.endsWith("/admin/vehicles") || 
+                    url.pathname.endsWith("/admin/vehicle/all-logs") ||
+                    url.pathname.endsWith("/admin/dkv-cards") ||
+                    url.pathname.endsWith("/admin/toll-cards") ||
+                    url.pathname.endsWith("/admin/machines") ||
+                    url.pathname.endsWith("/admin/machines/logs")
+                );
                 
-                if (!isVehiclesRead) {
+                if (!isAdminRead) {
                     const admin = await isAdmin(user, env);
                     if (!admin) {
                         return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
@@ -968,20 +975,25 @@ export default {
                                 csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path,handled_by\n";
                             }
 
-                            const userName = r.profiles ? `${r.profiles.first_name} ${r.profiles.last_name}` : 'Inconnu';
+                            const escapeCsv = (val) => {
+                                if (val === null || val === undefined) return '""';
+                                return `"${String(val).replace(/"/g, '""')}"`;
+                            };
+
                             const line = [
-                                r.id, 
-                                r.user_id, 
-                                `"${userName.replace(/"/g, '""')}"`, 
-                                `"${(r.category || '').replace(/"/g, '""')}"`, 
-                                `"${(r.material_name || '').replace(/"/g, '""')}"`, 
-                                r.quantity || '', 
-                                `"${(r.comment || '').replace(/"/g, '""')}"`, 
-                                status, 
-                                r.created_at, 
-                                r.image_path || '',
-                                `"${(adminName || 'Admin').replace(/"/g, '""')}"`
+                                escapeCsv(r.id),
+                                escapeCsv(r.user_id),
+                                escapeCsv(r.profiles ? `${r.profiles.first_name} ${r.profiles.last_name}` : 'Inconnu'),
+                                escapeCsv(r.category),
+                                escapeCsv(r.material_name),
+                                escapeCsv(r.quantity),
+                                escapeCsv(r.comment),
+                                escapeCsv(status),
+                                escapeCsv(r.created_at),
+                                escapeCsv(r.image_path),
+                                escapeCsv(adminName || 'Admin')
                             ].join(',');
+
                             csvContent += line + "\n";
 
                             await env.MY_BUCKET.put(key, csvContent, { httpMetadata: { contentType: "text/csv" } });
@@ -1183,8 +1195,18 @@ export default {
 
                 const filtered = rows.filter(row => {
                     if (!row.trim()) return false;
-                    const cols = row.split(',');
-                    return cols[0] !== id; // First column is ID
+                    // Robust CSV separation for the first column (ID)
+                    let firstCol = '';
+                    let inQuotes = false;
+                    for (let i = 0; i < row.length; i++) {
+                        const char = row[i];
+                        if (char === '"') inQuotes = !inQuotes;
+                        else if (char === ',' && !inQuotes) break;
+                        else firstCol += char;
+                    }
+                    // Remove potential double quotes from firstCol
+                    const cleanId = firstCol.trim().replace(/^"|"$/g, '').replace(/""/g, '"');
+                    return cleanId !== id;
                 });
 
                 const newCsv = [header, ...filtered].join('\n');
@@ -1543,6 +1565,186 @@ export default {
                     console.error("Alert Planning Error:", e);
                 }
 
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MACHINES (Admin/Map) ---
+            if (method === "GET" && url.pathname === "/admin/machines") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machines?select=*&order=machine_id.asc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machines") {
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                
+                const { id, ...machineData } = body;
+                const upsertBody = { ...machineData, updated_at: new Date().toISOString() };
+                if (id) upsertBody.id = id;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/machines`, {
+                    method: "POST",
+                    headers: { 
+                        "apikey": serviceKey, 
+                        "Authorization": `Bearer ${serviceKey}`, 
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation,resolution=merge-duplicates"
+                    },
+                    body: JSON.stringify(upsertBody)
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                const savedArr = await res.json();
+                return new Response(JSON.stringify(savedArr[0] || { success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/admin/machines") {
+                const body = await request.json();
+                const { id } = body;
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/machines?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "GET" && url.pathname === "/admin/machines/logs") {
+                const machine_db_id = url.searchParams.get('machine_db_id');
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                
+                let query = `${supabaseUrl}/rest/v1/machine_logs?select=*,profiles(first_name,last_name)&order=created_at.desc&limit=50`;
+                if (machine_db_id) query += `&machine_db_id=eq.${machine_db_id}`;
+                
+                const res = await fetch(query, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machines/logs") {
+                const body = await request.json();
+                const { machine_db_id, action_type, description } = body;
+                if (!machine_db_id || !action_type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+                
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_logs`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        machine_db_id, 
+                        user_id: user.id, 
+                        action_type, 
+                        description,
+                        created_at: new Date().toISOString()
+                    })
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MACHINES (Admin/Map) ---
+            if (method === "GET" && url.pathname === "/admin/machines") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machines?select=*&order=machine_id.asc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machines") {
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                
+                const { id, ...machineData } = body;
+                const upsertBody = { ...machineData, updated_at: new Date().toISOString() };
+                if (id) upsertBody.id = id;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/machines`, {
+                    method: "POST",
+                    headers: { 
+                        "apikey": serviceKey, 
+                        "Authorization": `Bearer ${serviceKey}`, 
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation,resolution=merge-duplicates"
+                    },
+                    body: JSON.stringify(upsertBody)
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                const savedArr = await res.json();
+                return new Response(JSON.stringify(savedArr[0] || { success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/admin/machines") {
+                const body = await request.json();
+                const { id } = body;
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/machines?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "GET" && url.pathname === "/admin/machines/logs") {
+                const machine_db_id = url.searchParams.get('machine_db_id');
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                
+                let query = `${supabaseUrl}/rest/v1/machine_logs?select=*,profiles(first_name,last_name)&order=created_at.desc&limit=50`;
+                if (machine_db_id) query += `&machine_db_id=eq.${machine_db_id}`;
+                
+                const res = await fetch(query, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machines/logs") {
+                const body = await request.json();
+                const { machine_db_id, action_type, description } = body;
+                if (!machine_db_id || !action_type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+                
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_logs`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        machine_db_id, 
+                        user_id: user.id, 
+                        action_type, 
+                        description,
+                        created_at: new Date().toISOString()
+                    })
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 

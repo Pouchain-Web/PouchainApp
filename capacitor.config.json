@@ -1,0 +1,6 @@
+{
+  "appId": "com.pouchain.app",
+  "appName": "PouchainApp",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
