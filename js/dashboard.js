@@ -506,7 +506,7 @@ function generateMobileCategories(files, myVehicle = null) {
     mapCard.onclick = () => renderMobileMap();
 
     grid.prepend(mapCard);
-    grid.prepend(autoCard);
+    if (typeof autoCard !== 'undefined') grid.prepend(autoCard);
     grid.prepend(matosCard);
     grid.prepend(planningCard);
 }
