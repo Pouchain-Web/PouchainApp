@@ -1962,8 +1962,10 @@ window.changePlanningWeek = function (currentMondayStr, offsetDays) {
 };
 
 window.togglePlanningFullscreen = function () {
-    const el = document.getElementById('planning-fullscreen-container');
+    const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
+    if (!el) return;
+
     if (!document.fullscreenElement) {
         el.classList.remove('planning-inline');
         el.classList.add('planning-fullscreen');
@@ -1978,7 +1980,7 @@ window.togglePlanningFullscreen = function () {
 
 // Listen for fullscreen exit to restore padding safely
 document.addEventListener('fullscreenchange', () => {
-    const el = document.getElementById('planning-fullscreen-container');
+    const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
     if (el && !document.fullscreenElement) {
         el.classList.remove('planning-fullscreen');
