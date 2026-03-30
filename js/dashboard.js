@@ -6120,12 +6120,14 @@ async function initMachineMap(id, isMobile) {
         attributionControl: false
     }).setView([46.2276, 2.2137], 6);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+    // High detail satellite layer for field precision
+    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: 'Esri'
     }).addTo(window.machineMap);
 
-    // Try geolocation
-    window.machineMap.locate({ setView: true, maxZoom: 16 });
+    // High precision geolocation
+    window.machineMap.locate({ setView: true, maxZoom: 18, enableHighAccuracy: true });
 
     // Load machines
     try {
@@ -6221,6 +6223,16 @@ window.openAddMachineModal = function(lat, lng) {
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
     const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    // Fetch precise GPS if missing
+    if (!lat && !lng && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+            const latInput = document.getElementById('new-m-lat');
+            const lngInput = document.getElementById('new-m-lng');
+            if (latInput) latInput.value = pos.coords.latitude.toFixed(7);
+            if (lngInput) lngInput.value = pos.coords.longitude.toFixed(7);
+        }, null, { enableHighAccuracy: true });
+    }
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
