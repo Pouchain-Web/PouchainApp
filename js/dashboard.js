@@ -1577,7 +1577,16 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                 }
                 .planning-fullscreen .p-task:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important; }
                 .planning-fullscreen .p-task-title { color: #212529 !important; font-size: 15px !important; font-weight: 700 !important; line-height: 1.3 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .planning-fullscreen .p-task:hover .p-task-title { white-space: normal; overflow: visible; text-overflow: unset; }
+                .planning-fullscreen .p-task-title, #p-v2-main .p-task-title { 
+                    white-space: normal !important; 
+                    display: -webkit-box !important; 
+                    -webkit-line-clamp: 2 !important; 
+                    -webkit-box-orient: vertical !important; 
+                    overflow: hidden !important; 
+                    text-overflow: ellipsis !important;
+                    word-break: break-word !important;
+                    line-height: 1.1 !important;
+                }
                 .planning-fullscreen .p-task-time { font-size: 13px !important; font-weight: 800 !important; margin-bottom: 4px !important; color: #495057 !important; }
                 .planning-fullscreen .p-add-btn { display: none !important; }
                 .planning-fullscreen .p-task button { display: none !important; }
