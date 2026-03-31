@@ -67,6 +67,27 @@
 
     <script type="module">
         import { auth } from './js/auth.js';
+        import config from './js/config.js';
+
+        // --- Auto-Login Check ---
+        async function checkSession() {
+            try {
+                const session = await auth.getSession();
+                if (session) {
+                    console.log("Active session found, checking role...");
+                    // Ensure role is in localStorage for the dashboard
+                    let role = localStorage.getItem('pouchain_role');
+                    if (!role) {
+                        role = await auth.getUserRole();
+                        localStorage.setItem('pouchain_role', role || 'user');
+                    }
+                    window.location.href = 'dashboard.html';
+                }
+            } catch (err) {
+                console.warn("Session check failed:", err);
+            }
+        }
+        checkSession();
 
         // --- Redirect Check ---
         // If we land here with a recovery token (because Supabase redirect failed or defaulted)

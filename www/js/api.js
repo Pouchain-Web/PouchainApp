@@ -19,7 +19,9 @@ export const api = {
         return new Promise((resolve, reject) => {
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('key', pathPrefix + file.name);
+            // If pathPrefix already ends with a filename (or is the full key), don't append file.name again
+            const finalKey = pathPrefix.endsWith(file.name) ? pathPrefix : (pathPrefix + file.name);
+            formData.append('key', finalKey);
 
             const xhr = new XMLHttpRequest();
             xhr.open('PUT', `${config.api.workerUrl}/upload`);
@@ -656,39 +658,82 @@ export const api = {
         return await response.json();
     },
     
-    // --- MACHINES & MAP ---
-    async getMachines() {
-        const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
-            headers: { 'Authorization': `Bearer ${auth.getToken()}` }
+    // --- MACHINES & SCHEMATICS ---
+    async getBuildings() {
+        const response = await fetch(`${config.api.workerUrl}/admin/buildings`, {
+            headers: await getAuthHeaders()
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async saveBuilding(buildingData) {
+        const response = await fetch(`${config.api.workerUrl}/admin/buildings`, {
+            method: 'POST',
+            headers: { 
+                ...(await getAuthHeaders()),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(buildingData)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteBuilding(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/buildings?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMachines() {
+        console.log("API: Fetching machines...");
+        const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
+            headers: await getAuthHeaders()
+        });
+        console.log("API: getMachines status:", response.status);
+        if (!response.ok) {
+            const err = await response.text();
+            console.error("API: getMachines error:", err);
+            throw new Error(err);
+        }
+        const text = await response.text();
+        console.log("API: getMachines body text length:", text.length);
+        return text ? JSON.parse(text) : [];
     },
 
     async saveMachine(machineData) {
         const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
             method: 'POST',
             headers: { 
-                'Authorization': `Bearer ${auth.getToken()}`,
+                ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(machineData)
         });
         if (!response.ok) throw new Error(await response.text());
-        return await response.json();
+        const text = await response.text();
+        return text ? JSON.parse(text) : { success: true };
     },
 
     async deleteMachine(id) {
-        const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
+        console.log("API: Deleting machine:", id);
+        const response = await fetch(`${config.api.workerUrl}/admin/machines?id=${id}`, {
             method: 'DELETE',
-            headers: { 
-                'Authorization': `Bearer ${auth.getToken()}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ id })
+            headers: await getAuthHeaders()
         });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
+        console.log("API: deleteMachine status:", response.status);
+        if (!response.ok) {
+            const err = await response.text();
+            console.error("API: deleteMachine error:", err);
+            throw new Error(err);
+        }
+        const text = await response.text();
+        console.log("API: deleteMachine body text length:", text.length, "content:", text);
+        return text ? JSON.parse(text) : { success: true };
     },
 
     async getMachineLogs(machineDbId = null) {
@@ -696,7 +741,7 @@ export const api = {
         if (machineDbId) url += `?machine_db_id=${machineDbId}`;
         
         const response = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${auth.getToken()}` }
+            headers: await getAuthHeaders()
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -706,7 +751,7 @@ export const api = {
         const response = await fetch(`${config.api.workerUrl}/admin/machines/logs`, {
             method: 'POST',
             headers: { 
-                'Authorization': `Bearer ${auth.getToken()}`,
+                ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ machine_db_id: machineDbId, action_type: actionType, description })
