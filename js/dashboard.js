@@ -14,15 +14,7 @@ window.escapeHTML = function (str) {
         .replace(/'/g, '&#039;');
 };
 
-// Controller Logic
 async function initDashboard() {
-    // --- Fullscreen Redirect Check ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const fsMode = urlParams.get('fullscreen');
-    if (fsMode) {
-        showFullscreenOverlay(fsMode);
-    }
-
     // 1. Check Auth
     const session = await auth.getSession();
     if (!session) {
@@ -30,9 +22,15 @@ async function initDashboard() {
         return;
     }
 
+    // --- Fullscreen Mode Check (Priority) ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const fsMode = urlParams.get('fullscreen');
+
     // 2. Determine View
     const role = await auth.getUserRole();
-    const isMobile = window.innerWidth <= 768; // Simple check
+    const isMobile = window.innerWidth <= 768;
+
+    // ... listener backButton logic ...
 
     // Gestion du bouton retour physique Android (Capacitor)
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
@@ -56,6 +54,16 @@ async function initDashboard() {
     // 3. Render View
     if (role === 'admin' && !isMobile) {
         await renderAdminView(session);
+        
+        // Handle Fullscreen Intent after view is ready
+        if (fsMode) {
+            console.log("Auto-navigating to Planning for Fullscreen mode:", fsMode);
+            // Wait a small delay to ensure renderAdminView has finished its async setup
+            setTimeout(async () => {
+                await renderAdminPlanning();
+                showFullscreenOverlay(fsMode);
+            }, 500);
+        }
     } else {
         await renderMobileView();
     }
