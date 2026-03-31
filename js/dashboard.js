@@ -16,6 +16,13 @@ window.escapeHTML = function (str) {
 
 // Controller Logic
 async function initDashboard() {
+    // --- Fullscreen Redirect Check ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const fsMode = urlParams.get('fullscreen');
+    if (fsMode) {
+        showFullscreenOverlay(fsMode);
+    }
+
     // 1. Check Auth
     const session = await auth.getSession();
     if (!session) {
@@ -1995,6 +2002,13 @@ window.changePlanningWeek = function (currentMondayStr, offsetDays) {
 };
 
 window.togglePlanningFullscreen = function () {
+    // In the main window, open a NEW window. In the FS window, just toggle.
+    const urlParams = new URLSearchParams(window.location.search);
+    if (!urlParams.get('fullscreen')) {
+        window.open('dashboard.html?fullscreen=1', '_blank', 'noopener,noreferrer');
+        return;
+    }
+
     const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
     if (!el) return;
@@ -2011,19 +2025,62 @@ window.togglePlanningFullscreen = function () {
     }
 };
 
+window.showFullscreenOverlay = function(mode) {
+    const overlay = document.createElement('div');
+    overlay.id = 'fs-interaction-overlay';
+    overlay.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999999; background:#000; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family: sans-serif;";
+    overlay.innerHTML = `
+        <img src="logo-pouchain.svg" style="width: 200px; margin-bottom: 40px;">
+        <h1 style="font-size: 32px; margin-bottom: 20px;">Mode Plein Écran ${mode === '2' ? 'N°2' : ''}</h1>
+        <p style="font-size: 18px; color: #888; margin-bottom: 50px;">Pour activer l'affichage correct du planning :</p>
+        <div style="padding: 20px 40px; border: 2px solid #2da140; border-radius: 12px; background: rgba(45, 161, 64, 0.1); animation: pulse 2s infinite;">
+            <p style="font-size: 24px; font-weight: bold; margin: 0; color: #2da140;">Appuyez sur ENTRÉE</p>
+        </div>
+        <style>
+            @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+        </style>
+    `;
+    document.body.appendChild(overlay);
+
+    const handleKey = (e) => {
+        if (e.key === 'Enter') {
+            document.removeEventListener('keydown', handleKey);
+            overlay.remove();
+            if (mode === '2') {
+                window.togglePlanningFullscreenV2();
+            } else {
+                window.togglePlanningFullscreen();
+            }
+        }
+    };
+    document.addEventListener('keydown', handleKey);
+};
+
 // Listen for fullscreen exit to restore padding safely
 document.addEventListener('fullscreenchange', () => {
     const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
+    const urlParams = new URLSearchParams(window.location.search);
+    
     if (el && !document.fullscreenElement) {
         el.classList.remove('planning-fullscreen');
         el.classList.add('planning-inline');
         if (scrollArea) scrollArea.style.padding = '0 20px 20px 20px'; // restore
+        
+        // If we in a dedicated FS window and we exit FS, maybe we should close or show the button?
+        // For now we just stay.
     }
 });
 
 // --- Fullscreen V2 Logic (Split Screen) ---
 window.togglePlanningFullscreenV2 = function() {
+    // In the main window, open a NEW window. In the FS window, just toggle.
+    const urlParams = new URLSearchParams(window.location.search);
+    if (!urlParams.get('fullscreen')) {
+        window.open('dashboard.html?fullscreen=2', '_blank', 'noopener,noreferrer');
+        return;
+    }
+
     let v2 = document.getElementById('planning-v2-container');
     
     // If opening
