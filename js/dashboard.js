@@ -1623,8 +1623,8 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                                 <div class="p-task-title" style="font-size: 11px; font-weight: 800; line-height: 1.2; ${isDone ? 'text-decoration: line-through;' : ''}" title="${window.escapeHTML(parsedTitle)}">${window.escapeHTML(parsedTitle)}</div>
                             </div>
                             <div class="p-task-actions">
-                                <button class="btn-sm" style="background: transparent; border:none; color: ${isDone ? '#34C759' : '#fff'}; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="window.toggleAdminTaskStatus('${t.id}', ${isDone}, '${startStr}', event)" title="${isDone ? 'Marquer comme en cours' : 'Valider la tâche'}">${isDone ? '✅' : '✔️'}</button>
-                                <button class="btn-sm" style="background: transparent; border:none; color: #ff6b6b; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="window.deleteAdminTask('${t.id}', '${startStr}')" title="Supprimer">×</button>
+                                <button class="btn-sm" style="background: transparent; border:none; color: ${isDone ? '#34C759' : '#fff'}; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="event.stopPropagation(); window.toggleAdminTaskStatus('${t.id}', ${isDone}, '${startStr}', event)" title="${isDone ? 'Marquer comme en cours' : 'Valider la tâche'}">${isDone ? '✅' : '✔️'}</button>
+                                <button class="btn-sm" style="background: transparent; border:none; color: #ff6b6b; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="event.stopPropagation(); window.deleteAdminTask('${t.id}', '${startStr}')" title="Supprimer">×</button>
                             </div>
                         </div>
                     `;

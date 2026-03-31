@@ -78,7 +78,8 @@ export default {
                     !obj.key.startsWith('archives/') &&
                     !obj.key.startsWith('fullscreen_slides/') &&
                     !obj.key.startsWith('buildings/') &&
-                    !obj.key.startsWith('machines/')
+                    !obj.key.startsWith('machines/') &&
+                    !obj.key.startsWith('app_dist/')
                 );
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -265,7 +266,8 @@ export default {
                     'gif': 'image/gif',
                     'webp': 'image/webp',
                     'pdf': 'application/pdf',
-                    'svg': 'image/svg+xml'
+                    'svg': 'image/svg+xml',
+                    'apk': 'application/vnd.android.package-archive'
                 };
 
                 if (!headers.has("Content-Type") || headers.get("Content-Type") === "application/octet-stream") {
