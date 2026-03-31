@@ -67,20 +67,33 @@ export default {
             // --- ROUTE: LIST FILES ---
             if (method === "GET" && url.pathname.endsWith("/list")) { // /list or /api/list
                 const userId = url.searchParams.get('userId');
+                const includeHidden = url.searchParams.get('includeHidden') === 'true';
 
-                // 1. List from R2
-                const listing = await env.MY_BUCKET.list();
-                // Hide internal folders from listing
-                let objects = listing.objects.filter(obj => 
-                    !obj.key.startsWith('material_requests/') && 
-                    !obj.key.startsWith('fleet/') &&
-                    !obj.key.startsWith('vehicles/') &&
-                    !obj.key.startsWith('archives/') &&
-                    !obj.key.startsWith('fullscreen_slides/') &&
-                    !obj.key.startsWith('buildings/') &&
-                    !obj.key.startsWith('machines/') &&
-                    !obj.key.startsWith('app_dist/')
-                );
+                // 1. List ALL from R2 (with pagination)
+                let objects = [];
+                let truncated = true;
+                let cursor = undefined;
+
+                while (truncated) {
+                    const listing = await env.MY_BUCKET.list({ cursor });
+                    objects.push(...listing.objects);
+                    truncated = listing.truncated;
+                    cursor = listing.cursor;
+                }
+
+                // Hide internal folders from listing UNLESS explicitly asked
+                if (!includeHidden) {
+                    objects = objects.filter(obj => 
+                        !obj.key.startsWith('material_requests/') && 
+                        !obj.key.startsWith('fleet/') &&
+                        !obj.key.startsWith('vehicles/') &&
+                        !obj.key.startsWith('archives/') &&
+                        !obj.key.startsWith('fullscreen_slides/') &&
+                        !obj.key.startsWith('buildings/') &&
+                        !obj.key.startsWith('machines/') &&
+                        !obj.key.startsWith('app_dist/')
+                    );
+                }
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
@@ -256,6 +269,9 @@ export default {
 
                 const headers = new Headers(corsHeaders);
                 object.writeHttpMetadata(headers);
+                
+                // FORCE INLINE to prevent unwanted download prompts and allow direct viewing
+                headers.set("Content-Disposition", "inline");
                 
                 // FORCE CONTENT TYPE if missing or generic to ensure browser rendering
                 const ext = key.split('.').pop().toLowerCase();

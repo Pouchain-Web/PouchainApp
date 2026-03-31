@@ -1106,7 +1106,7 @@ async function renderAdminView(session) {
         <aside class="sidebar">
             <h2>Pouchain <span>Admin</span></h2>
             <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; margin-bottom: 24px;">
-                Bienvenue <br><span id="admin-welcome-name" style="color: white; font-weight: 600;">${session.user.email}</span>
+                Bienvenue <br><span id="admin-welcome-name" style="color: white; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onclick="window.openPersonalSettings()" title="Cliquez pour vos paramètres personnels">${session.user.email}</span>
             </div>
             <div style="margin-bottom: 24px;">
                 <input type="text" id="admin-global-search" class="form-input" placeholder="🔍 Rechercher un document..." style="width:100%; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);" oninput="handleAdminGlobalSearch(this.value)">
@@ -1135,7 +1135,7 @@ async function renderAdminView(session) {
                     <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden;">
                         <div id="cloud-storage-bar" style="height: 100%; width: 0%; background: var(--primary, #007AFF); transition: width 0.5s ease;"></div>
                     </div>
-                    <button class="btn-sm" onclick="openStorageAnalysisModal()" style="width:100%; margin-top: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 11px; height: 32px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                    <button class="btn-sm" onclick="openStorageAnalysisModal(event)" style="width:100%; margin-top: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 11px; height: 32px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
                         📊 Analyser le stockage
                     </button>
                 </div>
@@ -1159,10 +1159,11 @@ async function renderAdminView(session) {
     try {
         const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
             .from('profiles')
-            .select('first_name, last_name, preferences')
+            .select('id, first_name, last_name, preferences')
             .eq('id', session.user.id)
             .single();
 
+        window.currentUserProfile = profile;
         if (profile) {
             if (profile.first_name && profile.last_name) {
                 document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
@@ -1199,6 +1200,92 @@ async function renderAdminView(session) {
     if (window.materialBadgeInterval) clearInterval(window.materialBadgeInterval);
     window.updateMaterialBadge();
     window.materialBadgeInterval = setInterval(() => window.updateMaterialBadge(), 30000);
+}
+
+window.openPersonalSettings = function() {
+    const profile = window.currentUserProfile;
+    if (!profile) return alert("Chargement du profil en cours...");
+    
+    const prefs = profile.preferences || {};
+    const currentBg = prefs.planning_bg || '#1C1C1E';
+    const currentText = prefs.planning_text || '#FFFFFF';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '100000000';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 480px; padding: 40px; animation: modalPop 0.3s ease-out; background: #1C1C1E; color: white; border-radius: 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1);">
+            <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 24px;">⚙️</span> Paramètres Personnels
+            </h2>
+            
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 12px; font-weight: 700; text-transform: uppercase;">Couleur de Fond</label>
+                <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 16px;">
+                    <input type="color" id="pref-planning-bg" value="${currentBg}" style="width: 50px; height: 50px; border: none; border-radius: 10px; cursor: pointer; background: transparent;">
+                    <div style="flex: 1; font-size: 14px;">Couleur principale du planning.</div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 12px; font-weight: 700; text-transform: uppercase;">Couleur du Texte</label>
+                <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 16px;">
+                    <input type="color" id="pref-planning-text" value="${currentText}" style="width: 50px; height: 50px; border: none; border-radius: 10px; cursor: pointer; background: transparent;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 14px; margin-bottom: 8px;">Choisissez la couleur du texte.</div>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: var(--primary);">
+                            <input type="checkbox" onchange="document.getElementById('pref-planning-text').value = this.checked ? '#000000' : '#FFFFFF'"> 
+                            Passer en Noir (Contraste inversé)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button class="btn-secondary" style="border-radius: 12px; padding: 10px 20px;" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+                <button id="save-settings-btn" class="btn-primary" style="padding: 10px 24px; background: #2da140; border-radius: 12px; font-weight: 700;">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('save-settings-btn').onclick = async () => {
+        const newBg = document.getElementById('pref-planning-bg').value;
+        const newText = document.getElementById('pref-planning-text').value;
+        const btn = document.getElementById('save-settings-btn');
+        btn.disabled = true;
+        btn.innerText = "Sauvegarde...";
+
+        try {
+            const updatedPrefs = { ...prefs, planning_bg: newBg, planning_text: newText };
+            const { error } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
+                .from('profiles')
+                .update({ preferences: updatedPrefs })
+                .eq('id', profile.id);
+
+            if (error) throw error;
+            
+            window.currentUserProfile.preferences = updatedPrefs;
+            
+            // Immediate CSS override
+            let style = document.getElementById('user-planning-custom-bg');
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'user-planning-custom-bg';
+                document.head.appendChild(style);
+            }
+            style.innerHTML = `
+                .planning-inline { background: ${newBg} !important; color: ${newText} !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+                .planning-inline header h1, .planning-inline header span { color: inherit !important; }
+            `;
+            
+            modal.remove();
+        } catch (e) {
+            alert("Erreur lors de la sauvegarde : " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
 }
 
 // Global scope for admin functions
@@ -1399,20 +1486,26 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             const style = document.createElement('style');
             style.id = 'planning-styles';
             style.innerHTML = `
-                .planning-inline { background: rgba(20,20,20,0.75) !important; color: white !important; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+                .planning-inline { 
+                    background: ${window.currentUserProfile?.preferences?.planning_bg || '#1C1C1E'} !important;
+                    color: ${window.currentUserProfile?.preferences?.planning_text || '#FFFFFF'} !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                }
                 .planning-inline header { background: transparent !important; margin-bottom: 12px !important; padding: 16px 20px !important; border-bottom: none !important; }
-                .planning-inline header h1, .planning-inline header span { color: white !important; }
-                .planning-inline .p-grid-bg { background: rgba(0,0,0,0.35) !important; border: 1px solid var(--border) !important; border-radius: 8px; }
+                .planning-inline header h1 { color: white !important; }
+                .planning-inline header span { color: inherit !important; opacity: 0.9; }
+                .planning-inline .p-grid-bg { background: rgba(255,255,255,0.03) !important; border: 1px solid rgba(255,255,255,0.05) !important; border-radius: 8px; }
                 .planning-inline .p-head { background: #2a2a2a !important; color: white !important; border-top:none; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-user { background: #202020 !important; color: white !important; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-cell { border-color: rgba(255,255,255,0.05) !important; border-right: 1px solid rgba(255,255,255,0.05) !important; }
                 .planning-inline .p-task { border-left: 3px solid var(--primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05); display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 4px !important; position: relative !important; overflow: hidden !important; cursor: pointer !important; transition: background 0.2s ease; z-index: 1; min-height: 24px; padding: 4px 6px !important; }
                 .planning-inline .p-task:hover { background: rgba(255,255,255,0.1) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-                .planning-inline .p-task-title { color: white !important; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; font-size: 11px; font-weight: 800; }
+                .planning-inline .p-task-title { color: inherit !important; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; font-size: 11px; font-weight: 800; }
                 .p-task-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; align-items: center; }
                 .p-task:hover .p-task-actions { opacity: 1; pointer-events: auto; }
-                .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border: 1px dashed rgba(255,255,255,0.2) !important; }
-                .planning-inline .p-add-btn:hover { background: rgba(255,255,255,0.1) !important; color: white !important; }
+                .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: inherit !important; opacity: 0.6; border: 1px dashed rgba(255,255,255,0.2) !important; }
+                .planning-inline .p-add-btn:hover { background: rgba(255,255,255,0.1) !important; opacity: 1; }
                 
                 .p-reorder-btn { background: rgba(255,255,255,0.08); border: none; color: rgba(255,255,255,0.5); font-size: 9px; line-height: 1; padding: 2px 5px; cursor: pointer; border-radius: 3px; transition: 0.15s; }
                 .p-reorder-btn:hover { background: rgba(255,255,255,0.2); color: white; }
@@ -1560,7 +1653,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
         let headerHTML = `
                 <header style="z-index: 100; display: flex; align-items: center; justify-content: space-between;">
-                    <h1 style="margin: 0; display:flex; align-items:center; gap: 15px; font-size: 20px;">
+                    <h1 style="margin: 0; display:flex; align-items:center; gap: 15px; font-size: 20px; color: white !important;">
                         📅 Planning Semaine
                     </h1>
                     <div style="display:flex; gap: 12px; align-items:center;">
@@ -1612,11 +1705,17 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                 const isToday = d === new Date().toISOString().split('T')[0];
                 const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.15) !important;' : '';
                 const rawTasks = (tasksByUserDate[u.id] && tasksByUserDate[u.id][d]) ? tasksByUserDate[u.id][d] : [];
-                // Tri: Tâches non faites en haut, faites en bas
+                // Tri automatique: 1. Non faites en haut, 2. Toute la journée en haut, 3. Chronologique
                 const dayTasks = [...rawTasks].sort((a, b) => {
                     const doneA = a.done === 'true' ? 1 : 0;
                     const doneB = b.done === 'true' ? 1 : 0;
-                    return doneA - doneB;
+                    if (doneA !== doneB) return doneA - doneB;
+                    
+                    const isAllDayA = (a.start_time.indexOf('00:00') === 0 && a.end_time.indexOf('00:00') === 0);
+                    const isAllDayB = (b.start_time.indexOf('00:00') === 0 && b.end_time.indexOf('00:00') === 0);
+                    if (isAllDayA !== isAllDayB) return isAllDayA ? -1 : 1;
+                    
+                    return a.start_time.localeCompare(b.start_time);
                 });
 
                 rowsHTML += `<div class="p-cell" style="padding: 4px; border-bottom: 1px solid; min-height: 50px; display: flex; flex-direction: column; gap: 4px; position:relative; ${todayStyle}">`;
@@ -1635,7 +1734,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                         timeHtml = `<div class="p-task-time" style="font-size: 10px; font-weight:bold; margin-bottom: 2px;">${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>`;
                     }
                     rowsHTML += `
-                        <div class="p-task" data-task-id="${t.id}" data-task-done="${isDone}" onclick="window.openEditTaskModal(${taskDataEscaped}, '${startStr}', event)" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; border-left: 4px solid ${userColor} !important; color: ${userColor}; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
+                        <div class="p-task" data-task-id="${t.id}" data-task-done="${isDone}" onclick="window.openEditTaskModal(${taskDataEscaped}, '${startStr}', event)" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; border-left: 4px solid ${userColor} !important; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
                             <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
                                 ${timeHtml}
                                 <div class="p-task-title" style="font-size: 11px; font-weight: 800; line-height: 1.2; ${isDone ? 'text-decoration: line-through;' : ''}" title="${window.escapeHTML(parsedTitle)}">${window.escapeHTML(parsedTitle)}</div>
@@ -6254,8 +6353,9 @@ window.renderAdminMap = async function() {
             <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
                 <div style="padding: 20px; background: rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
                     <h2 style="margin:0; color: white;">🏢 Plans des Bâtiments</h2>
-                    <div style="display: flex; gap: 10px;">
+                    <div style="display: flex; gap: 10px; position: relative;">
                         <input type="text" id="machine-global-search" placeholder="Rechercher MI... (ID)" class="form-input" style="width: 250px;">
+                        <div id="admin-m-suggestions" style="display:none; position: absolute; left:0; right:0; top: 100%; max-height: 300px; overflow-y: auto; background: #1C1C1E; border: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 12px 12px; z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.5);"></div>
                         <button class="btn-primary" onclick="window.openAddBuildingModal()">+ Nouveau Bâtiment</button>
                     </div>
                 </div>
@@ -6278,13 +6378,38 @@ window.renderAdminMap = async function() {
             </div>
         `;
         const globalSearch = document.getElementById('machine-global-search');
+        const adminMSugg = document.getElementById('admin-m-suggestions');
+        
         globalSearch.oninput = async (e) => {
             const val = e.target.value.trim().toUpperCase();
-            if (val.length < 3) return;
+            if (val.length < 2) { adminMSugg.style.display = 'none'; return; }
+            
             const machines = await api.getMachines();
-            const found = machines.find(m => m.machine_id === val);
-            if (found && found.building_id) window.renderBuildingSchematic(found.building_id, found.id);
+            const filtered = machines.filter(m => (m.machine_id || "").toUpperCase().includes(val)).slice(0, 10);
+            
+            if (filtered.length > 0) {
+                adminMSugg.style.display = 'block';
+                adminMSugg.innerHTML = filtered.map(m => {
+                    const bName = m.building_id ? buildings.find(b => b.id === m.building_id)?.name : 'N/A';
+                    return `
+                        <div onclick="window.renderBuildingSchematic('${m.building_id}', '${m.id}')" style="padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); color: white; cursor: pointer; display: flex; justify-content: space-between; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">
+                            <span style="font-weight: 600;">${m.machine_id}</span>
+                            <small style="opacity: 0.6;">${bName}</small>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                adminMSugg.style.display = 'none';
+            }
         };
+
+        // Close suggestions on click outside
+        document.addEventListener('click', (e) => {
+            if (!globalSearch.contains(e.target) && !adminMSugg.contains(e.target)) {
+                adminMSugg.style.display = 'none';
+            }
+        }, { once: true });
+
     } catch (e) { alert("Erreur: " + e.message); }
 };
 
@@ -6644,26 +6769,51 @@ window.handleDeleteMachine = async function(id, buildingId = null) {
     }
 };
 
-window.openStorageAnalysisModal = function() {
-    if (!adminFilesCache || adminFilesCache.length === 0) {
-        alert("Aucun fichier en cache pour l'analyse.");
+window.openStorageAnalysisModal = async function(event) {
+    const originalBtn = event?.currentTarget;
+    if (originalBtn) originalBtn.innerText = '📊 Analyse...';
+
+    let fullFiles = [];
+    let spaceData = null;
+    try {
+        // Fetch both the full file list AND the official space usage
+        [fullFiles, spaceData] = await Promise.all([
+            api.listFiles(null, true), 
+            api.getSpaceUsage()
+        ]);
+        if (originalBtn) originalBtn.innerText = '📊 Analyser le stockage';
+    } catch (e) {
+        console.error("Storage analysis fetch failed", e);
+        if (originalBtn) originalBtn.innerText = '📊 Analyser le stockage';
+        alert("Erreur lors de la récupération des données complètes.");
         return;
     }
 
+    if (!fullFiles || fullFiles.length === 0) {
+        alert("Aucun fichier trouvé pour l'analyse.");
+        return;
+    }
+
+    // Official total from Cloudflare (matches sidebar)
+    const officialTotalSize = spaceData?.usedBytes || 0;
+
     // Step 1: Pre-calculate total and extension breakdown
     const extStats = {};
-    let totalSize = 0;
+    let listedTotalSize = 0;
     const allFiles = [];
     
-    adminFilesCache.forEach(f => {
+    fullFiles.forEach(f => {
         if (f.key.startsWith('.meta_')) return;
-        totalSize += f.size;
+        listedTotalSize += f.size;
         allFiles.push(f);
         const ext = f.key.split('.').pop().toLowerCase() || 'inconnu';
         if (!extStats[ext]) extStats[ext] = { size: 0, count: 0 };
         extStats[ext].size += f.size;
         extStats[ext].count++;
     });
+
+    // Use official total if it's larger than what we listed
+    const totalSize = Math.max(officialTotalSize, listedTotalSize);
 
     // Step 2: Categories
     const categories = {
@@ -6684,6 +6834,16 @@ window.openStorageAnalysisModal = function() {
             }
         });
         if (data.size > 0) finalCategories[name] = data;
+    }
+
+    // Discrepancy between listed files and official storage (System overhead / hidden R2 data)
+    if (officialTotalSize > listedTotalSize) {
+        finalCategories['Système / Métadonnées'] = {
+            color: '#5856D6',
+            size: officialTotalSize - listedTotalSize,
+            count: 0,
+            icon: '⚙️'
+        };
     }
 
     const palette = ['#5AC8FA', '#4CD964', '#FF2D55', '#E5E5EA', '#FFCC00', '#5856D6'];

@@ -109,10 +109,10 @@ export const api = {
     },
 
     // List all files
-    async listFiles(userId = null) {
-        let url = `${config.api.workerUrl}/list`;
+    async listFiles(userId = null, includeHidden = false) {
+        let url = `${config.api.workerUrl}/list?includeHidden=${includeHidden}`;
         if (userId) {
-            url += `?userId=${encodeURIComponent(userId)}`;
+            url += `&userId=${encodeURIComponent(userId)}`;
         }
 
         const response = await fetch(url, {
