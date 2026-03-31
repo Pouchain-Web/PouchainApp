@@ -1910,7 +1910,7 @@ window.reorderPlanningUser = function (fromIndex, toIndex, weekStartStr) {
     renderAdminPlanning(weekStartStr);
 };
 
-window.autoSortPlanningUsers = async function (weekStartStr) {
+window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false) {
     try {
         const users = await api.listUsers();
         // Compute week range
@@ -1925,46 +1925,44 @@ window.autoSortPlanningUsers = async function (weekStartStr) {
         try { tasks = await api.getAdminTasks(startStr, endStr); } catch (e) { }
 
         // Count tasks per user
-        const taskCount = {};
         const userTasks = {};
         users.forEach(u => {
-            taskCount[u.id] = 0;
             userTasks[u.id] = [];
         });
         tasks.forEach(t => { 
-            taskCount[t.user_id] = (taskCount[t.user_id] || 0) + 1; 
             if(!userTasks[t.user_id]) userTasks[t.user_id] = [];
             userTasks[t.user_id].push(t);
         });
         
-        // Helper to check if tasks are only AT or RECUP
-        const isOnlyInactif = (uid) => {
+        // Helper to check if user has AT LEAST ONE task of type AT, AM, CP or RECUP
+        const hasInactifTask = (uid) => {
             const uT = userTasks[uid] || [];
-            if (uT.length === 0) return 0; // 0 tasks is handled separately
-            return uT.every(t => {
-                const title = (t.title || "").toUpperCase();
-                return title.includes("AT") || title.includes("RECUP");
+            return uT.some(t => {
+                const title = (t.title || "").toUpperCase().split(':::DESC:::')[0].trim();
+                return ["AT", "AM", "CP", "RECUP"].some(code => 
+                    title === code || title.startsWith(code + " ") || title.startsWith(code + "-") || title.startsWith(code + " -")
+                );
             });
         };
 
         // Sort strategy scores
-        // Score 0: Has active tasks (not only AT/RECUP)
+        // Score 0: Has ONLY active tasks
         // Score 1: Zero tasks
-        // Score 2: Has only AT/RECUP (inactive)
+        // Score 2: Has AT LEAST ONE inactive task (AM/CP/AT...)
         users.sort((a, b) => {
             const aT = userTasks[a.id] || [];
             const bT = userTasks[b.id] || [];
             
-            const aInactif = isOnlyInactif(a.id);
-            const bInactif = isOnlyInactif(b.id);
+            const aInactif = hasInactifTask(a.id);
+            const bInactif = hasInactifTask(b.id);
             
             let aScore = 0;
-            if (aT.length === 0) aScore = 1;
-            else if (aInactif) aScore = 2;
+            if (aInactif) aScore = 2; // Inactif takes priority for the bottom
+            else if (aT.length === 0) aScore = 1;
             
             let bScore = 0;
-            if (bT.length === 0) bScore = 1;
-            else if (bInactif) bScore = 2;
+            if (bInactif) bScore = 2;
+            else if (bT.length === 0) bScore = 1;
             
             if (aScore !== bScore) return aScore - bScore;
             
@@ -1973,7 +1971,7 @@ window.autoSortPlanningUsers = async function (weekStartStr) {
         });
 
         localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
-        renderAdminPlanning(weekStartStr);
+        renderAdminPlanning(weekStartStr, isV2);
     } catch (e) {
         alert("Erreur tri automatique: " + e.message);
     }
@@ -2278,7 +2276,8 @@ window.deleteAdminTask = async function (taskId, currentWeekStartStr) {
     if (confirm("Voulez-vous vraiment supprimer cette tâche ?")) {
         try {
             await api.deleteAdminTask(taskId);
-            renderAdminPlanning(currentWeekStartStr);
+            const isV2 = !!document.getElementById('planning-v2-container');
+            window.autoSortPlanningUsers(currentWeekStartStr, isV2);
         } catch (e) {
             alert("Erreur de suppression: " + e.message);
         }
@@ -2438,7 +2437,9 @@ window.submitNewTask = async function (refWeekStr) {
     try {
         await Promise.all(promises);
         closeModal('new-task-modal');
-        renderAdminPlanning(refWeekStr);
+        // Determine if we are in Fullscreen V2 to pass it to the sort
+        const isV2 = !!document.getElementById('planning-v2-container');
+        window.autoSortPlanningUsers(refWeekStr, isV2);
     } catch (e) {
         alert("Erreur lors de l'ajout: " + e.message);
     }
@@ -2531,7 +2532,8 @@ window.openEditTaskModal = async function (task, refWeek, event) {
                     end_time: endTime
                 });
                 closeModal('edit-task-modal');
-                renderAdminPlanning(refWeekStr);
+                const isV2 = !!document.getElementById('planning-v2-container');
+                window.autoSortPlanningUsers(refWeekStr, isV2);
             } catch (e) {
                 alert("Erreur lors de la modification: " + e.message);
             }
