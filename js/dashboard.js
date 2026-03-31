@@ -1120,6 +1120,9 @@ async function renderAdminView(session) {
                     <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden;">
                         <div id="cloud-storage-bar" style="height: 100%; width: 0%; background: var(--primary, #007AFF); transition: width 0.5s ease;"></div>
                     </div>
+                    <button class="btn-sm" onclick="openStorageAnalysisModal()" style="width:100%; margin-top: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 11px; height: 32px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                        📊 Analyser le stockage
+                    </button>
                 </div>
                 <button id="logout-btn" class="logout-btn" style="width: 100%;">Déconnexion</button>
             </div>
@@ -5757,7 +5760,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
         modal.style.zIndex = '100010';
         
         modal.innerHTML = `
-            <div class="modal-box" style="width: 900px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #ffffff; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+            <div class="modal-box" style="width: 1150px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #ffffff; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
                 <!-- Header -->
                 <div style="padding: 32px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
                     <div>
@@ -5767,9 +5770,11 @@ window.openVehicleDetailModal = async function(vehicleId) {
                             <span style="background: #000; color: #fff; padding: 4px 12px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 18px; margin-left: 12px; vertical-align: middle;">${v.plate_number}</span>
                         </h2>
                     </div>
-                    <div style="display:flex; gap:12px;">
-                        <button class="btn-primary" onclick="openAddVehicleEventModal('${v.id}')" style="padding: 10px 20px; border-radius: 12px; background: #2da140; color: #fff; border: none; font-weight: 700;">➕ Ajouter événement</button>
-                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 20px; border-radius: 12px; background: #eee; color: #333; border: none; font-weight: 700;">Fermer</button>
+                    <div style="display:flex; gap:10px; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="updateAdminVehicleMileage('${v.id}', ${v.last_mileage || 0})" style="padding: 10px 18px; border-radius: 12px; background: #5AC8FA; color: #fff; border: none; font-weight: 700; display: flex; align-items: center; gap: 8px;">📍 Mise à jour KM</button>
+                        <button class="btn-primary" onclick="logAdminVehicleFuel('${v.id}', '${v.dkv_card || ''}')" style="padding: 10px 18px; border-radius: 12px; background: #FF9500; color: #fff; border: none; font-weight: 700; display: flex; align-items: center; gap: 8px;">⛽ Saisie Essence</button>
+                        <button class="btn-primary" onclick="openAddVehicleEventModal('${v.id}')" style="padding: 10px 18px; border-radius: 12px; background: #2da140; color: #fff; border: none; font-weight: 700;">➕ Ajouter événement</button>
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 18px; border-radius: 12px; background: #eee; color: #333; border: none; font-weight: 700;">Fermer</button>
                     </div>
                 </div>
 
@@ -6043,6 +6048,128 @@ window.handleDeleteVehicleLog = async function(id, vehicleId) {
     } catch(e) {
         alert("Erreur: " + e.message);
     }
+};
+
+window.updateAdminVehicleMileage = function(vehicleId, current) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "100050";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 30px; border-radius: 24px; background: #fff; width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+            <h2 style="margin-top: 0; margin-bottom: 20px; color: #1c1c1e; font-size: 20px;">Mise à jour du compteur (Admin)</h2>
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 8px; font-weight: 700; text-transform: uppercase;">Nouveau kilométrage</label>
+                <input type="number" id="admin-mileage-input" style="width: 100%; padding: 15px; border: 1px solid #ddd; border-radius: 12px; font-size: 18px; font-weight: 800;" value="${current || 0}">
+                <p style="font-size: 11px; color: #8E8E93; margin-top: 8px;">Dernier relevé enregistré : <b>${current || 0} km</b></p>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="admin-save-mileage-btn" class="btn-primary" style="flex: 1; background: #5AC8FA;">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const input = document.getElementById('admin-mileage-input');
+    input.focus();
+    input.select();
+
+    document.getElementById('admin-save-mileage-btn').onclick = async () => {
+        const val = parseInt(input.value);
+        if (isNaN(val)) return alert("Veuillez entrer un nombre valide.");
+
+        const btn = document.getElementById('admin-save-mileage-btn');
+        btn.disabled = true;
+        btn.innerText = "Enregistrement...";
+
+        try {
+            await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: val.toString() });
+            modal.remove();
+            await window.openVehicleDetailModal(vehicleId);
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
+};
+
+window.logAdminVehicleFuel = async function(vehicleId, dkvCard) {
+    let allCards = [];
+    try { allCards = await api.getDkvCards(); } catch(e) {}
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "100050";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 30px; border-radius: 24px; background: #fff; width: 450px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+            <h2 style="margin-top: 0; margin-bottom: 20px; color: #1c1c1e; font-size: 20px;">Saisie d'un plein (Admin)</h2>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Carte DKV utilisée</label>
+                <select id="admin-fuel-dkv" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 15px; font-weight: 700;">
+                    ${dkvCard ? `<option value="${dkvCard}">Carte du véhicule (${dkvCard})</option>` : ''}
+                    <option value="">-- Autre carte --</option>
+                    ${allCards.map(c => `<option value="${c.card_number}" ${dkvCard === c.card_number ? 'disabled' : ''}>${c.card_number} (${c.description || 'DKV'})</option>`).join('')}
+                </select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div>
+                    <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Volume (L)</label>
+                    <input type="number" id="admin-fuel-volume" step="0.01" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 16px; font-weight: 700;" placeholder="ex: 45.5">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Montant (€)</label>
+                    <input type="number" id="admin-fuel-amount" step="0.01" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 16px; font-weight: 700;" placeholder="ex: 85.20">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Compteur à la saisie</label>
+                <input type="number" id="admin-fuel-km" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 16px; font-weight: 700;" placeholder="Kilométrage actuel">
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="admin-save-fuel-btn" class="btn-primary" style="flex: 1; background: #FF9500;">Valider Plein</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('admin-fuel-volume').focus();
+
+    document.getElementById('admin-save-fuel-btn').onclick = async () => {
+        const volume = document.getElementById('admin-fuel-volume').value;
+        const amount = document.getElementById('admin-fuel-amount').value;
+        const km = document.getElementById('admin-fuel-km').value;
+        const usedDkv = document.getElementById('admin-fuel-dkv').value;
+
+        if (!volume || !amount || !km || !usedDkv) return alert("Veuillez remplir tous les champs.");
+
+        const btn = document.getElementById('admin-save-fuel-btn');
+        btn.disabled = true;
+        btn.innerText = "Envoi...";
+
+        const description = `Plein : ${volume} L pour ${amount} € à ${km} km (Carte : ${usedDkv})`;
+
+        try {
+            await api.submitVehicleLog({ 
+                vehicle_id: vehicleId, 
+                type: 'fuel', 
+                value: amount, 
+                description: description,
+                current_mileage: km
+            });
+            modal.remove();
+            await window.openVehicleDetailModal(vehicleId);
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Valider Plein";
+        }
+    };
 };
 
 // --- MACHINES & SCHEMATICS ---
@@ -6450,6 +6577,184 @@ window.handleDeleteMachine = async function(id, buildingId = null) {
         console.error("UI: Machine deletion FAILED:", e);
         alert("Erreur: " + e.message); 
     }
+};
+
+window.openStorageAnalysisModal = function() {
+    if (!adminFilesCache || adminFilesCache.length === 0) {
+        alert("Aucun fichier en cache pour l'analyse.");
+        return;
+    }
+
+    // Step 1: Pre-calculate total and extension breakdown
+    const extStats = {};
+    let totalSize = 0;
+    const allFiles = [];
+    
+    adminFilesCache.forEach(f => {
+        if (f.key.startsWith('.meta_')) return;
+        totalSize += f.size;
+        allFiles.push(f);
+        const ext = f.key.split('.').pop().toLowerCase() || 'inconnu';
+        if (!extStats[ext]) extStats[ext] = { size: 0, count: 0 };
+        extStats[ext].size += f.size;
+        extStats[ext].count++;
+    });
+
+    // Step 2: Categories
+    const categories = {
+        'Images': { color: '#FF3B30', size: 0, count: 0, exts: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'], icon: '🖼️' },
+        'PDF': { color: '#FF9500', size: 0, count: 0, exts: ['pdf'], icon: '📕' },
+        'Documents': { color: '#007AFF', size: 0, count: 0, exts: ['doc', 'docx', 'xls', 'xlsx', 'txt', 'csv'], icon: '📔' },
+        'Vidéos': { color: '#AF52DE', size: 0, count: 0, exts: ['mp4', 'mov', 'webm', 'mkv'], icon: '🎬' }
+    };
+
+    const finalCategories = {};
+    const handledExts = new Set();
+    for (const [name, data] of Object.entries(categories)) {
+        data.exts.forEach(e => {
+            if (extStats[e]) {
+                data.size += extStats[e].size;
+                data.count += extStats[e].count;
+                handledExts.add(e);
+            }
+        });
+        if (data.size > 0) finalCategories[name] = data;
+    }
+
+    const palette = ['#5AC8FA', '#4CD964', '#FF2D55', '#E5E5EA', '#FFCC00', '#5856D6'];
+    let pIdx = 0;
+    const remainingExts = Object.entries(extStats).filter(([e]) => !handledExts.has(e));
+    const others = { color: '#8E8E93', size: 0, count: 0, icon: '📄' };
+
+    remainingExts.forEach(([ext, stats]) => {
+        const percent = (stats.size / totalSize) * 100;
+        if (percent > 1.0) {
+            finalCategories[ext.toUpperCase()] = {
+                color: palette[pIdx % palette.length],
+                size: stats.size,
+                count: stats.count,
+                icon: '📂'
+            };
+            pIdx++;
+        } else {
+            others.size += stats.size;
+            others.count += stats.count;
+        }
+    });
+    if (others.size > 0) finalCategories['Autres'] = others;
+
+    const topFiles = allFiles.sort((a, b) => b.size - a.size).slice(0, 5);
+    const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(2) + ' Mo';
+
+    // Step 3: BUILD SVG DONUT
+    // Radius 40, Circumference = 2 * PI * 40 = 251.32
+    const radius = 40;
+    const circ = 2 * Math.PI * radius;
+    let currentOffset = 0;
+    const activeCats = Object.entries(finalCategories).filter(([_, data]) => data.size > 0).sort((a, b) => b[1].size - a[1].size);
+    
+    let svgContent = `<circle cx="50" cy="50" r="${radius}" fill="transparent" stroke="rgba(255,255,255,0.05)" stroke-width="12"/>`;
+    
+    activeCats.forEach(([_, data]) => {
+        const p = data.size / totalSize;
+        const dashArray = p * circ;
+        const dashOffset = -currentOffset;
+        svgContent += `<circle cx="50" cy="50" r="${radius}" fill="transparent" 
+            stroke="${data.color}" stroke-width="12" 
+            stroke-dasharray="${dashArray} ${circ - dashArray}" 
+            stroke-dashoffset="${dashOffset}" 
+            transform="rotate(-90 50 50)" />`;
+        currentOffset += dashArray;
+        data.percent = p * 100;
+    });
+
+    const donutSVG = `
+        <svg viewBox="0 0 100 100" style="width: 250px; height: 250px; filter: drop-shadow(0 15px 30px rgba(0,0,0,0.5)); transform: scale(1.05);">
+            ${svgContent}
+        </svg>
+    `;
+
+    // Step 4: Render Modal
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay storage-analysis-overlay';
+    modal.style.zIndex = "10000001";
+    modal.style.padding = "20px";
+    
+    // Inject Custom Styles for Scrollbar
+    const styleTag = document.createElement('style');
+    styleTag.innerHTML = `
+        .storage-analysis-modal::-webkit-scrollbar { width: 8px; }
+        .storage-analysis-modal::-webkit-scrollbar-track { background: transparent; }
+        .storage-analysis-modal::-webkit-scrollbar-thumb { background: #000; border-radius: 10px; border: 2px solid #1c1c1c; }
+        .storage-analysis-modal::-webkit-scrollbar-thumb:hover { background: #333; }
+    `;
+    document.head.appendChild(styleTag);
+
+    modal.innerHTML = `
+        <div class="modal-box glass-panel storage-analysis-modal" style="width: 750px; max-height: 85vh; overflow-y: auto; padding: 0; border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; animation: modalPop 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); background: #111;">
+            <!-- Header Opaque and Sticky -->
+            <div style="position: sticky; top: 0; background: #000; padding: 30px 40px; z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin:0; font-weight: 800; font-size: 22px; color: white;">📊 Analyse Avancée du Stockage</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: rgba(255,255,255,0.1); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px;">&times;</button>
+            </div>
+
+            <div style="padding: 40px;">
+                <div style="display: flex; gap: 45px; align-items: center; margin-bottom: 40px; flex-wrap: wrap;">
+                    <div style="width: 250px; height: 250px; flex-shrink: 0; position: relative; margin: 0 auto;">
+                        ${donutSVG}
+                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 120px;">
+                            <div style="font-size: 10px; color: #888; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Total</div>
+                            <div style="font-size: 22px; font-weight: 900; color: white;">${formatSize(totalSize)}</div>
+                        </div>
+                    </div>
+
+                    <div style="flex: 1; min-width: 300px; display: grid; grid-template-columns: 1fr; gap: 10px;">
+                        ${activeCats.map(([name, data]) => `
+                            <div style="display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.03); padding: 12px 18px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05);">
+                                <div style="width: 12px; height: 12px; border-radius: 50%; background: ${data.color}; box-shadow: 0 0 10px ${data.color}88;"></div>
+                                <div style="flex: 1;">
+                                    <div style="display:flex; justify-content: space-between; align-items: flex-end;">
+                                        <span style="font-weight: 800; font-size: 14px; color: #fff;">${data.icon} ${name}</span>
+                                        <span style="font-size: 11px; color: #666;">${data.count} fichiers</span>
+                                    </div>
+                                    <div style="display:flex; justify-content: space-between; align-items: flex-end; margin-top: 4px;">
+                                        <span style="font-size: 14px; color: white; font-weight: 800;">${data.percent.toFixed(1)}%</span>
+                                        <span style="font-size: 11px; color: #aaa; font-weight: 600;">${formatSize(data.size)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 35px; margin-bottom: 30px;">
+                    <h3 style="font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 25px; font-weight: 900;">📂 Top 5 des fichiers les plus lourds</h3>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        ${topFiles.map((f, i) => {
+                            const name = f.key.split('/').pop();
+                            return `
+                                <div style="display: flex; align-items: center; gap: 20px; padding: 15px 25px; background: #000; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
+                                    <span style="font-size: 16px; font-weight: 900; color: #333; width: 25px;">#${i+1}</span>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <div style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${window.escapeHTML(name)}</div>
+                                        <div style="font-size: 11px; color: #555; margin-top: 3px;">${f.key}</div>
+                                    </div>
+                                    <div style="font-weight: 900; color: var(--primary); font-size: 14px;">${formatSize(f.size)}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+
+                <div style="padding: 20px; background: rgba(0,122,255,0.05); border-radius: 12px; border: 1px solid rgba(0,122,255,0.1);">
+                    <p style="margin:0; font-size: 13px; color: #aaa; line-height: 1.6;">
+                        <strong>Note :</strong> L'analyse inclut uniquement les fichiers indexés. Les fichiers dépassant 1% de l'espace total sont mis en avant individuellement.
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
 };
 
 initDashboard();
