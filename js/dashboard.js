@@ -14,6 +14,80 @@ window.escapeHTML = function (str) {
         .replace(/'/g, '&#039;');
 };
 
+window.isJoursFerieFrance = function(dateStr) {
+    const d = new Date(dateStr);
+    const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+    const md = String(m).padStart(2, '0') + "-" + String(day).padStart(2, '0');
+    if (["01-01", "05-01", "05-08", "07-14", "08-15", "11-01", "11-11", "12-25"].includes(md)) return true;
+    
+    // Pâques
+    let a = y % 19, b = Math.floor(y / 100), c = y % 100, d1 = Math.floor(b / 4), e = b % 4;
+    let f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d1 - g + 15) % 30;
+    let i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+    let m1 = Math.floor((a + 11 * h + 22 * l) / 451);
+    let n = Math.floor((h + l - 7 * m1 + 114) / 31) - 1, p = ((h + l - 7 * m1 + 114) % 31) + 1;
+    let paques = new Date(y, n, p);
+    let lPaq = new Date(paques); lPaq.setDate(paques.getDate() + 1);
+    let asc = new Date(paques); asc.setDate(paques.getDate() + 39);
+    let lPent = new Date(paques); lPent.setDate(paques.getDate() + 50);
+    
+    const isSame = (d1, d2) => d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+    return isSame(d, lPaq) || isSame(d, asc) || isSame(d, lPent);
+};
+
+window.isClosedDay = function(dateStr) {
+    if (!window.currentClosedDays) return false;
+    for (const item of window.currentClosedDays) {
+        if (typeof item === 'string') {
+            if (dateStr === item) return true;
+        } else if (item && item.start && item.end) {
+            if (dateStr >= item.start && dateStr <= item.end) return true;
+        }
+    }
+    return false;
+};
+
+window.addClosedDay = async function() {
+    if (!window.currentClosedDays) window.currentClosedDays = [];
+    const today = new Date().toISOString().split('T')[0];
+    window.currentClosedDays.push({ start: today, end: today });
+    await api.setPlanningClosedDays(window.currentClosedDays);
+    if (window.renderAdminPlanning && window.currentPlanningMonday) {
+        window.renderAdminPlanning(window.currentPlanningMonday, !!document.getElementById('planning-v2-container'), true);
+    }
+};
+
+window.updateClosedDay = async function(index, field, value) {
+    if (!window.currentClosedDays || typeof window.currentClosedDays[index] === 'undefined') return;
+    let item = window.currentClosedDays[index];
+    if (typeof item === 'string') {
+        item = { start: item, end: item };
+        window.currentClosedDays[index] = item;
+    }
+    item[field] = value;
+    
+    // Auto correct order
+    if (item.start && item.end && item.start > item.end) {
+        const temp = item.start;
+        item.start = item.end;
+        item.end = temp;
+    }
+    
+    await api.setPlanningClosedDays(window.currentClosedDays);
+    if (window.renderAdminPlanning && window.currentPlanningMonday) {
+        window.renderAdminPlanning(window.currentPlanningMonday, !!document.getElementById('planning-v2-container'), true);
+    }
+};
+
+window.removeClosedDay = async function(index) {
+    if (!window.currentClosedDays) return;
+    window.currentClosedDays.splice(index, 1);
+    await api.setPlanningClosedDays(window.currentClosedDays);
+    if (window.renderAdminPlanning && window.currentPlanningMonday) {
+        window.renderAdminPlanning(window.currentPlanningMonday, !!document.getElementById('planning-v2-container'), true);
+    }
+};
+
 async function initDashboard() {
     // 1. Check Auth
     const session = await auth.getSession();
@@ -1124,6 +1198,7 @@ async function renderAdminView(session) {
                     <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMap()" id="nav-map">🗺️ Carte des Machines</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -1434,6 +1509,10 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     const endStr = `${currentSunday.getFullYear()}-${pad(currentSunday.getMonth() + 1)}-${pad(currentSunday.getDate())}`;
 
     try {
+        let closedDays = [];
+        try { closedDays = await api.getPlanningClosedDays(); } catch(e) {}
+        window.currentClosedDays = closedDays;
+
         const users = await api.listUsers();
         let tasks = [];
         try {
@@ -1689,9 +1768,15 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                             Collaborateur
                         </div>
                         ${weekDays.map(d => {
-                            const isToday = d === new Date().toISOString().split('T')[0];
-                            const todayStyle = isToday ? 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);' : 'background: inherit;';
-                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
+                            let style = 'background: inherit;';
+                            if (window.isClosedDay(d)) {
+                                style = 'background-color: #ff3b30 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
+                            } else if (d === new Date().toISOString().split('T')[0]) {
+                                style = 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
+                            } else if (window.isJoursFerieFrance(d)) {
+                                style = 'background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 10px, rgba(0,0,0,0.05) 10px, rgba(0,0,0,0.05) 20px) !important; color: inherit;';
+                            }
+                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${style}">${formatShortDate(d)}</div>`;
                         }).join('')}
         `;
 
@@ -1711,8 +1796,14 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             rowsHTML += '</div>';
 
             weekDays.forEach(d => {
-                const isToday = d === new Date().toISOString().split('T')[0];
-                const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.15) !important;' : '';
+                let cellStyle = '';
+                if (window.isClosedDay(d)) {
+                    cellStyle = 'background: rgba(255, 59, 48, 0.15) !important;';
+                } else if (d === new Date().toISOString().split('T')[0]) {
+                    cellStyle = 'background: rgba(45, 161, 64, 0.15) !important;';
+                } else if (window.isJoursFerieFrance(d)) {
+                    cellStyle = 'background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(120,120,120,0.1) 10px, rgba(120,120,120,0.1) 20px) !important;';
+                }
                 const rawTasks = (tasksByUserDate[u.id] && tasksByUserDate[u.id][d]) ? tasksByUserDate[u.id][d] : [];
                 // Tri automatique: 1. Non faites en haut, 2. Toute la journée en haut, 3. Chronologique
                 const dayTasks = [...rawTasks].sort((a, b) => {
@@ -1727,7 +1818,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     return a.start_time.localeCompare(b.start_time);
                 });
 
-                rowsHTML += `<div class="p-cell" style="padding: 4px; border-bottom: 1px solid; min-height: 50px; display: flex; flex-direction: column; gap: 4px; position:relative; ${todayStyle}">`;
+                rowsHTML += `<div class="p-cell" style="padding: 4px; border-bottom: 1px solid; min-height: 50px; display: flex; flex-direction: column; gap: 4px; position:relative; ${cellStyle}">`;
 
                 dayTasks.forEach(t => {
                     const parsedTitle = t.title.split(':::DESC:::')[0];
@@ -1820,14 +1911,41 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     }).join('')}
                     ${fsConfig.files.length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
                 </div>
+
+                <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-left: auto; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
+                    <label style="font-weight: 800; color: #ff3b30; font-size: 12px; text-transform: uppercase;">🔒 Jours Fermés (Général)</label>
+                    <div style="display: flex; flex-direction: column; gap: 4px; max-height: 80px; overflow-y: auto; width: 100%; padding-right: 5px; scrollbar-width: thin;" id="closed-days-list">
+                        ${(window.currentClosedDays || []).map((interval, i) => {
+                            const start = interval.start || interval;
+                            const end = interval.end || interval;
+                            return `
+                            <div style="display:flex; align-items:center; gap: 8px;">
+                                <input type="date" class="form-input" style="height: 24px; font-size: 11px; padding: 0 4px;" value="${start}" onchange="window.updateClosedDay(${i}, 'start', this.value)">
+                                <span style="color:#fff; font-size:10px;">au</span>
+                                <input type="date" class="form-input" style="height: 24px; font-size: 11px; padding: 0 4px;" value="${end}" onchange="window.updateClosedDay(${i}, 'end', this.value)">
+                                <button onclick="window.removeClosedDay(${i})" style="background: rgba(255, 59, 48, 0.2); border: 1px solid rgba(255,59,48,0.5); color: #fff; padding: 2px 6px; border-radius: 4px; cursor:pointer; font-size:10px; flex-shrink:0;">✕</button>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    ${(window.currentClosedDays || []).length === 0 ? `<span style="color: #666; font-size: 10px; font-style: italic;">Aucun intervalle configuré</span>` : ''}
+                    <button class="btn-sm btn-primary" style="font-size: 10px; padding: 4px 10px; margin-top: 2px;" onclick="window.addClosedDay()">+ Ajouter Intervalle</button>
+                </div>
             </div>
         `;
 
         if (existingContainer) {
             existingContainer.setAttribute('data-monday', startStr);
             const mainArea = document.getElementById('planning-main-desktop');
+            const footerArea = document.getElementById('planning-footer-config');
             if (mainArea) {
                 mainArea.innerHTML = finalContent;
+                if (footerArea) {
+                    footerArea.innerHTML = `
+                             <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
+                                 ${slideshowConfigHTML}
+                             </div>
+                    `;
+                }
             } else {
                 // Fallback for V2 or if structure changed
                 existingContainer.innerHTML = `
@@ -6989,6 +7107,361 @@ window.openStorageAnalysisModal = async function(event) {
         </div>
     `;
     document.body.appendChild(modal);
+};
+
+window.renderAdminNotifications = async function() {
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('nav-notifications').classList.add('active');
+    const container = document.getElementById('admin-content');
+    
+    // Structure HTML Ultra Premium avec Glassmorphism et SCROLLABLE
+    container.innerHTML = `
+        <div style="height: 100%; width: 100%; position: relative; overflow: hidden; background: url('https://images.unsplash.com/photo-1550745165-9bc0b25272a7?auto=format&fit=crop&q=80&w=2070') center/cover no-repeat fixed; border-radius: 20px;">
+            <div style="position: absolute; inset: 0; background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(25px); pointer-events: none; z-index: 0;"></div>
+            
+            <div style="position: absolute; inset: 0; overflow-x: hidden; overflow-y: auto; z-index: 1;">
+                <div style="padding: 40px; min-height: 100%; display: flex; flex-direction: column; color: white; gap: 40px; max-width: 1400px; margin: 0 auto; box-sizing: border-box;">
+                
+                <!-- HEADER -->
+                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                    <div>
+                        <h1 style="font-size: 36px; font-weight: 800; margin: 0; letter-spacing: -1px;">🔔 Centre de Notifications</h1>
+                        <p style="color: #aaa; font-size: 16px; margin-top: 10px;">Gérez les communications directes et les automatisations du système.</p>
+                    </div>
+                </div>
+
+                <!-- SECTION 1: ENVOI DIRECT -->
+                <div style="display: grid; grid-template-columns: 1fr 400px; gap: 40px;">
+                    <!-- Message Composition -->
+                    <div class="glass-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 30px; padding: 40px; display: flex; flex-direction: column; gap: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
+                        <h2 style="margin:0; font-size: 20px; font-weight: 800; color: var(--primary);">🚀 Message Instantané</h2>
+                        <div>
+                            <label style="display:block; margin-bottom:12px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 1px; font-size: 11px;">Contenu du message</label>
+                            <textarea id="notif-message" class="form-input" rows="5" 
+                                      placeholder="Ex: N'oubliez pas votre pointage KIZEO..." 
+                                      style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; width: 100%; color: white; padding: 20px; font-size: 17px; resize: none; transition: all 0.3s ease;"></textarea>
+                            <div id="char-count" style="text-align: right; margin-top: 8px; font-size: 12px; color: #666;">0 / 200</div>
+                        </div>
+
+                        <div id="notif-status" style="min-height: 30px; text-align: center;"></div>
+
+                        <button class="btn btn-primary" onclick="window.sendCustomNotification()" id="btn-send-notif" 
+                                style="height: 60px; border-radius: 20px; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; box-shadow: 0 10px 30px rgba(0, 122, 255, 0.25);">
+                            <span>Envoyer le message</span>
+                        </button>
+                    </div>
+
+                    <!-- Recipient Selection -->
+                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 30px; display: flex; flex-direction: column; overflow: hidden;">
+                        <div style="padding: 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 800; font-size: 14px;">Destinataires</span>
+                            <button onclick="window.toggleAllRecipients()" style="background: none; border: none; color: var(--primary); font-weight: 700; cursor: pointer; font-size: 12px;">Tout cocher</button>
+                        </div>
+                        
+                        <div id="recipient-list" style="height: 300px; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 6px;">
+                            <div style="text-align:center; padding: 30px; color: #555;">Chargement...</div>
+                        </div>
+
+                        <div style="padding: 15px; background: rgba(0,0,0,0.1); border-top: 1px solid rgba(255,255,255,0.05); text-align: center;">
+                            <span id="selected-count" style="font-size: 12px; color: #777;">0 sélectionné(s)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 2: AUTOMATISATIONS & RÉGLAGES -->
+                <div>
+                    <h2 style="font-size: 24px; font-weight: 800; margin-bottom: 25px; display: flex; align-items: center; gap: 12px;">
+                        <span style="background: var(--primary); width: 12px; height: 12px; border-radius: 3px;"></span>
+                        Réglages des Automatisations
+                    </h2>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px;">
+                        
+                        <!-- CARD: PLANNING -->
+                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px; transition: 0.3s;">
+                            <div style="font-size: 32px; margin-bottom: 15px;">📅</div>
+                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Alerte Planning</h3>
+                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Prévenir automatiquement le salarié lorsqu'une nouvelle tâche lui est assignée.</p>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-planning">ACTIF</b></span>
+                                <label class="switch-ui"><input type="checkbox" id="auto-planning" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
+                            </div>
+                        </div>
+
+                        <!-- CARD: VÉHICULE (KILOMÉTRAGE) -->
+                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px;">
+                            <div style="font-size: 32px; margin-bottom: 15px;">🚗</div>
+                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Rappel Kilométrage</h3>
+                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Rappel automatique chaque vendredi à 14h pour tous les détenteurs d'un véhicule.</p>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-mileage">ACTIF</b></span>
+                                <label class="switch-ui"><input type="checkbox" id="auto-mileage" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
+                            </div>
+                        </div>
+
+                        <!-- CARD: VÉHICULE (ÉCHÉANCES) -->
+                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px;">
+                            <div style="font-size: 32px; margin-bottom: 15px;">⏳</div>
+                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Échéances Véhicule</h3>
+                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Alerter le conducteur 500km ou 1 mois avant un entretien ou un contrôle technique.</p>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-deadline">ACTIF</b></span>
+                                <label class="switch-ui"><input type="checkbox" id="auto-deadline" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
+                            </div>
+                        </div>
+
+                        <!-- CARD: MATÉRIEL (SUIVI) -->
+                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px;">
+                            <div style="font-size: 32px; margin-bottom: 15px;">🛠️</div>
+                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Statut Matériel</h3>
+                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Notifier le demandeur dès qu'une commande est confirmée, commandée ou refusée.</p>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-material">ACTIF</b></span>
+                                <label class="switch-ui"><input type="checkbox" id="auto-material" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- SECTION 3: ALERTES ADMINISTRATEURS -->
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 30px; padding: 40px; margin-bottom: 60px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                        <div>
+                            <h2 style="margin:0; font-size: 22px; font-weight: 800; color: #FF9500;">🚨 Alertes Administrateurs</h2>
+                            <p style="color: #888; font-size: 14px; margin-top: 5px;">Configurer qui reçoit une notification immédiate pour chaque nouvelle demande de matériel.</p>
+                        </div>
+                        <button class="btn btn-secondary" onclick="window.saveAdminAlertSettings()" style="padding: 10px 25px; border-radius:12px;">Enregistrer les destinataires</button>
+                    </div>
+                    
+                    <div id="admin-alert-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
+                        <!-- Liste des admins avec cases à cocher -->
+                        <div style="text-align:center; padding: 20px; color: #666;">Chargement des administrateurs...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <style>
+            .automation-card:hover { transform: translateY(-5px); background: rgba(255,255,255,0.08); }
+            
+            /* Styles pour les Switchs */
+            .switch-ui { position: relative; display: inline-block; width: 46px; height: 26px; }
+            .switch-ui input { opacity: 0; width: 0; height: 0; }
+            .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 34px; border: 1px solid rgba(255,255,255,0.1); }
+            .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+            input:checked + .slider { background-color: var(--primary); border-color: var(--primary); }
+            input:focus + .slider { box-shadow: 0 0 1px var(--primary); }
+            input:checked + .slider:before { transform: translateX(20px); }
+            
+            .admin-alert-row {
+                padding: 15px 20px;
+                background: rgba(0,0,0,0.2);
+                border-radius: 15px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                cursor: pointer;
+                border: 1px solid transparent;
+            }
+            .admin-alert-row:hover { background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); }
+            .admin-alert-row.selected { border-color: #FF9500; background: rgba(255, 149, 0, 0.1); }
+        </style>
+    `;
+
+    try {
+        // Chargement des données
+        const [users, subsResult, configRes] = await Promise.all([
+            api.listUsers(),
+            fetch(`${config.api.workerUrl}/admin/notifications/subscribers`, { headers: await api.getAuthHeaders() }).then(r => r.json()),
+            fetch(`${config.api.workerUrl}/admin/notifications/config`, { headers: await api.getAuthHeaders() }).then(r => r.json())
+        ]);
+        
+        const subscriberUserIds = new Set(subsResult.map(s => s.user_id));
+        const adminAlertIds = new Set(configRes.admin_alert_ids || []);
+        
+        // Appliquer les réglages d'automatisation (toggles)
+        document.getElementById('auto-planning').checked = configRes.auto_planning !== false;
+        document.getElementById('auto-mileage').checked = configRes.auto_mileage !== false;
+        document.getElementById('auto-deadline').checked = configRes.auto_deadline !== false;
+        document.getElementById('auto-material').checked = configRes.auto_material !== false;
+
+        // Remplir la liste des destinataires (Envoi direct)
+        const list = document.getElementById('recipient-list');
+        list.innerHTML = "";
+        users.sort((a, b) => {
+            const subA = subscriberUserIds.has(a.id);
+            const subB = subscriberUserIds.has(b.id);
+            if (subA !== subB) return subB ? 1 : -1;
+            return (a.first_name || "").localeCompare(b.first_name || "");
+        });
+
+        users.forEach(u => {
+            const isSubbed = subscriberUserIds.has(u.id);
+            const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email;
+            const div = document.createElement('div');
+            div.className = `recipient-row ${isSubbed ? 'subbed' : ''}`;
+            div.dataset.userId = u.id;
+            div.onclick = () => { div.classList.toggle('selected'); window.updateSelectedCount(); };
+            div.innerHTML = `
+                <div class="checkbox-visual" style="width: 20px; height: 20px; border-radius: 6px; border: 2px solid rgba(255,255,255,0.2); display: flex; align-items:center; justify-content:center;">
+                    <div class="check-mark" style="width: 10px; height: 10px; background: var(--primary); border-radius: 2px; opacity: 0; transition: 0.2s;"></div>
+                </div>
+                <div style="flex:1;">
+                    <span style="font-weight: 700; font-size: 13px; ${!isSubbed ? 'opacity: 0.5;' : ''}">${name}</span>
+                    <div style="font-size:10px; opacity: 0.6;">${isSubbed ? '✓ Joignable' : '✕ Non inscrit'}</div>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+
+        // Remplir les alertes Administrateurs
+        const adminList = document.getElementById('admin-alert-list');
+        adminList.innerHTML = "";
+        const admins = users.filter(u => u.role === 'admin');
+        admins.forEach(u => {
+            const isSelected = adminAlertIds.has(u.id);
+            const div = document.createElement('div');
+            div.className = `admin-alert-row ${isSelected ? 'selected' : ''}`;
+            div.dataset.adminId = u.id;
+            div.onclick = () => { div.classList.toggle('selected'); };
+            div.innerHTML = `
+                <div style="width: 12px; height: 12px; border-radius: 50%; border: 2px solid ${isSelected ? '#FF9500' : '#444'}; background: ${isSelected ? '#FF9500' : 'transparent'};"></div>
+                <span style="font-weight: 600; font-size: 14px;">${u.first_name} ${u.last_name}</span>
+            `;
+            adminList.appendChild(div);
+        });
+
+        window.saveAutoSettings = async () => {
+            const notifSettings = {
+                auto_planning: document.getElementById('auto-planning').checked,
+                auto_mileage: document.getElementById('auto-mileage').checked,
+                auto_deadline: document.getElementById('auto-deadline').checked,
+                auto_material: document.getElementById('auto-material').checked
+            };
+            try {
+                // Utilisation de la config globale pour l'URL
+                await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
+                    body: JSON.stringify(notifSettings)
+                });
+            } catch (e) { console.error("Erreur sauvegarde : ", e); }
+        };
+
+        window.saveAdminAlertSettings = async () => {
+            const adminIds = Array.from(document.querySelectorAll('.admin-alert-row.selected')).map(el => el.dataset.adminId);
+            try {
+                await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
+                    body: JSON.stringify({ admin_alert_ids: adminIds })
+                });
+                alert("✅ Configuration des alertes administrateurs enregistrée !");
+            } catch (e) { alert("Erreur : " + e.message); }
+        };
+
+        window.updateSelectedCount();
+
+    } catch (e) {
+        console.error("Render error", e);
+    }
+};
+
+window.toggleAllRecipients = function() {
+    const rows = document.querySelectorAll('.recipient-row');
+    if (!rows.length) return;
+    const allSelected = Array.from(rows).every(r => r.classList.contains('selected'));
+    rows.forEach(r => r.classList.toggle('selected', !allSelected));
+    window.updateSelectedCount();
+};
+
+window.updateSelectedCount = function() {
+    const countEl = document.getElementById('selected-count');
+    if (!countEl) return;
+    
+    const selected = document.querySelectorAll('.recipient-row.selected');
+    countEl.innerText = `${selected.length} destinataire(s) sélectionné(s)`;
+    
+    // Styliser les checkboxes visuelles
+    document.querySelectorAll('.recipient-row').forEach(r => {
+        const check = r.querySelector('.check-mark');
+        const box = r.querySelector('.checkbox-visual');
+        if (check && box) {
+            if (r.classList.contains('selected')) {
+                check.style.opacity = '1';
+                box.style.borderColor = 'var(--primary)';
+            } else {
+                check.style.opacity = '0';
+                box.style.borderColor = 'rgba(255,255,255,0.2)';
+            }
+        }
+    });
+};
+
+window.setNotifTemplate = function(text) {
+    const textarea = document.getElementById('notif-message');
+    if (textarea) {
+        textarea.value = text;
+        textarea.dispatchEvent(new Event('input'));
+    }
+};
+
+window.sendCustomNotification = async function() {
+    const selectedRows = document.querySelectorAll('.recipient-row.selected');
+    const message = document.getElementById('notif-message') ? document.getElementById('notif-message').value.trim() : "";
+    const btn = document.getElementById('btn-send-notif');
+    const status = document.getElementById('notif-status');
+
+    if (!message) {
+        alert("⚠️ Veuillez saisir un message.");
+        return;
+    }
+
+    if (selectedRows.length === 0) {
+        if (!confirm("📢 Aucun collaborateur sélectionné. Voulez-vous envoyer ce message à TOUS les collaborateurs ?")) return;
+    }
+
+    const userIds = Array.from(selectedRows).map(r => r.dataset.userId);
+    const payload = userIds.length > 0 ? { userIds, message } : { userId: 'all', message };
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = "⌛ Envoi...";
+    }
+
+    try {
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/send`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(await api.getAuthHeaders())
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) throw new Error(`Erreur ${response.status}: ${await response.text()}`);
+        const result = await response.json();
+        
+        if (result.success) {
+            if (status) status.innerHTML = `<span style='color: #34C759; font-weight: 800;'>✅ Notification envoyée !</span>`;
+            if (document.getElementById('notif-message')) document.getElementById('notif-message').value = "";
+            
+            selectedRows.forEach(r => r.classList.remove('selected'));
+            window.updateSelectedCount();
+            
+            setTimeout(() => { if (status) status.innerHTML = ''; }, 5000);
+        } else {
+            if (status) status.innerHTML = `<span style='color: #FF3B30;'>⚠️ ${result.details || 'Échec'}</span>`;
+        }
+    } catch (e) {
+        if (status) status.innerHTML = `<span style='color: #FF3B30;'>❌ ${e.message}</span>`;
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = "Envoyer le message";
+        }
+    }
 };
 
 initDashboard();

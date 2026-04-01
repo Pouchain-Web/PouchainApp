@@ -5,7 +5,8 @@ const config = {
     },
     api: {
         workerUrl: "https://pouchain-api.quentinvert007.workers.dev"
-    }
+    },
+    vapidPublicKey: "BOkg1n8L3oTWDkfhsv1h1XFBCRP3AWQBamVOo1xeSUiG0ThUZxWaMHGytIvy06CbIKmCBg9vsvf9xROaX_GEOY0"
 };
 
 export default config;

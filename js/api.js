@@ -10,6 +10,9 @@ const getAuthHeaders = async () => {
 };
 
 export const api = {
+    // Add shared helper
+    getAuthHeaders,
+
     // List all files (moved below)
 
 
@@ -351,6 +354,27 @@ export const api = {
         const response = await fetch(`${config.api.workerUrl}/admin/tasks/archive`, {
             method: 'POST',
             headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getPlanningClosedDays() {
+        const response = await fetch(`${config.api.workerUrl}/planning/closed-days`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async setPlanningClosedDays(days) {
+        const response = await fetch(`${config.api.workerUrl}/admin/planning/closed-days`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(days)
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -755,6 +779,33 @@ export const api = {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ machine_db_id: machineDbId, action_type: actionType, description })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // --- Push Notifications ---
+    async sendNotification(userId, message) {
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/send`, {
+            method: 'POST',
+            headers: { 
+                ...(await getAuthHeaders()),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ userId, message })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async subscribePush(subscription) {
+        const response = await fetch(`${config.api.workerUrl}/notifications/subscribe`, {
+            method: 'POST',
+            headers: { 
+                ...(await getAuthHeaders()),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ subscription })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
