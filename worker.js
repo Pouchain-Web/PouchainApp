@@ -93,7 +93,8 @@ export default {
                         !obj.key.startsWith('fullscreen_slides/') &&
                         !obj.key.startsWith('buildings/') &&
                         !obj.key.startsWith('machines/') &&
-                        !obj.key.startsWith('app_dist/')
+                        !obj.key.startsWith('app_dist/') &&
+                        !obj.key.startsWith('autre/')
                     );
                 }
 
@@ -1675,7 +1676,7 @@ export default {
                         </div>
                     `;
 
-                    await sendResendEmail(env, "quentinvert007@gmail.com", `🛠️ Demande Matériel : ${material_name} (${senderName})`, emailBody);
+                    await sendResendEmail(env, "pprayez@pouchain.fr", `🛠️ Demande Matériel : ${material_name} (${senderName})`, emailBody);
 
                 } catch (e) { console.error("Notification alert failed", e); }
 
