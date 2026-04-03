@@ -92,9 +92,12 @@ export default {
                         !obj.key.startsWith('archives/') &&
                         !obj.key.startsWith('fullscreen_slides/') &&
                         !obj.key.startsWith('buildings/') &&
-                        !obj.key.startsWith('machines/') &&
+                        !obj.key.startsWith('machines/') && 
+                        !obj.key.startsWith('machines_photos/') &&
+                        !obj.key.startsWith('autre/') &&
                         !obj.key.startsWith('app_dist/') &&
-                        !obj.key.startsWith('autre/')
+                        !obj.key.endsWith('.json') &&
+                        !obj.key.startsWith('.meta_')
                     );
                 }
 
@@ -1683,6 +1686,39 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // --- ROUTE: MACHINE FAMILIES ---
+            if (method === "GET" && url.pathname === "/admin/machine-families") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_families?select=*&order=name.asc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machine-families") {
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_families`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/admin/machine-families") {
+                const id = url.searchParams.get('id');
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_families?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                return new Response(JSON.stringify({ success: res.ok }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: MACHINES (Admin/Map) ---
             if (method === "GET" && url.pathname === "/admin/machines") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -1699,8 +1735,21 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const { id, ...machineData } = body;
-                const upsertBody = { ...machineData, updated_at: new Date().toISOString() };
+                const { 
+                    id, machine_id, name, type, description, latitude, longitude, 
+                    last_maintenance_date, next_maintenance_date,
+                    family, serial_number, periodicity, status_active, 
+                    vgp_status, vgp_observations, assigned_to, 
+                    commissioning_date, last_control_type, expiration_date, comments
+                } = body;
+                const upsertBody = { 
+                    machine_id, name, type, description, latitude, longitude, 
+                    last_maintenance_date, next_maintenance_date,
+                    family, serial_number, periodicity, status_active, 
+                    vgp_status, vgp_observations, assigned_to, 
+                    commissioning_date, last_control_type, expiration_date, comments,
+                    updated_at: new Date().toISOString() 
+                };
                 if (id) upsertBody.id = id;
                 const res = await fetch(`${supabaseUrl}/rest/v1/machines?on_conflict=machine_id`, {
                     method: "POST",
@@ -1722,12 +1771,83 @@ export default {
                 if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Delete Photo from R2 if exists
+                try {
+                    await env.MY_BUCKET.delete(`machines_photos/${id}.png`);
+                } catch(e) {}
+
                 const res = await fetch(`${supabaseUrl}/rest/v1/machines?id=eq.${id}`, {
                     method: "DELETE",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MACHINE MAINTENANCE HISTORY ---
+            if (method === "GET" && url.pathname === "/admin/machines/maintenance") {
+                const machineId = url.searchParams.get('machine_id');
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                let query = `${supabaseUrl}/rest/v1/material_maintenance_history?select=*,profiles(first_name,last_name)&order=date.desc&limit=50`;
+                if (machineId) query += `&machine_id=eq.${machineId}`;
+
+                const res = await fetch(query, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }});
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machines/maintenance") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { machine_id, details, next_maintenance_date, vgp_status, vgp_observations, last_control_type } = body;
+                if (!machine_id) return new Response("Missing machine_id", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Insert History Entry
+                const histRes = await fetch(`${supabaseUrl}/rest/v1/material_maintenance_history`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        machine_id, user_id: user.id, details, next_maintenance_date, 
+                        date: new Date().toISOString() 
+                    })
+                });
+                if (!histRes.ok) return new Response(await histRes.text(), { status: histRes.status, headers: corsHeaders });
+
+                // 2. Update Machine Status & Dates
+                const machUpdate = { 
+                    last_maintenance_date: new Date().toISOString().split('T')[0],
+                    next_maintenance_date: next_maintenance_date,
+                    vgp_status: vgp_status || null,
+                    vgp_observations: vgp_observations || null,
+                    last_control_type: last_control_type || 'Maintenance'
+                };
+                await fetch(`${supabaseUrl}/rest/v1/machines?id=eq.${machine_id}`, {
+                    method: "PATCH",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(machUpdate)
+                });
+
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MACHINE PHOTO UPLOAD (Admin) ---
+            if (method === "POST" && url.pathname === "/admin/machines/photo") {
+                const formData = await request.formData();
+                const file = formData.get("file");
+                const machineId = formData.get("machineId");
+
+                if (!file || !machineId) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+
+                const key = `machines_photos/${machineId}.png`;
+                await env.MY_BUCKET.put(key, file, {
+                    httpMetadata: { contentType: file.type || "image/png" }
+                });
+
+                return new Response(JSON.stringify({ success: true, key }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: MACHINE LOGS ---
@@ -1940,7 +2060,10 @@ export default {
                     auto_planning: config.auto_planning !== false,
                     auto_mileage: config.auto_mileage !== false,
                     auto_deadline: config.auto_deadline !== false,
-                    auto_material: config.auto_material !== false
+                    auto_material: config.auto_material !== false,
+                    maint_alert_days: config.maint_alert_days || 30,
+                    maint_alert_userIds: config.maint_alert_userIds || [],
+                    maint_alert_reps: config.maint_alert_reps || 1
                 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
@@ -1957,6 +2080,9 @@ export default {
                 if (body.auto_mileage !== undefined) upsertBody.auto_mileage = body.auto_mileage;
                 if (body.auto_deadline !== undefined) upsertBody.auto_deadline = body.auto_deadline;
                 if (body.auto_material !== undefined) upsertBody.auto_material = body.auto_material;
+                if (body.maint_alert_days !== undefined) upsertBody.maint_alert_days = body.maint_alert_days;
+                if (body.maint_alert_userIds !== undefined) upsertBody.maint_alert_userIds = body.maint_alert_userIds;
+                if (body.maint_alert_reps !== undefined) upsertBody.maint_alert_reps = body.maint_alert_reps;
 
                 await fetch(`${supabaseUrl}/rest/v1/material_request_config`, {
                     method: "POST",
@@ -1985,12 +2111,150 @@ export default {
                 return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // --- ROUTE: ADMIN NOTIFICATION SCHEDULES ---
+            if (method === "GET" && url.pathname.endsWith("/admin/notifications/schedules")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/notification_schedules?select=*&order=created_at.desc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname.endsWith("/admin/notifications/schedules")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/notification_schedules`, {
+                    method: "POST",
+                    headers: { 
+                        "apikey": serviceKey, 
+                        "Authorization": `Bearer ${serviceKey}`, 
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates,return=representation"
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname.endsWith("/admin/notifications/schedules")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const id = url.searchParams.get('id');
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/notification_schedules?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: ADMIN SYNC ALL USERS (Mock for now, returns all profiles) ---
             if (method === "POST" && url.pathname.endsWith("/admin/notifications/sync")) {
                  // On renvoie juste le signal de succÃ¨s pour rafraÃ®chir l'interface
                  return new Response(JSON.stringify({ success: true, message: "Synchronisation effectuÃ©e" }), {
                      headers: { ...corsHeaders, "Content-Type": "application/json" }
                  });
+            }
+
+            // --- ROUTE: FRITERIE ORDERS (User Mobile) ---
+            if (method === "GET" && url.pathname === "/friterie/order") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?user_id=eq.${user.id}&select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/friterie/order") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { item_name, category, details, sauce } = body;
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: user.id, item_name, category, details, sauce })
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/friterie/order") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { id } = body;
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?id=eq.${id}&user_id=eq.${user.id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "GET" && url.pathname === "/friterie/all-orders") {
+                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                 const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                 // 1. Fetch Orders
+                 const ordersRes = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                 });
+                 if (!ordersRes.ok) return new Response(await ordersRes.text(), { status: ordersRes.status, headers: corsHeaders });
+                 const orders = await ordersRes.json();
+
+                 // 2. Fetch Profiles for names
+                 const profilesRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,first_name,last_name`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                 });
+                 const profiles = profilesRes.ok ? await profilesRes.json() : [];
+
+                 // 3. Merge
+                 const enriched = orders.map(o => {
+                    const p = profiles.find(p => p.id === o.user_id);
+                    return { ...o, profiles: p || null };
+                 });
+
+                 return new Response(JSON.stringify(enriched), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "GET" && url.pathname === "/admin/friterie/orders") {
+                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                 const serviceKey = env.SUPABASE_SERVICE_KEY;
+                 const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*,profiles(first_name,last_name)`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                 });
+                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                 return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // 404
@@ -2007,76 +2271,177 @@ export default {
 
         if (serviceKey) {
             try {
-                // RequÃªte simple pour maintenir l'activitÃ© de la base de donnÃ©es
+                // 1. Keep-alive Supabase
                 const res = await fetch(`${supabaseUrl}/rest/v1/profiles?limit=1`, {
-                    headers: {
-                        "apikey": serviceKey,
-                        "Authorization": `Bearer ${serviceKey}`
-                    }
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
+                if (res.ok) console.log("Ping Supabase keep-alive réussi.");
 
-                if (res.ok) {
-                    console.log("Ping Supabase keep-alive rÃ©ussi.");
-                } else {
-                    console.error("Ping Supabase keep-alive Ã©chouÃ©:", res.status, await res.text());
-                }
-
-                // 2. Automations
+                // 2. Load Config
                 const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1&select=*`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 const configData = await configRes.json();
                 const globalConfig = configData[0] || {};
-                const hour = now.getHours() + 2; // Assume UTC+2 for Paris
+                
+                const now = new Date();
+                const day = now.getUTCDay(); // 0:Sun, 1:Mon, ..., 5:Fri, 6:Sat
+                const hour = (now.getUTCHours() + 2) % 24; // Paris Time (approx)
+                const min = now.getUTCMinutes();
 
-                // A. Rappel KilomÃ©trage (Vendredi aprÃ¨s-midi)
-                if (globalConfig.auto_mileage !== false && day === 5 && hour >= 14 && hour < 16) {
-                    const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=assigned_user_id`, {
-                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                    });
-                    const vehicles = await vRes.json();
-                    const userIds = [...new Set(vehicles.map(v => v.assigned_user_id))];
-                    if (userIds.length > 0) {
-                        await sendPushNotification(env, userIds, "🚗 Rappel : Veuillez mettre à jour le kilométrage de votre véhicule dans l'application.");
-                    }
-                }
-
-                // B. Échéances Contrôle Technique / Entretien
-                if (globalConfig.auto_deadline !== false) {
-                    const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=*`, {
-                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                    });
-                    const vehicles = await vRes.json();
-                    for (const v of vehicles) {
-                        let alertTriggered = false;
-                        let reason = "";
-                        if (v.next_maintenance_km && v.last_mileage && (v.next_maintenance_km - v.last_mileage < 500)) {
-                            alertTriggered = true;
-                            reason = `Entretien proche (${v.next_maintenance_km} km)`;
-                        }
-                        if (v.next_maintenance_date) {
-                            const deadline = new Date(v.next_maintenance_date);
-                            const diffDays = (deadline - now) / (1000 * 60 * 60 * 24);
-                            if (diffDays < 30 && diffDays > -1) {
-                                alertTriggered = true;
-                                reason = `Entretien/CT proche (${new Date(v.next_maintenance_date).toLocaleDateString()})`;
+                // AUTOMATIONS
+                
+                // A. Rappel Kilométrage (Vendredi après-midi)
+                try {
+                    if (globalConfig.auto_mileage !== false && day === 5 && hour >= 14 && hour < 16) {
+                        const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=assigned_user_id`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        const vehicles = await vRes.json();
+                        if (Array.isArray(vehicles)) {
+                            const userIds = [...new Set(vehicles.map(v => v.assigned_user_id))];
+                            if (userIds.length > 0) {
+                                await sendPushNotification(env, userIds, "🚗 Rappel : Veuillez mettre à jour le kilométrage de votre véhicule dans l'application.");
                             }
                         }
-                        if (alertTriggered) {
-                            await sendPushNotification(env, v.assigned_user_id, `🚗 Échéance véhicule (${v.plate_number || 'Véhicule'}) : ${reason}.`);
+                    }
+                } catch (e) { console.error("Auto-mileage error:", e); }
+
+                // C. Friterie Notification (Mercredi 11:00)
+                try {
+                    if (day === 3 && hour === 11) {
+                        const subRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=user_id`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        if (subRes.ok) {
+                            const subsData = await subRes.json();
+                            if (Array.isArray(subsData)) {
+                                const userIds = [...new Set(subsData.map(s => s.user_id))];
+                                if (userIds.length > 0) {
+                                    await sendPushNotification(env, userIds, "🍟 Fait ta commande ma belle frite belge !");
+                                }
+                            }
                         }
                     }
-                }
+                } catch (e) { console.error("Friterie notification error:", e); }
 
-                // C. Archivage Hebdo (Lundi 08:00)
-                if (day === 1 && hour === 8) {
-                    await performArchiving(env);
-                }
+                // D. Friterie Cleanup (19h00)
+                try {
+                    if (hour === 19) {
+                        await fetch(`${supabaseUrl}/rest/v1/friterie_orders`, {
+                            method: "DELETE",
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        console.log("Friterie orders cleared.");
+                    }
+                } catch (e) { console.error("Friterie cleanup error:", e); }
+
+                // E. Échéances Véhicules
+                try {
+                    if (globalConfig.auto_deadline !== false) {
+                        const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=*`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        const vehicles = await vRes.json();
+                        if (Array.isArray(vehicles)) {
+                            for (const v of vehicles) {
+                                let alertTriggered = false;
+                                let reason = "";
+                                if (v.next_maintenance_km && v.last_mileage && (v.next_maintenance_km - v.last_mileage < 500)) {
+                                    alertTriggered = true;
+                                    reason = `Entretien proche (${v.next_maintenance_km} km)`;
+                                }
+                                if (v.next_maintenance_date) {
+                                    const deadline = new Date(v.next_maintenance_date);
+                                    const diffDays = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                                    if (diffDays < 30 && diffDays > -1) {
+                                        alertTriggered = true;
+                                        reason = `Entretien/CT proche (${new Date(v.next_maintenance_date).toLocaleDateString()})`;
+                                    }
+                                }
+                                if (alertTriggered) {
+                                    await sendPushNotification(env, v.assigned_user_id, `🚗 Échéance véhicule (${v.plate_number || 'Véhicule'}) : ${reason}.`);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("Vehicle deadlines error:", e); }
+
+                // F. Maintenance Matériel
+                try {
+                    if (globalConfig.maint_alert_userIds && globalConfig.maint_alert_userIds.length > 0) {
+                        const mRes = await fetch(`${supabaseUrl}/rest/v1/machines?next_maintenance_date=is.not.null&select=*`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        if (mRes.ok) {
+                            const machines = await mRes.json();
+                            if (Array.isArray(machines)) {
+                                const alertDays = globalConfig.maint_alert_days || 30;
+                                for (const m of machines) {
+                                    const deadline = new Date(m.next_maintenance_date);
+                                    const diffDays = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                                    if (diffDays <= alertDays && diffDays > 0) {
+                                        await sendPushNotification(env, globalConfig.maint_alert_userIds, `🛠️ Maintenance : Le matériel "${m.name || m.machine_id}" arrive à échéance le ${new Date(m.next_maintenance_date).toLocaleDateString()}.`);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("Material maintenance error:", e); }
+
+                // G. General Scheduled Notifications
+                try {
+                    const scheduleRes = await fetch(`${supabaseUrl}/rest/v1/notification_schedules?active=eq.true&select=*`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (scheduleRes.ok) {
+                        const schedules = await scheduleRes.json();
+                        if (Array.isArray(schedules)) {
+                            const todayStr = now.toISOString().split('T')[0];
+                            for (const s of schedules) {
+                                let shouldSend = false;
+                                const lastSentStr = s.last_sent_at ? s.last_sent_at.split('T')[0] : null;
+                                if (lastSentStr === todayStr) continue;
+
+                                if (s.hour !== undefined && s.hour !== null && hour !== s.hour) continue;
+                                if (s.minute !== undefined && s.minute !== null && min !== s.minute) continue;
+
+                                switch (s.frequency) {
+                                    case 'daily': shouldSend = true; break;
+                                    case 'weekly': if (day === s.day_of_week) shouldSend = true; break;
+                                    case 'monthly': if (now.getUTCDate() === s.day_of_month) shouldSend = true; break;
+                                    case 'yearly': if ((now.getUTCMonth() + 1) === s.month && now.getUTCDate() === s.day_of_month) shouldSend = true; break;
+                                }
+
+                                if (shouldSend) {
+                                    let targetIds = null;
+                                    if (s.target_type === 'specific') {
+                                        targetIds = s.target_user_ids || (s.user_id ? [s.user_id] : null);
+                                    }
+                                    const result = await sendPushNotification(env, targetIds, s.message);
+                                    if (result.success) {
+                                        await fetch(`${supabaseUrl}/rest/v1/notification_schedules?id=eq.${s.id}`, {
+                                            method: "PATCH",
+                                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                                            body: JSON.stringify({ last_sent_at: now.toISOString() })
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("General schedules error:", e); }
+
+                // H. Archivage Hebdo (Lundi 08:00)
+                try {
+                    if (day === 1 && hour === 8) {
+                        await performArchiving(env);
+                    }
+                } catch (e) { console.error("Archiving error:", e); }
+
             } catch (err) {
-                console.error("Scheduled task error:", err);
+                console.error("Scheduled global error:", err);
             }
-        } else {
-            console.error("Aucune clé SUPABASE_SERVICE_KEY trouvée.");
         }
     }
 };
@@ -2192,35 +2557,43 @@ async function sendPushNotification(env, userId, message) {
     const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
     const serviceKey = env.SUPABASE_SERVICE_KEY;
     
-    let query = `${supabaseUrl}/rest/v1/user_push_subscriptions?select=subscription&order=created_at.desc&limit=1`;
+    let query = `${supabaseUrl}/rest/v1/user_push_subscriptions?select=subscription`;
     if (userId) {
-        if (Array.isArray(userId)) {
-            // For multiple users, we don't use limit=1 here as it would limit the whole result set.
-            // But we already have the cleanup on subscribe, so it's less critical.
-            // For single userId, we pick the latest.
-            query = `${supabaseUrl}/rest/v1/user_push_subscriptions?select=subscription&user_id=in.(${userId.join(',')})&order=created_at.desc`;
-        } else {
+        if (Array.isArray(userId) && userId.length > 0) {
+            query += `&user_id=in.(${userId.join(',')})`;
+        } else if (typeof userId === 'string') {
             query += `&user_id=eq.${userId}`;
         }
     }
+    query += `&order=created_at.desc`;
     
     const res = await fetch(query, {
         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
     });
     
     if (!res.ok) return { success: false, error: await res.text() };
-    const subs = await res.json();
-    if (subs.length === 0) return { success: true, count: 0, message: "Aucun abonné trouvé" };
+    const rawSubs = await res.json();
+    if (rawSubs.length === 0) return { success: true, count: 0, message: "Aucun abonné trouvé" };
+
+    // Formatage et parsing des abonnements
+    const subs = rawSubs.map(s => {
+        let subData = s.subscription;
+        if (typeof subData === 'string' && subData.trim().startsWith('{')) {
+            try { subData = JSON.parse(subData); } catch(e) { }
+        }
+        return subData;
+    }).filter(Boolean);
 
     let count = 0;
     let errors = [];
 
     // Pre-fetch FCM Token if there are Capacitor subscriptions
     let fcmAccessToken = null;
-    const hasCapacitor = subs.some(s => s.subscription && s.subscription.type === 'capacitor');
+    const hasCapacitor = subs.some(s => s.type === 'capacitor' || s.token);
     if (hasCapacitor) {
         try {
-            fcmAccessToken = await getGCPAccessToken(env.FIREBASE_SERVICE_ACCOUNT);
+            const sa = typeof env.FIREBASE_SERVICE_ACCOUNT === 'string' ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT) : env.FIREBASE_SERVICE_ACCOUNT;
+            fcmAccessToken = await getGCPAccessToken(sa);
         } catch (e) {
             console.error("FCM Auth Error:", e);
             errors.push("Auth Firebase échouée : " + e.message);
@@ -2232,20 +2605,16 @@ async function sendPushNotification(env, userId, message) {
         body: message,
         data: {
             message: message,
-            // Import: activity for capacitor to handle the tap
             click_action: "FCM_PLUGIN_ACTIVITY"
         }
     };
 
-    for (const sub of subs) {
+    const seenTokens = new Set();
+    for (const s of subs) {
         try {
-            let s = sub.subscription;
-            if (typeof s === 'string' && s.trim().startsWith('{')) {
-                try { s = JSON.parse(s); } catch(e) { }
-            }
-            if (!s) continue;
-
             const token = s.token || (s.type === 'capacitor' ? s.token : null);
+            if (!token || seenTokens.has(token)) continue;
+            seenTokens.add(token);
             
             if (token) {
                 if (!fcmAccessToken) continue;
@@ -2370,10 +2739,10 @@ async function sendResendEmail(env, to, subject, html) {
         });
         const data = await res.json();
         if (!res.ok) {
-            console.error("Resend API Error:", JSON.stringify(data));
+            console.error("Resend API Error:", data);
             return { error: data };
         }
-        console.log("Resend email sent successfully:", JSON.stringify(data));
+        console.log("Resend email sent successfully:", data);
         return data;
     } catch (e) {
         console.error("Resend Fetch Error:", e);

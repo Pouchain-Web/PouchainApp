@@ -1197,7 +1197,9 @@ async function renderAdminView(session) {
                     <span>🚗 Gestion des véhicules</span>
                     <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
                 </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMap()" id="nav-map">🗺️ Carte des Machines</a>
+                <div class="nav-section-title" style="font-size: 11px; text-transform: uppercase; color: #8E8E93; margin: 20px 0 10px 10px; font-weight: 700;">🚜 Gestion du Parc</div>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMap()" id="nav-map" style="padding-left: 25px;">📍 Carte des Machines</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance" style="padding-left: 25px;">🛠️ Maintenance Matériel</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
@@ -6463,6 +6465,558 @@ window.logAdminVehicleFuel = async function(vehicleId, dkvCard) {
     };
 };
 
+// --- GESTION DU PARC : MAINTENANCE MATERIEL ---
+window.renderAdminMaintenance = async function() {
+    const content = document.getElementById('admin-content');
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    const navItem = document.getElementById('nav-maintenance');
+    if (navItem) navItem.classList.add('active');
+
+    content.innerHTML = `
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 40px; background: rgba(0,0,0,0.2); backdrop-filter: blur(20px);">
+            <!-- Header (Style Flotte Automobile) -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:40px;">
+                <div style="background:#111; padding:12px 30px; border-radius:18px; display:flex; align-items:center; gap:12px; box-shadow:0 4px 20px rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05);">
+                    <span style="font-size:24px;">🛠️</span>
+                    <h1 style="margin:0; font-size:24px; font-weight:800; color:white;">Maintenance Matériel</h1>
+                </div>
+                
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <!-- Search & Filter Area Integrated -->
+                    <div style="position: relative; display: flex; align-items: center; gap: 10px; margin-right: 10px;">
+                        <input type="text" id="maintenance-search" placeholder="Rechercher..." style="width: 220px; height: 44px; background: #111; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; color: white; padding: 0 16px 0 40px; font-size: 14px; outline: none;">
+                        <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; opacity: 0.5;">🔍</span>
+                        
+                        <select id="maintenance-family-filter" style="height: 44px; background: #111; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 12px center; background-size: 14px;">
+                            <option value="">Toutes les familles</option>
+                        </select>
+                    </div>
+
+                    <button class="btn-primary" onclick="window.openMachineEditModal()" style="border-radius:50px; padding:12px 25px; background:#34C759; font-weight:700; display:flex; align-items:center; gap:8px; border:none; color:white; cursor:pointer;">
+                        <span style="font-size:18px;">+</span> Ajouter Matériel
+                    </button>
+                    
+                    <button class="btn-secondary" onclick="window.openManageFamiliesModal()" style="border-radius:50px; padding:10px 20px; background:#111; border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:8px; color:white; cursor:pointer;">
+                        <span style="font-size:16px;">📁</span> Familles
+                    </button>
+
+                    <button onclick="window.renderAdminMaintenance()" title="Rafraîchir" style="width: 44px; height: 44px; border-radius: 50px; background: #111; border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <style>
+                .maint-search-input:focus { background: rgba(255,255,255,0.08) !important; border-color: rgba(255,255,255,0.3) !important; width: 380px !important; }
+                .btn-maintenance-sub:hover { background: rgba(255,255,255,0.1) !important; transform: translateY(-1px); }
+            </style>
+
+            <div style="flex: 1; overflow-y: auto; padding: 40px;">
+                <div class="glass-panel" style="overflow: hidden; border-radius: 20px;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;">Photo</th>
+                                <th>ID (MI)</th>
+                                <th>Nom / Marque</th>
+                                <th>Famille</th>
+                                <th>N° de Série</th>
+                                <th>Attribution</th>
+                                <th>Statut VGP</th>
+                                <th>Validité Maint.</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="maintenance-table-body">
+                            <tr><td colspan="9" style="text-align: center; padding: 40px;">Chargement du matériel...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    try {
+        const [machines, families] = await Promise.all([
+            api.getMachines(),
+            api.getMachineFamilies()
+        ]);
+        
+        const tbody = document.getElementById('maintenance-table-body');
+        const familyFilter = document.getElementById('maintenance-family-filter');
+        
+        // Populate family filter
+        families.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            opt.innerText = f.name;
+            familyFilter.appendChild(opt);
+        });
+
+        const renderTable = () => {
+            const searchText = document.getElementById('maintenance-search').value.toLowerCase();
+            const selectedFamily = familyFilter.value;
+
+            const list = machines.filter(m => {
+                const matchesSearch = m.machine_id.toLowerCase().includes(searchText) || 
+                                     (m.name && m.name.toLowerCase().includes(searchText)) ||
+                                     (m.serial_number && m.serial_number.toLowerCase().includes(searchText)) ||
+                                     (m.assigned_to && m.assigned_to.toLowerCase().includes(searchText));
+                const matchesFamily = !selectedFamily || m.family === selectedFamily;
+                return matchesSearch && matchesFamily;
+            });
+
+            if (list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 40px; color: #8E8E93;">Aucun matériel trouvé</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(m => {
+                const nextDate = m.next_maintenance_date ? new Date(m.next_maintenance_date) : null;
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                
+                let validityHtml = '--';
+                if (nextDate) {
+                    let color = '#2da140';
+                    if (nextDate < today) color = '#FF3B30';
+                    else if (nextDate < new Date(today.getTime() + 15 * 24 * 60 * 60 * 1000)) color = '#FF9500';
+                    validityHtml = `<div style="color: ${color}; font-weight: 700;">${nextDate.toLocaleDateString('fr-FR')}</div>`;
+                }
+
+                // VGP Status Badge
+                let vgpStatusHtml = '<span style="color: #8E8E93;">--</span>';
+                if (m.vgp_status === 'OK') vgpStatusHtml = '<span class="badge badge-success">VGP OK</span>';
+                else if (m.vgp_status === 'KO') vgpStatusHtml = '<span class="badge badge-danger">VGP KO</span>';
+
+                const photoUrl = `${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}`;
+
+                return `
+                    <tr onclick="window.openMachineDetailModal('${m.id}')" style="cursor: pointer; opacity: ${m.status_active === false ? '0.5' : '1'};">
+                        <td>
+                            <div style="width: 48px; height: 48px; background: rgba(255,255,255,0.05); border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.1);">
+                                <img src="${photoUrl}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.2'; this.style.filter='invert(1)';" style="width: 100%; height: 100%; object-fit: cover;">
+                            </div>
+                        </td>
+                        <td><div style="font-weight: 700; color: white;">${window.escapeHTML(m.machine_id)}</div></td>
+                        <td>
+                            <div style="font-weight: 600; color: rgba(255,255,255,0.9);">${window.escapeHTML(m.name || '--')}</div>
+                            <div style="font-size: 11px; color: #8E8E93;">${window.escapeHTML(m.brand || '--')}</div>
+                        </td>
+                        <td><span class="badge" style="background: rgba(255,255,255,0.05); color: #8E8E93;">${window.escapeHTML(m.family || '--')}</span></td>
+                        <td><code style="font-size: 11px;">${window.escapeHTML(m.serial_number || '--')}</code></td>
+                        <td><div style="font-size: 13px;">👤 ${window.escapeHTML(m.assigned_to || '--')}</div></td>
+                        <td>${vgpStatusHtml}</td>
+                        <td>${validityHtml}</td>
+                        <td style="text-align: right;">
+                            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                                <button onclick="event.stopPropagation(); window.openMachineEditModal('${m.id}')" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 50px; background: rgba(255, 149, 0, 0.15); border: 1px solid rgba(255, 149, 0, 0.3); color: #FF9500; font-size: 12px; font-weight: 800; cursor: pointer; transition: all 0.2s; white-space: nowrap;">
+                                    <span style="font-size: 14px;">✏️</span> Modifier
+                                </button>
+                                <button onclick="event.stopPropagation(); window.deleteAdminMachine('${m.id}')" title="Supprimer" style="width: 36px; height: 36px; border-radius: 50px; background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); color: #FF3B30; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        };
+
+        renderTable();
+
+        document.getElementById('maintenance-search').oninput = renderTable;
+        familyFilter.onchange = renderTable;
+
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 40px; color: #FF3B30;">Erreur: ${e.message}</td></tr>`;
+    }
+};
+
+window.openMachineDetailModal = async function(id) {
+    try {
+        const machines = await api.getMachines();
+        const m = machines.find(item => item.id === id);
+        if (!m) return;
+
+        const history = await api.getMachineMaintenanceHistory(m.id);
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '1000000';
+        modal.innerHTML = `
+            <div class="modal-box glass-panel" style="width: 900px; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #1C1C1E; border-radius: 24px;">
+                <div style="padding: 30px; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: flex-start; gap: 30px;">
+                    <div style="width: 140px; height: 140px; background: rgba(0,0,0,0.3); border-radius: 20px; overflow: hidden; border: 2px solid rgba(255,255,255,0.1); flex-shrink: 0;">
+                        <img src="${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.2'; this.style.filter='invert(1)';" style="width: 100%; height: 100%; object-fit: cover;">
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div>
+                                <h2 style="margin: 0; font-size: 28px; font-weight: 800; color: white;">${window.escapeHTML(m.name || m.description || m.machine_id)}</h2>
+                                <p style="margin: 4px 0 0; color: #8E8E93; font-size: 16px;"><strong>ID :</strong> ${window.escapeHTML(m.machine_id)} | ${window.escapeHTML(m.description || '')}</p>
+                            </div>
+                            <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; cursor: pointer; opacity: 0.5; font-size: 24px;">&times;</button>
+                        </div>
+                        <div style="display: flex; gap: 24px;">
+                            <div style="background: rgba(255,255,255,0.05); padding: 12px 20px; border-radius: 12px;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: #8E8E93; letter-spacing: 0.5px; margin-bottom: 4px;">Marque</div>
+                                <div style="font-weight: 600; font-size: 15px;">${window.escapeHTML(m.brand || '--')}</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.05); padding: 12px 20px; border-radius: 12px;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: #8E8E93; letter-spacing: 0.5px; margin-bottom: 4px;">Emplacement</div>
+                                <div style="font-weight: 600; font-size: 15px;">${window.escapeHTML(m.location || '--')}</div>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.05); padding: 12px 20px; border-radius: 12px;">
+                                <div style="font-size: 11px; text-transform: uppercase; color: #8E8E93; letter-spacing: 0.5px; margin-bottom: 4px;">Prochaine Maintenance</div>
+                                <div style="font-weight: 600; font-size: 15px; color: ${m.next_maintenance_date ? '#FF9500' : 'inherit'}">${m.next_maintenance_date ? new Date(m.next_maintenance_date).toLocaleDateString('fr-FR') : '--'}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="flex: 1; display: grid; grid-template-columns: 1fr 380px; overflow: hidden;">
+                    <div style="padding: 30px; border-right: 1px solid rgba(255,255,255,0.1); overflow-y: auto;">
+                        <h3 style="margin-top: 0; font-size: 18px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px;">📋 Historique de Maintenance</h3>
+                        ${history.length === 0 ? `
+                            <div style="text-align: center; color: #8E8E93; padding: 60px 20px;">
+                                <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">🔧</div>
+                                <p>Aucun historique enregistré pour ce matériel.</p>
+                            </div>
+                        ` : history.map(h => `
+                            <div style="background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.05);">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center;">
+                                    <div style="font-weight: 700; font-size: 15px;">${new Date(h.date).toLocaleDateString('fr-FR')}</div>
+                                    <div style="font-size: 12px; color: #8E8E93; background: rgba(45, 161, 64, 0.1); color: #2da140; padding: 4px 10px; border-radius: 10px;">Effectué par ${h.profiles ? (h.profiles.first_name + ' ' + h.profiles.last_name) : 'Admin'}</div>
+                                </div>
+                                <div style="font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.9);">${window.escapeHTML(h.details || 'Maintenance de contrôle.')}</div>
+                                ${h.next_maintenance_date ? `<div style="margin-top: 12px; font-size: 12px; color: #8E8E93;">🗓️ Date de validité fixée au : <strong>${new Date(h.next_maintenance_date).toLocaleDateString('fr-FR')}</strong></div>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div style="padding: 30px; background: rgba(0,0,0,0.1);">
+                        <h3 style="margin-top: 0; font-size: 18px; margin-bottom: 24px;">🔧 Enregistrer une Maintenance</h3>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <label class="form-label">Type d'intervention</label>
+                            <select id="maint-type" class="form-input">
+                                <option value="Maintenance" ${m.last_control_type === 'Maintenance' ? 'selected' : ''}>Contrôle / Entretien</option>
+                                <option value="VGP" ${m.last_control_type === 'VGP' ? 'selected' : ''}>VGP (Vérification Générale Périodique)</option>
+                                <option value="Remise en service" ${m.last_control_type === 'Remise en service' ? 'selected' : ''}>Remise en service</option>
+                            </select>
+                        </div>
+
+                        <div id="vgp-specifics" style="display: ${m.last_control_type === 'VGP' ? 'block' : 'none'}; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
+                            <label class="form-label">État de conformité VGP</label>
+                            <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                                <button class="btn-secondary vgp-choice ${m.vgp_status === 'OK' ? 'active' : ''}" data-val="OK" style="flex: 1; ${m.vgp_status === 'OK' ? 'background: #2da140; color: white;' : ''}">✅ Conforme</button>
+                                <button class="btn-secondary vgp-choice ${m.vgp_status === 'KO' ? 'active' : ''}" data-val="KO" style="flex: 1; ${m.vgp_status === 'KO' ? 'background: #FF3B30; color: white;' : ''}">❌ Non-conforme</button>
+                            </div>
+                            <label class="form-label">Observations Techniques</label>
+                            <input type="text" id="vgp-obs" class="form-input" placeholder="Détails de non-conformité..." value="${m.vgp_observations || ''}">
+                        </div>
+
+                        <div style="margin-bottom: 20px;">
+                            <label class="form-label">Détails de l'intervention</label>
+                            <textarea id="maint-details" class="form-input" style="height: 80px; resize: none;" placeholder="Ex: Remplacement des filtres..."></textarea>
+                        </div>
+
+                        <div style="margin-bottom: 24px;">
+                            <label class="form-label">Durée de validité (Prochaine maintenance)</label>
+                            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                                <input type="range" id="maint-slider" min="1" max="24" value="${m.periodicity || 12}" style="flex: 1; accent-color: var(--primary);">
+                                <span id="maint-months-text" style="font-weight: 700; width: 80px; text-align: right; color: var(--primary);">${m.periodicity || 12} mois</span>
+                            </div>
+                            <div id="maint-next-preview" style="font-size: 12px; color: #8E8E93; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                                Date estimée : <strong>Calcul...</strong>
+                            </div>
+                        </div>
+                        <button id="save-maint-btn" class="btn-primary" style="width: 100%; height: 50px; font-weight: 700;">Valider Intervention</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const slider = document.getElementById('maint-slider');
+        const sliderText = document.getElementById('maint-months-text');
+        const previewText = document.getElementById('maint-next-preview');
+
+        const updatePreview = () => {
+            const months = parseInt(slider.value);
+            sliderText.innerText = `${months} mois`;
+            const date = new Date();
+            date.setMonth(date.getMonth() + months);
+            previewText.innerHTML = `Date estimée : <strong>${date.toLocaleDateString('fr-FR')}</strong>`;
+            return date.toISOString().split('T')[0];
+        };
+
+        slider.oninput = updatePreview;
+        updatePreview();
+
+        document.getElementById('maint-type').onchange = (e) => {
+            document.getElementById('vgp-specifics').style.display = e.target.value === 'VGP' ? 'block' : 'none';
+        };
+
+        const vgpChoices = document.querySelectorAll('.vgp-choice');
+        vgpChoices.forEach(btn => {
+            btn.onclick = () => {
+                vgpChoices.forEach(b => b.classList.remove('active'));
+                vgpChoices.forEach(b => {
+                    b.style.background = 'rgba(255,255,255,0.03)';
+                    b.style.color = '#fff';
+                });
+                btn.classList.add('active');
+                if (btn.dataset.val === 'OK') { btn.style.background = '#2da140'; btn.style.color = 'white'; }
+                else { btn.style.background = '#FF3B30'; btn.style.color = 'white'; }
+            };
+        });
+
+        document.getElementById('save-maint-btn').onclick = async () => {
+            const details = document.getElementById('maint-details').value.trim();
+            const type = document.getElementById('maint-type').value;
+            const nextDate = updatePreview();
+            
+            let vgpStatus = null;
+            let vgpObservations = null;
+            if (type === 'VGP') {
+                const activeChoice = document.querySelector('.vgp-choice.active');
+                vgpStatus = activeChoice ? activeChoice.dataset.val : null;
+                vgpObservations = document.getElementById('vgp-obs').value.trim();
+                if (!vgpStatus) return alert("Veuillez sélectionner le statut de conformité VGP.");
+            }
+
+            if (!confirm(`Confirmez-vous l'enregistrement de cette intervention (${type}) ?`)) return;
+
+            const btn = document.getElementById('save-maint-btn');
+            btn.disabled = true;
+            btn.innerText = "Validation...";
+
+            try {
+                await api.saveMachineMaintenance(m.id, details, nextDate, vgpStatus, vgpObservations, type);
+                modal.remove();
+                window.renderAdminMaintenance();
+            } catch (e) {
+                alert("Erreur: " + e.message);
+                btn.disabled = false;
+                btn.innerText = "Valider Intervention";
+            }
+        };
+
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.openManageFamiliesModal = async function() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '2000000';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 400px; padding: 30px; background: #1C1C1E; border-radius: 24px;">
+            <h2 style="margin-top: 0; margin-bottom: 20px;">📁 Gérer les Familles</h2>
+            <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+                <input type="text" id="new-family-name" class="form-input" placeholder="Nom de la famille (ex: Pelle)">
+                <button id="add-family-btn" class="btn-primary">Ajouter</button>
+            </div>
+            <div id="families-list" style="max-height: 300px; overflow-y: auto; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                Chargement...
+            </div>
+            <div style="margin-top: 25px; text-align: right;">
+                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const refreshFamilies = async () => {
+        const listDiv = document.getElementById('families-list');
+        try {
+            const families = await api.getMachineFamilies();
+            if (families.length === 0) {
+                listDiv.innerHTML = '<p style="color: #8E8E93; text-align: center;">Aucune famille définie.</p>';
+                return;
+            }
+            listDiv.innerHTML = families.map(f => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <span>${window.escapeHTML(f.name)}</span>
+                    <button class="btn-sm" onclick="window.deleteFamily('${f.id}')" style="background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.2); color: #FF3B30;">&times;</button>
+                </div>
+            `).join('');
+        } catch (e) { listDiv.innerHTML = 'Erreur: ' + e.message; }
+    };
+
+    window.deleteFamily = async (id) => {
+        if (!confirm("Supprimer cette famille ?")) return;
+        try { await api.deleteMachineFamily(id); refreshFamilies(); } catch (e) { alert(e.message); }
+    };
+
+    document.getElementById('add-family-btn').onclick = async () => {
+        const name = document.getElementById('new-family-name').value.trim();
+        if (!name) return;
+        try {
+            await api.addMachineFamily(name);
+            document.getElementById('new-family-name').value = '';
+            refreshFamilies();
+        } catch (e) { alert(e.message); }
+    };
+
+    refreshFamilies();
+};
+
+window.openMachineEditModal = async function(id = null) {
+    let m = null;
+    let families = [];
+    try {
+        const [machines, fams] = await Promise.all([
+            api.getMachines(),
+            api.getMachineFamilies()
+        ]);
+        families = fams;
+        if (id) m = machines.find(x => x.id === id);
+    } catch(e) { console.error(e); }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '1000001';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 700px; padding: 0; background: #1C1C1E; border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; max-height: 90vh;">
+            <div style="padding: 24px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-weight: 800;">${m ? '✏️ Modifier' : '🚜 Nouveau'} Matériel</h2>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 13px; color: #8E8E93;">Actif ?</span>
+                    <label class="switch">
+                        <input type="checkbox" id="m-active" ${m?.status_active !== false ? 'checked' : ''}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div style="flex: 1; overflow-y: auto; padding: 30px;">
+                <!-- SECTION: IDENTIFICATION -->
+                <h3 style="font-size: 14px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px;">🆔 Identification</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+                    <div>
+                        <label class="form-label">Identifiant (MI)</label>
+                        <input type="text" id="m-id" class="form-input" value="${m?.machine_id || ''}" placeholder="Ex: MI_001">
+                    </div>
+                    <div>
+                        <label class="form-label">Nom du matériel</label>
+                        <input type="text" id="m-name" class="form-input" value="${m?.name || ''}" placeholder="Ex: Mini-pelle 3T">
+                    </div>
+                    <div>
+                        <label class="form-label">Famille</label>
+                        <select id="m-family" class="form-input">
+                            <option value="">-- Sélectionner --</option>
+                            ${families.map(f => `<option value="${f.name}" ${m?.family === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Numéro de Série</label>
+                        <input type="text" id="m-serial" class="form-input" value="${m?.serial_number || m?.description || ''}" placeholder="Numéro constructeur">
+                    </div>
+                </div>
+
+                <!-- SECTION: ATTRIBUTION & ÉTAT -->
+                <h3 style="font-size: 14px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; margin: 30px 0 20px;">👤 Attribution</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+                    <div>
+                        <label class="form-label">Attribué à (Salarié / Chantier)</label>
+                        <input type="text" id="m-assigned" class="form-input" value="${m?.assigned_to || m?.location || ''}" placeholder="Nom du responsable">
+                    </div>
+                    <div>
+                        <label class="form-label">Marque / Description</label>
+                        <input type="text" id="m-brand" class="form-input" value="${m?.brand || ''}" placeholder="Ex: Kubota, JCB...">
+                    </div>
+                </div>
+
+                <!-- SECTION: CALENDRIER & VGP -->
+                <h3 style="font-size: 14px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; margin: 30px 0 20px;">📅 Suivi Technique</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+                    <div>
+                        <label class="form-label">Date Mise en Service</label>
+                        <input type="date" id="m-commissioning" class="form-input" value="${m?.commissioning_date || ''}">
+                    </div>
+                    <div>
+                        <label class="form-label">Périodicité Maintenance (mois)</label>
+                        <input type="number" id="m-periodicity" class="form-input" value="${m?.periodicity || 12}" min="1" max="60">
+                    </div>
+                    <div>
+                        <label class="form-label">Date Expiration VGP / Contrôle</label>
+                        <input type="date" id="m-expiration" class="form-input" value="${m?.expiration_date || ''}">
+                    </div>
+                    <div style="display: flex; flex-direction: column; justify-content: flex-end;">
+                        <button class="btn-secondary" onclick="document.getElementById('m-photo-input').click()" style="height: 50px;">📷 Changer la Photo</button>
+                        <input type="file" id="m-photo-input" accept="image/png, image/jpeg" style="display: none;" onchange="alert('Photo prête pour envoi')">
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                    <label class="form-label">Commentaires / Notes SQE</label>
+                    <textarea id="m-comments" class="form-input" style="height: 100px; resize: none;" placeholder="Notes libres...">${m?.comments || ''}</textarea>
+                </div>
+            </div>
+
+            <div style="padding: 24px 30px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 12px; justify-content: flex-end;">
+                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="save-machine-btn" class="btn-primary" style="padding: 10px 30px; font-weight: 700;">Enregistrer les modifications</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('save-machine-btn').onclick = async () => {
+        const btn = document.getElementById('save-machine-btn');
+        btn.disabled = true;
+        btn.innerText = "Traitement...";
+
+        const data = {
+            id: id,
+            machine_id: document.getElementById('m-id').value.trim(),
+            name: document.getElementById('m-name').value.trim(),
+            family: document.getElementById('m-family').value,
+            serial_number: document.getElementById('m-serial').value.trim(),
+            brand: document.getElementById('m-brand').value.trim(),
+            assigned_to: document.getElementById('m-assigned').value.trim(),
+            periodicity: parseInt(document.getElementById('m-periodicity').value) || 12,
+            status_active: document.getElementById('m-active').checked,
+            commissioning_date: document.getElementById('m-commissioning').value || null,
+            expiration_date: document.getElementById('m-expiration').value || null,
+            comments: document.getElementById('m-comments').value.trim(),
+            // Legacy mapping for compatibility
+            description: document.getElementById('m-serial').value.trim(), 
+            type: document.getElementById('m-family').value
+        };
+
+        if (!data.machine_id) return (alert("Identifiant requis"), btn.disabled = false, btn.innerText = "Enregistrer");
+
+        try {
+            const saved = await api.saveMachine(data);
+            const photoInput = document.getElementById('m-photo-input');
+            if (photoInput.files.length > 0) {
+                btn.innerText = "Upload photo...";
+                await api.uploadMachinePhoto(saved.id || id, photoInput.files[0]);
+            }
+            modal.remove();
+            window.renderAdminMaintenance();
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
+};
+
+window.deleteAdminMachine = async function(id) {
+    if (!confirm("Voulez-vous vraiment supprimer ce matériel ? Cette action est irréversible et supprimera également l'historique de maintenance associé.")) return;
+    try {
+        await api.deleteMachine(id);
+        window.renderAdminMaintenance();
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
 // --- MACHINES & SCHEMATICS ---
 // --- MACHINES & SCHEMATICS (MAP ALTERNATIVE) ---
 window.currentBuilding = null;
@@ -7132,7 +7686,6 @@ window.renderAdminNotifications = async function() {
 
                 <!-- SECTION 1: ENVOI DIRECT -->
                 <div style="display: grid; grid-template-columns: 1fr 400px; gap: 40px;">
-                    <!-- Message Composition -->
                     <div class="glass-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 30px; padding: 40px; display: flex; flex-direction: column; gap: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
                         <h2 style="margin:0; font-size: 20px; font-weight: 800; color: var(--primary);">🚀 Message Instantané</h2>
                         <div>
@@ -7221,6 +7774,31 @@ window.renderAdminNotifications = async function() {
                             </div>
                         </div>
 
+                        <!-- CARD: MAINTENANCE PARC -->
+                        <div class="automation-card" style="background: rgba(255,149,0,0.05); border: 1px solid rgba(255,149,0,0.1); border-radius: 25px; padding: 30px; grid-column: 1 / -1;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 40px;">
+                                <div style="flex: 1;">
+                                    <div style="font-size: 32px; margin-bottom: 10px;">🚜</div>
+                                    <h3 style="margin:0; font-size: 18px; font-weight: 800; color: #FF9500;">Maintenance Matériel</h3>
+                                    <p style="color: #888; font-size: 13px; margin: 10px 0;">Alertes automatiques (Push/Web) avant l'échéance de la prochaine maintenance calculée.</p>
+                                </div>
+                                <div style="text-align: right; min-width: 250px;">
+                                    <div style="font-size: 11px; font-weight: 800; color: #FF9500; margin-bottom: 12px; letter-spacing: 1px;">DÉLAI D'AVERTISSEMENT</div>
+                                    <div style="display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.03); padding: 10px 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                                        <input type="range" id="maint-alert-days" min="7" max="60" value="30" style="flex: 1; accent-color: #FF9500;" oninput="document.getElementById('maint-alert-days-val').innerText = this.value + ' jours'" onchange="saveAutoSettings()">
+                                        <span id="maint-alert-days-val" style="font-weight: 800; color: white; font-size: 14px; min-width: 65px;">30 jours</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="border-top: 1px dashed rgba(255,149,0,0.2); padding-top: 25px; margin-top: 25px;">
+                                <h4 style="margin: 0 0 15px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #888;">Qui doit recevoir ces alertes ?</h4>
+                                <div id="maint-alert-users" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                                    <!-- Liste des administrateurs pour maintenance -->
+                                    <div style="font-size: 11px; color: #555;">Chargement des administrateurs...</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -7239,6 +7817,25 @@ window.renderAdminNotifications = async function() {
                         <div style="text-align:center; padding: 20px; color: #666;">Chargement des administrateurs...</div>
                     </div>
                 </div>
+
+                <!-- SECTION 4: NOTIFICATIONS PLANIFIÉES (CUSTOM) -->
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 30px; padding: 40px; margin-bottom: 100px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+                        <div>
+                            <h2 style="margin:0; font-size: 22px; font-weight: 800; color: #5856D6;">📅 Programmations Personnalisées</h2>
+                            <p style="color: #aaa; font-size: 14px; margin-top: 5px;">Envoyer des notifications automatiques personnalisées sur le téléphone des collaborateurs.</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="window.showCreateScheduleModal()" style="padding: 12px 25px; border-radius: 12px; background: #5856D6; border-color: #5856D6;">
+                            + Nouveau Planning
+                        </button>
+                    </div>
+
+                    <div id="scheduled-notifications-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px;">
+                        <!-- Les programmations seront injectées ici -->
+                        <div style="text-align:center; padding: 40px; color: #555; grid-column: 1 / -1;">Chargement des programmations...</div>
+                    </div>
+                </div>
+
             </div>
         </div>
         
@@ -7266,15 +7863,30 @@ window.renderAdminNotifications = async function() {
             }
             .admin-alert-row:hover { background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); }
             .admin-alert-row.selected { border-color: #FF9500; background: rgba(255, 149, 0, 0.1); }
+            .admin-alert-row .admin-status-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #444; background: transparent; transition: all 0.2s ease; }
+            .admin-alert-row.selected .admin-status-dot { border-color: #FF9500; background: #FF9500; }
+
+            .schedule-card {
+                background: rgba(255,255,255,0.03); 
+                border: 1px solid rgba(255,255,255,0.05); 
+                border-radius: 20px; 
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+                transition: 0.2s;
+            }
+            .schedule-card:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); }
         </style>
     `;
 
     try {
         // Chargement des données
-        const [users, subsResult, configRes] = await Promise.all([
+        const [users, subsResult, configRes, schedules] = await Promise.all([
             api.listUsers(),
             fetch(`${config.api.workerUrl}/admin/notifications/subscribers`, { headers: await api.getAuthHeaders() }).then(r => r.json()),
-            fetch(`${config.api.workerUrl}/admin/notifications/config`, { headers: await api.getAuthHeaders() }).then(r => r.json())
+            fetch(`${config.api.workerUrl}/admin/notifications/config`, { headers: await api.getAuthHeaders() }).then(r => r.json()),
+            fetch(`${config.api.workerUrl}/admin/notifications/schedules`, { headers: await api.getAuthHeaders() }).then(r => r.json()).catch(() => [])
         ]);
         
         const subscriberUserIds = new Set(subsResult.map(s => s.user_id));
@@ -7285,6 +7897,10 @@ window.renderAdminNotifications = async function() {
         document.getElementById('auto-mileage').checked = configRes.auto_mileage !== false;
         document.getElementById('auto-deadline').checked = configRes.auto_deadline !== false;
         document.getElementById('auto-material').checked = configRes.auto_material !== false;
+        
+        document.getElementById('maint-alert-days').value = configRes.maint_alert_days || 30;
+        document.getElementById('maint-alert-days-val').innerText = (configRes.maint_alert_days || 30) + ' jours';
+        const maintAlertUserIds = new Set(configRes.maint_alert_userIds || []);
 
         // Remplir la liste des destinataires (Envoi direct)
         const list = document.getElementById('recipient-list');
@@ -7315,10 +7931,13 @@ window.renderAdminNotifications = async function() {
             list.appendChild(div);
         });
 
-        // Remplir les alertes Administrateurs
+        // Remplir les alertes Administrateurs & Maintenance
         const adminList = document.getElementById('admin-alert-list');
+        const maintUserList = document.getElementById('maint-alert-users');
         adminList.innerHTML = "";
+        maintUserList.innerHTML = "";
         const admins = users.filter(u => u.role === 'admin');
+        
         admins.forEach(u => {
             const isSelected = adminAlertIds.has(u.id);
             const div = document.createElement('div');
@@ -7326,39 +7945,272 @@ window.renderAdminNotifications = async function() {
             div.dataset.adminId = u.id;
             div.onclick = () => { div.classList.toggle('selected'); };
             div.innerHTML = `
-                <div style="width: 12px; height: 12px; border-radius: 50%; border: 2px solid ${isSelected ? '#FF9500' : '#444'}; background: ${isSelected ? '#FF9500' : 'transparent'};"></div>
+                <div class="admin-status-dot"></div>
                 <span style="font-weight: 600; font-size: 14px;">${u.first_name} ${u.last_name}</span>
             `;
             adminList.appendChild(div);
+
+            // Version maintenance (plus petite)
+            const isMaintSelected = maintAlertUserIds.has(u.id);
+            const mBadge = document.createElement('div');
+            mBadge.className = `admin-badge-select ${isMaintSelected ? 'active' : ''}`;
+            mBadge.style.cssText = `padding: 8px 15px; border-radius: 10px; background: ${isMaintSelected ? '#FF9500' : 'rgba(255,149,0,0.1)'}; color: ${isMaintSelected ? 'white' : '#FF9500'}; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; border: 1px solid ${isMaintSelected ? '#FF9500' : 'rgba(255,149,0,0.2)'};`;
+            mBadge.dataset.userId = u.id;
+            mBadge.innerText = `${u.first_name} ${u.last_name}`;
+            mBadge.onclick = () => {
+                mBadge.classList.toggle('active');
+                if (mBadge.classList.contains('active')) {
+                    mBadge.style.background = '#FF9500';
+                    mBadge.style.color = 'white';
+                } else {
+                    mBadge.style.background = 'rgba(255,149,0,0.1)';
+                    mBadge.style.color = '#FF9500';
+                }
+                window.saveAutoSettings();
+            };
+            maintUserList.appendChild(mBadge);
         });
 
-        window.saveAutoSettings = async () => {
-            const notifSettings = {
-                auto_planning: document.getElementById('auto-planning').checked,
-                auto_mileage: document.getElementById('auto-mileage').checked,
-                auto_deadline: document.getElementById('auto-deadline').checked,
-                auto_material: document.getElementById('auto-material').checked
+        // Remplir SECTION 4: Schedules Planifiés
+        const scheduleList = document.getElementById('scheduled-notifications-list');
+        scheduleList.innerHTML = "";
+        if (!schedules || (Array.isArray(schedules) && schedules.length === 0)) {
+            scheduleList.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; grid-column: 1 / -1;">Aucune programmation active.</div>`;
+        } else if (Array.isArray(schedules)) {
+            const daysNames = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+            const monthNames = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+
+            schedules.forEach(s => {
+                let targetLabel = "";
+                if (s.target_type === 'all') {
+                    targetLabel = "🌍 Tous les collaborateurs";
+                } else {
+                    const ids = s.target_user_ids || (s.user_id ? [s.user_id] : []);
+                    if (ids.length === 1) {
+                        const u = users.find(u => u.id === ids[0]);
+                        targetLabel = `👤 ${u ? u.first_name + ' ' + u.last_name : 'Inconnu'}`;
+                    } else {
+                        targetLabel = `👥 ${ids.length} collaborateurs sélectionnés`;
+                    }
+                }
+                
+                let freqInfo = "";
+                const timeString = s.hour !== undefined && s.hour !== null 
+                    ? ` à ${s.hour}h${(s.minute || 0).toString().padStart(2, '0')}` 
+                    : "";
+                
+                if (s.frequency === 'daily') freqInfo = "Chaque jour" + timeString;
+                else if (s.frequency === 'weekly') freqInfo = `Chaque ${daysNames[s.day_of_week]}` + timeString;
+                else if (s.frequency === 'monthly') freqInfo = `Chaque ${s.day_of_month} du mois` + timeString;
+                else if (s.frequency === 'yearly') freqInfo = `Chaque ${s.day_of_month} ${monthNames[s.month]}` + timeString;
+
+                const card = document.createElement('div');
+                card.className = 'schedule-card';
+                card.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <span style="font-size:12px; font-weight:800; color:#5856D6; text-transform:uppercase;">${freqInfo}</span>
+                        <button onclick="window.deleteSchedule('${s.id}')" style="background:rgba(255,59,48,0.1); border:none; padding:8px; border-radius:10px; color:#FF3B30; cursor:pointer; transition:0.2s;">🗑️</button>
+                    </div>
+                    <div style="font-size:15px; color:white; font-weight:600; line-height:1.4;">${window.escapeHTML(s.message)}</div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
+                        <span style="font-size:12px; color:#888;">${targetLabel}</span>
+                        <span style="font-size:10px; color:#555;">Dernier envoi: ${s.last_sent_at ? new Date(s.last_sent_at).toLocaleDateString() : 'Jamais'}</span>
+                    </div>
+                `;
+                scheduleList.appendChild(card);
+            });
+        }
+
+        window.showCreateScheduleModal = () => {
+            const modal = document.createElement('div');
+            modal.id = 'modal-schedule'; // Unique ID for easier removal
+            modal.className = 'modal-overlay';
+            modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px;";
+            
+            // Sort users and filter for multi-selection
+            users.sort((a,b) => (a.first_name || "").localeCompare(b.first_name || ""));
+            const userSelectionHTML = users.map(u => `
+                <div class="sch-user-option" data-id="${u.id}" style="display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px; background:rgba(255,255,255,0.03); cursor:pointer; transition:0.2s;" onclick="this.classList.toggle('selected'); this.style.background = this.classList.contains('selected') ? 'rgba(88, 86, 214, 0.3)' : 'rgba(255,255,255,0.03)'">
+                    <div style="width:18px; height:18px; border:2px solid rgba(255,255,255,0.2); border-radius:4px; display:flex; align-items:center; justify-content:center;">
+                        <div class="check" style="width:10px; height:10px; background:#5856D6; border-radius:2px; opacity:0; transition:0.2s;"></div>
+                    </div>
+                    <span style="font-size:13px; font-weight:600;">${u.first_name} ${u.last_name}</span>
+                </div>
+            `).join('');
+            
+            modal.innerHTML = `
+                <div class="modal-box" style="padding: 35px; border-radius: 35px; width: 100%; max-width: 650px; background: #1C1C1E; color: white; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 30px 60px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;">
+                    <h2 style="margin: 0 0 30px 0; font-size: 26px; font-weight:800; letter-spacing:-1px;">✨ Nouvelle Programmation</h2>
+                    
+                    <div style="margin-bottom: 25px;">
+                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Message de la notification</label>
+                        <textarea id="sch-message" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:18px; color:white; padding:18px; resize:none; height:100px; font-size:16px; outline:none;" placeholder="Ex: N'oubliez pas votre pointage KIZEO..."></textarea>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
+                        <div>
+                            <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Destinataires</label>
+                            <select id="sch-target-type" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;" onchange="window.toggleSchUserBlock(this.value)">
+                                <option value="all">🌍 Tous les collaborateurs</option>
+                                <option value="specific">👤 Sélection spécifique</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Heure exacte d'envoi</label>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <select id="sch-hour" style="flex:1; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
+                                    ${Array.from({length: 24}, (_, i) => `<option value="${i}" ${i === 8 ? 'selected' : ''}>${i}h</option>`).join('')}
+                                </select>
+                                <span style="font-weight:800;">:</span>
+                                <select id="sch-minute" style="flex:1; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
+                                    ${Array.from({length: 60}, (_, i) => `<option value="${i}" ${i === 0 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="sch-user-selector-block" style="display:none; margin-bottom: 25px;">
+                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Collaborateurs ciblés</label>
+                        <div id="sch-user-list" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 18px; padding: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            ${userSelectionHTML}
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 30px;">
+                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Fréquence</label>
+                        <select id="sch-frequency" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;" onchange="window.updateScheduleFields(this.value)">
+                            <option value="daily">🔄 Chaque jour</option>
+                            <option value="weekly">📅 Hebdomadaire (Jour Fixe)</option>
+                            <option value="monthly">📆 Mensuel (Date Fixe)</option>
+                            <option value="yearly">🎉 Annuel</option>
+                        </select>
+                    </div>
+
+                    <div id="sch-day-week" style="display:none; margin-bottom: 25px;">
+                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Jour de la semaine</label>
+                        <select id="sch-val-day-week" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
+                            <option value="1">Lundi</option><option value="2">Mardi</option><option value="3">Mercredi</option><option value="4">Jeudi</option><option value="5" selected>Vendredi</option><option value="6">Samedi</option><option value="0">Dimanche</option>
+                        </select>
+                    </div>
+
+                    <div id="sch-day-month" style="display:none; margin-bottom: 25px;">
+                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Jour du mois (1-31)</label>
+                        <input type="number" id="sch-val-day-month" min="1" max="31" value="1" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
+                    </div>
+
+                    <div id="sch-month" style="display:none; margin-bottom: 30px;">
+                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Mois</label>
+                        <select id="sch-val-month" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
+                            <option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option>
+                        </select>
+                    </div>
+
+                    <div style="display:flex; gap:15px; margin-top:10px;">
+                        <button onclick="document.getElementById('modal-schedule').remove()" class="btn btn-secondary" style="flex:1; border-radius:18px; height:55px; background:rgba(255,255,255,0.05); border:none;">Annuler</button>
+                        <button onclick="window.saveNewSchedule(this)" class="btn btn-primary" style="flex:1; background:#5856D6; border-color:#5856D6; border-radius:18px; height:55px; font-weight:800;">🚀 Créer le planning</button>
+                    </div>
+                </div>
+                
+                <style>
+                    .sch-user-option.selected { border-color: #5856D6 !important; }
+                    .sch-user-option.selected .check { opacity: 1 !important; }
+                    select option { background: #2C2C2E; color: white; padding: 10px; }
+                </style>
+            `;
+            document.body.appendChild(modal);
+
+            window.toggleSchUserBlock = (val) => {
+                const block = document.getElementById('sch-user-selector-block');
+                block.style.display = val === 'specific' ? 'block' : 'none';
             };
-            try {
-                // Utilisation de la config globale pour l'URL
-                await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
-                    body: JSON.stringify(notifSettings)
-                });
-            } catch (e) { console.error("Erreur sauvegarde : ", e); }
+
+            window.updateScheduleFields = (freq) => {
+                document.getElementById('sch-day-week').style.display = freq === 'weekly' ? 'block' : 'none';
+                document.getElementById('sch-day-month').style.display = (freq === 'monthly' || freq === 'yearly') ? 'block' : 'none';
+                document.getElementById('sch-month').style.display = freq === 'yearly' ? 'block' : 'none';
+            };
+
+            window.saveNewSchedule = async (btn) => {
+                const message = document.getElementById('sch-message').value.trim();
+                const targetType = document.getElementById('sch-target-type').value;
+                const frequency = document.getElementById('sch-frequency').value;
+                const hourVal = parseInt(document.getElementById('sch-hour').value);
+                const minuteVal = parseInt(document.getElementById('sch-minute').value);
+                
+                const selectedUsers = Array.from(document.querySelectorAll('.sch-user-option.selected')).map(el => el.dataset.id);
+                
+                if (!message) return alert("Veuillez saisir un message.");
+                if (targetType === 'specific' && selectedUsers.length === 0) return alert("Veuillez sélectionner au moins un collaborateur.");
+
+                const payload = {
+                    message,
+                    target_type: targetType,
+                    target_user_ids: targetType === 'specific' ? selectedUsers : null,
+                    user_id: targetType === 'specific' && selectedUsers.length === 1 ? selectedUsers[0] : null,
+                    frequency,
+                    hour: hourVal,
+                    minute: minuteVal,
+                    day_of_week: frequency === 'weekly' ? parseInt(document.getElementById('sch-val-day-week').value) : null,
+                    day_of_month: (frequency === 'monthly' || frequency === 'yearly') ? parseInt(document.getElementById('sch-val-day-month').value) : null,
+                    month: frequency === 'yearly' ? parseInt(document.getElementById('sch-val-month').value) : null,
+                    active: true
+                };
+
+                btn.disabled = true;
+                btn.innerText = "Création...";
+
+                try {
+                    const res = await fetch(`${config.api.workerUrl}/admin/notifications/schedules`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!res.ok) throw new Error(await res.text());
+                    document.getElementById('modal-schedule').remove();
+                    renderAdminNotifications();
+                } catch (e) {
+                    alert("Erreur: " + e.message);
+                    btn.disabled = false;
+                    btn.innerText = "🚀 Créer le planning";
+                }
+            };
         };
 
-        window.saveAdminAlertSettings = async () => {
-            const adminIds = Array.from(document.querySelectorAll('.admin-alert-row.selected')).map(el => el.dataset.adminId);
-            try {
-                await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
-                    body: JSON.stringify({ admin_alert_ids: adminIds })
-                });
-                alert("✅ Configuration des alertes administrateurs enregistrée !");
-            } catch (e) { alert("Erreur : " + e.message); }
+        window.deleteSchedule = (id) => {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); z-index:10001; display:flex; align-items:center; justify-content:center; padding:20px;";
+            modal.innerHTML = `
+                <div style="background:#1C1C1E; padding:35px; border-radius:30px; border:1px solid rgba(255,255,255,0.1); width:100%; max-width:400px; text-align:center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+                    <div style="font-size:50px; margin-bottom:20px;">🗑️</div>
+                    <h3 style="margin:0 0 10px 0; font-size:20px; font-weight:800; color:white;">Supprimer ?</h3>
+                    <p style="color:#888; font-size:14px; margin-bottom:30px; line-height:1.5;">Êtes-vous sûr de vouloir supprimer cette notification automatisée ? Cette action est irréversible.</p>
+                    <div style="display:flex; gap:12px;">
+                        <button onclick="this.closest('.modal-overlay').remove()" style="flex:1; padding:15px; border-radius:15px; border:none; background:rgba(255,255,255,0.05); color:white; font-weight:700; cursor:pointer; transition:0.2s;">Annuler</button>
+                        <button id="confirm-delete-btn" style="flex:1; padding:15px; border-radius:15px; border:none; background:#FF3B30; color:white; font-weight:800; cursor:pointer; transition:0.2s;">Supprimer</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            modal.querySelector('#confirm-delete-btn').onclick = async () => {
+                const btn = modal.querySelector('#confirm-delete-btn');
+                btn.disabled = true;
+                btn.innerText = "Suppression...";
+                try {
+                    const res = await fetch(`${config.api.workerUrl}/admin/notifications/schedules?id=${id}`, {
+                        method: 'DELETE',
+                        headers: await api.getAuthHeaders()
+                    });
+                    if (!res.ok) throw new Error(await res.text());
+                    modal.remove();
+                    renderAdminNotifications();
+                } catch (e) {
+                    alert("Erreur: " + e.message);
+                    btn.disabled = false;
+                    btn.innerText = "Supprimer";
+                }
+            };
         };
 
         window.updateSelectedCount();
@@ -7414,7 +8266,7 @@ window.sendCustomNotification = async function() {
     const status = document.getElementById('notif-status');
 
     if (!message) {
-        alert("⚠️ Veuillez saisir un message.");
+        showSuccessModal("⚠️ Veuillez saisir un message.");
         return;
     }
 

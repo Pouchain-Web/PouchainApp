@@ -809,5 +809,77 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async getMachineMaintenanceHistory(machineId = null) {
+        let url = `${config.api.workerUrl}/admin/machines/maintenance`;
+        if (machineId) url += `?machine_id=${machineId}`;
+        const response = await fetch(url, { headers: await getAuthHeaders() });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveMachineMaintenance(machineId, details, nextMaintenanceDate, vgpStatus = null, vgpObservations = null, lastControlType = 'Maintenance') {
+        const response = await fetch(`${config.api.workerUrl}/admin/machines/maintenance`, {
+            method: 'POST',
+            headers: { 
+                ...(await getAuthHeaders()),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                machine_id: machineId, 
+                details, 
+                next_maintenance_date: nextMaintenanceDate,
+                vgp_status: vgpStatus,
+                vgp_observations: vgpObservations,
+                last_control_type: lastControlType
+            })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMachineFamilies() {
+        const response = await fetch(`${config.api.workerUrl}/admin/machine-families`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async addMachineFamily(name) {
+        const response = await fetch(`${config.api.workerUrl}/admin/machine-families`, {
+            method: 'POST',
+            headers: { 
+                ...(await getAuthHeaders()),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMachineFamily(id) {
+        const response = await fetch(`${config.api.workerUrl}/admin/machine-families?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async uploadMachinePhoto(machineId, file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('machineId', machineId);
+        
+        const response = await fetch(`${config.api.workerUrl}/admin/machines/photo`, {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: formData
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

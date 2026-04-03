@@ -270,21 +270,29 @@ body {
 
 /* --- Sidebar --- */
 .sidebar {
-    width: 306px;
+    width: 280px;
     background-color: var(--sidebar-bg);
     color: var(--sidebar-text);
     display: flex;
     flex-direction: column;
-    padding: 24px;
+    padding: 20px 16px;
     transition: width 0.3s ease;
     flex-shrink: 0;
+    height: 100vh;
+    overflow-y: auto;
+    /* Custom scrollbar for sidebar */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
 }
+
+.sidebar::-webkit-scrollbar { width: 5px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 
 .sidebar h2 {
     margin-top: 0;
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 700;
-    margin-bottom: 40px;
+    margin-bottom: 30px;
     letter-spacing: -0.5px;
     display: flex;
     align-items: center;
@@ -295,17 +303,24 @@ body {
     color: var(--primary);
 }
 
+.sidebar nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 .sidebar nav a {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 14px 16px;
+    gap: 10px;
+    padding: 10px 14px;
     color: rgba(255, 255, 255, 0.7);
     text-decoration: none;
     border-radius: var(--radius-sm);
-    margin-bottom: 8px;
+    margin-bottom: 2px;
     transition: all 0.2s ease;
     font-weight: 500;
+    font-size: 14px;
 }
 
 .sidebar nav a:hover {
