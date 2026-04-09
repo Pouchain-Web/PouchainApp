@@ -1481,7 +1481,8 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             if (now - window.lastAutoSortTime > 60000) {
                 window.lastAutoSortTime = now;
                 console.log("Auto-tri du planning en arrière-plan...");
-                await window.autoSortPlanningUsers(mondayToUse, true); // true = silent (no full reload)
+                const isV2Active = !!document.getElementById('planning-v2-container');
+                await window.autoSortPlanningUsers(mondayToUse, isV2Active, true); // isSilent = true
                 if (!isAnyFS) {
                     renderAdminPlanning(mondayToUse, false, true);
                 }
@@ -2172,7 +2173,7 @@ window.reorderPlanningUser = function (fromIndex, toIndex, weekStartStr) {
     renderAdminPlanning(weekStartStr);
 };
 
-window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false) {
+window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false, isSilent = false) {
     try {
         const users = await api.listUsers();
         // Compute week range
@@ -2235,7 +2236,8 @@ window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false) {
         localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
         renderAdminPlanning(weekStartStr, isV2);
     } catch (e) {
-        alert("Erreur tri automatique: " + e.message);
+        console.error("Erreur tri automatique:", e);
+        if (!isSilent) alert("Erreur tri automatique: " + e.message);
     }
 };
 
