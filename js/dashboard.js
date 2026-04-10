@@ -372,6 +372,7 @@ async function renderMobileView() {
             if (!assignedVehicle.next_maintenance_km && assignedVehicle.next_maintenance_km !== 0) missing.push("Prochain entretien (km)");
             if (!assignedVehicle.toll_card) missing.push("Badge Télépéage");
             if (!assignedVehicle.dkv_card) missing.push("Carte DKV");
+            if (!assignedVehicle.last_ct_date) missing.push("Contrôle Technique");
 
             if (missing.length > 0) {
                 const dk = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -418,6 +419,10 @@ async function renderMobileView() {
                             <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Carte DKV</label>
                             <input type="text" id="mi-dkv" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="N° de carte" value="${assignedVehicle.dkv_card || ''}">
                         </div>
+                        <div style="margin-bottom: 24px;">
+                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Date du dernier Contrôle Technique</label>
+                            <input type="date" id="mi-ct" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" value="${assignedVehicle.last_ct_date || ''}">
+                        </div>
                         
                         <div style="display: flex; gap: 12px;">
                             <button class="btn-secondary" style="flex: 1;" onclick="document.getElementById('missing-info-form').classList.add('hidden'); document.getElementById('missing-info-alert').classList.remove('hidden');">Retour</button>
@@ -442,7 +447,8 @@ async function renderMobileView() {
                             next_maintenance_date: document.getElementById('mi-date').value || null,
                             next_maintenance_km: document.getElementById('mi-km').value || null,
                             toll_card: document.getElementById('mi-toll').value || null,
-                            dkv_card: document.getElementById('mi-dkv').value || null
+                            dkv_card: document.getElementById('mi-dkv').value || null,
+                            last_ct_date: document.getElementById('mi-ct').value || null
                         };
                         const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
                             method: "PATCH",
@@ -5238,6 +5244,7 @@ window.renderAdminVehicles = async function() {
                             <th>Kilométrage</th>
                             <th>Affectation</th>
                             <th>Entretien</th>
+                            <th>Contrôle Tech.</th>
                             <th style="text-align: right; width: 170px;">Actions</th>
                         </tr>
                     </thead>
@@ -5272,6 +5279,35 @@ window.renderAdminVehicles = async function() {
                 const maintenanceStyle = maintenanceCritical ? 'background: #FF3B30; color: white;' : (maintenanceAlert ? 'background: #FF9500; color: white;' : 'background: rgba(52, 199, 89, 0.1); color: #34C759;');
                 const maintenanceIcon = maintenanceCritical ? '🔴' : (maintenanceAlert ? '⚠️' : '✅');
 
+                // CT logic
+                let ctAlert = false;
+                let ctCritical = false;
+                let ctLabel = "OK";
+                const today = new Date();
+                
+                if (v.last_ct_date) {
+                    const ctDate = new Date(v.last_ct_date);
+                    const nextCt = new Date(ctDate);
+                    nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
+                    const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
+                    
+                    if (diffDays <= 0) {
+                        ctCritical = true;
+                        ctLabel = "À faire !";
+                    } else if (diffDays <= 60) {
+                        ctAlert = true;
+                        ctLabel = `Dans ${diffDays} j.`;
+                    } else {
+                        ctLabel = nextCt.toLocaleDateString('fr-FR', {month: 'short', year: 'numeric'});
+                    }
+                } else {
+                    ctAlert = true;
+                    ctLabel = "Non renseigné";
+                }
+
+                const ctStyle = ctCritical ? 'background: #FF3B30; color: white;' : (ctAlert ? 'background: #FF9500; color: white;' : 'background: rgba(0, 122, 255, 0.1); color: #007AFF;');
+                const ctIcon = ctCritical ? '🔴' : (ctAlert ? '⚠️' : '🛡️');
+
                 html += `
                     <tr class="vehicle-row" style="cursor: pointer;" onclick="if(!event.target.closest('button')) openVehicleDetailModal('${v.id}')">
                         <td>
@@ -5292,6 +5328,11 @@ window.renderAdminVehicles = async function() {
                         <td>
                             <div style="${maintenanceStyle} padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px;">
                                 <span>${maintenanceIcon}</span> ${maintenanceLabel}
+                            </div>
+                        </td>
+                        <td>
+                            <div style="${ctStyle} padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px;">
+                                <span>${ctIcon}</span> ${ctLabel}
                             </div>
                         </td>
                         <td style="text-align: right;">
@@ -5541,7 +5582,7 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                 </div>
 
                 <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Planification Entretien</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
                     <div>
                         <label class="form-label">Prochain entretien (km)</label>
                         <input type="number" id="v-m-km" class="form-input" value="${existing?.next_maintenance_km || ''}" placeholder="Ex: 50000">
@@ -5549,6 +5590,18 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                     <div>
                         <label class="form-label">Date limite entretien</label>
                         <input type="date" id="v-m-date" class="form-input" value="${existing?.next_maintenance_date || ''}">
+                    </div>
+                </div>
+
+                <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Contrôle Technique</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+                    <div>
+                        <label class="form-label">Dernier CT (date)</label>
+                        <input type="date" id="v-ct-date" class="form-input" value="${existing?.last_ct_date || ''}">
+                    </div>
+                    <div>
+                        <label class="form-label">Fréquence (mois)</label>
+                        <input type="number" id="v-ct-interval" class="form-input" value="${existing?.ct_interval_months || 12}" placeholder="Ex: 12">
                     </div>
                 </div>
 
@@ -5580,7 +5633,9 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                 dkv_card: document.getElementById('v-dkv').value,
                 toll_card: document.getElementById('v-toll').value,
                 next_maintenance_km: document.getElementById('v-m-km').value ? parseInt(document.getElementById('v-m-km').value) : null,
-                next_maintenance_date: document.getElementById('v-m-date').value || null
+                next_maintenance_date: document.getElementById('v-m-date').value || null,
+                last_ct_date: document.getElementById('v-ct-date').value || null,
+                ct_interval_months: document.getElementById('v-ct-interval').value ? parseInt(document.getElementById('v-ct-interval').value) : 12
             };
 
             if (!data.plate_number) return alert("L'immatriculation est obligatoire.");
@@ -5750,6 +5805,18 @@ window.renderMobileVehicleApp = async function(vehicle) {
                     <div style="font-size: 12px; color: #8E8E93;">Dernier relevé : ${vehicle.updated_at ? new Date(vehicle.updated_at).toLocaleDateString('fr-FR') : '--'}</div>
                 </div>
 
+                <!-- CT Card -->
+                <div id="mobile-ct-card" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: space-between;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 600;">Contrôle Technique</div>
+                        <div id="mobile-ct-status" style="font-size: 17px; font-weight: 700; color: ${textColor}; margin-top: 4px;">--</div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                         <button class="btn-primary" onclick="window.updateMobileCT('${vehicle.id}')" style="padding: 8px 16px; border-radius: 10px; background: #5856D6; font-size: 13px;">Mettre à jour</button>
+                         <div id="mobile-ct-badge" style="width: 12px; height: 12px; border-radius: 50%; background: #8E8E93;"></div>
+                    </div>
+                </div>
+
                 <!-- Quick Actions -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;">
                     <button style="display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px; background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; cursor: pointer;" onclick="reportMobileVehicleIssue('${vehicle.id}')">
@@ -5787,6 +5854,34 @@ window.renderMobileVehicleApp = async function(vehicle) {
 
         html += `</div>`;
         container.innerHTML = html;
+
+        // CT Live Status Update
+        const ctStatusEl = document.getElementById('mobile-ct-status');
+        const ctBadgeEl = document.getElementById('mobile-ct-badge');
+        if (vehicle.last_ct_date && ctStatusEl && ctBadgeEl) {
+            const lastCt = new Date(vehicle.last_ct_date);
+            const nextCt = new Date(lastCt);
+            nextCt.setMonth(nextCt.getMonth() + (vehicle.ct_interval_months || 12));
+            const today = new Date();
+            const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays <= 0) {
+                ctStatusEl.innerText = "À faire immédiatement !";
+                ctStatusEl.style.color = "#FF3B30";
+                ctBadgeEl.style.background = "#FF3B30";
+            } else if (diffDays <= 60) {
+                ctStatusEl.innerText = `Échéance le ${nextCt.toLocaleDateString('fr-FR')} (dans ${diffDays} j.)`;
+                ctStatusEl.style.color = "#FF9500";
+                ctBadgeEl.style.background = "#FF9500";
+            } else {
+                ctStatusEl.innerText = `Valable jusqu'au ${nextCt.toLocaleDateString('fr-FR')}`;
+                ctBadgeEl.style.background = "#34C759";
+            }
+        } else if (!vehicle.last_ct_date && ctStatusEl && ctBadgeEl) {
+            ctStatusEl.innerText = "Date non renseignée";
+            ctStatusEl.style.color = "#FF9500";
+            ctBadgeEl.style.background = "#FF9500";
+        }
 
     } catch (e) {
         container.innerHTML = `<div style="color:red; text-align:center; padding:40px;">Erreur: ${e.message}</div>`;
@@ -6039,6 +6134,17 @@ window.updateVehicleSidebarBadge = function(vehicles) {
             const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
             if (diffDays <= 30) isAlert = true;
         }
+        
+        // CT Alert
+        if (!v.last_ct_date) {
+            isAlert = true;
+        } else {
+            const nextCt = new Date(v.last_ct_date);
+            nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
+            const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 60) isAlert = true;
+        }
+
         if (isAlert) alertCount++;
     });
 
@@ -6110,7 +6216,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
                         </div>
 
                         <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Entretien Prévu</h3>
-                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 32px; background: #fff; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 16px; background: #fff; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
                             <div style="margin-bottom: 16px;">
                                 <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Échéance Kilométrique</div>
                                 <div style="font-size: 20px; font-weight: 900; color: #34C759;">${v.next_maintenance_km ? v.next_maintenance_km.toLocaleString() + ' km' : '--'}</div>
@@ -6118,6 +6224,25 @@ window.openVehicleDetailModal = async function(vehicleId) {
                             <div>
                                 <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Échéance Date</div>
                                 <div style="font-size: 20px; font-weight: 900; color: #FF9500;">${v.next_maintenance_date ? new Date(v.next_maintenance_date).toLocaleDateString() : '--'}</div>
+                            </div>
+                        </div>
+
+                        <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Contrôle Technique</h3>
+                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 32px; background: #fff; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Dernier CT</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #1a1a1c;">${v.last_ct_date ? new Date(v.last_ct_date).toLocaleDateString() : 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Prochain CT (est.)</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #5856D6;">
+                                    ${(() => {
+                                        if (!v.last_ct_date) return '--';
+                                        const next = new Date(v.last_ct_date);
+                                        next.setMonth(next.getMonth() + (v.ct_interval_months || 12));
+                                        return next.toLocaleDateString();
+                                    })()}
+                                </div>
                             </div>
                         </div>
 

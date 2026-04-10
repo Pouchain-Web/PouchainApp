@@ -35,28 +35,33 @@ export default {
         }
 
         // 2. Security Check
-        // If you want "public" view for files, allow GET without secret.
         const user = await getUser(request, env);
 
-        // Check Auth (Skip for basic GET if you want public links)
-        if (!url.pathname.startsWith('/get/')) {
+        // Check Auth : Allow public access ONLY for /get/ files and /update/check
+        const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check');
+        
+        if (!isPublicPath) {
             if (!user) {
                 return new Response("Unauthorized", { status: 401, headers: corsHeaders });
             }
 
             // Check Admin for /admin/ routes
             if (url.pathname.startsWith('/admin/')) {
-                // EXCEPTION: allow GET on vehicles/logs/cards for non-admins to pick their car / see logs / select DKV
-                const isAdminRead = method === "GET" && (
+                // EXCEPTION: grant access to all authenticated users for "Cartes et Parc" and "Maint." apps
+                const isParcOrMaintPath = 
+                    url.pathname.includes("/admin/machines") || 
+                    url.pathname.includes("/admin/machine-families") || 
+                    url.pathname.includes("/admin/buildings");
+                
+                // EXCEPTION: allow GET on vehicles/logs/cards for non-admins
+                const isVehicleRead = method === "GET" && (
                     url.pathname.endsWith("/admin/vehicles") || 
                     url.pathname.endsWith("/admin/vehicle/all-logs") ||
                     url.pathname.endsWith("/admin/dkv-cards") ||
-                    url.pathname.endsWith("/admin/toll-cards") ||
-                    url.pathname.endsWith("/admin/machines") ||
-                    url.pathname.endsWith("/admin/machines/logs")
+                    url.pathname.endsWith("/admin/toll-cards")
                 );
-                
-                if (!isAdminRead) {
+
+                if (!isParcOrMaintPath && !isVehicleRead) {
                     const admin = await isAdmin(user, env);
                     if (!admin) {
                         return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
@@ -66,36 +71,51 @@ export default {
         }
 
         try {
-            // --- ROUTE: CHECK FOR UPDATES (Auto-Detect everywhere in R2) ---
-            if (method === "GET" && url.pathname.endsWith("/update/check")) {
+            // --- ROUTE: CHECK FOR UPDATES (Auto-Detect zip files with version in name) ---
+            if (url.pathname.includes("/update/check")) {
                 const currentVersion = url.searchParams.get('current_version') || "0.0.0";
                 
-                // Scan the whole bucket (no prefix)
+                // Scan the WHOLE bucket (recursive search for safety)
                 const listing = await env.MY_BUCKET.list();
                 let latestVersion = "0.0.0";
-                let latestUrl = null;
+                let latestVersionFile = null;
+                let latestTimestamp = 0;
+
+                console.log(`[Updater] Scanning ${listing.objects.length} files...`);
 
                 for (const obj of listing.objects) {
-                    // Match any file containing V1.2.3 or v1.2.3 and ending in .zip
+                    // Match files like V1.0.2.zip or v1.0.2.zip
                     const match = obj.key.match(/[Vv](\d+\.\d+\.\d+)\.zip$/);
                     if (match) {
                         const ver = match[1];
-                        if (compareVersions(ver, latestVersion) > 0) {
+                        const uploadTime = new Date(obj.uploaded).getTime();
+                        
+                        const cmp = compareVersions(ver, latestVersion);
+                        
+                        // We take the HIGHEST version. If versions are equal, take the newest upload.
+                        if (cmp > 0 || (cmp === 0 && uploadTime > latestTimestamp)) {
                             latestVersion = ver;
-                            latestUrl = `${url.origin}/get/${obj.key}`;
+                            latestTimestamp = uploadTime;
+                            latestVersionFile = obj;
+                            console.log(`[Updater] Higher candidate found: ${obj.key} (v${ver})`);
                         }
                     }
                 }
                 
                 const isNewer = compareVersions(latestVersion, currentVersion) > 0;
+                console.log(`[Updater] Result: Last Version found: ${latestVersion}. Current App: ${currentVersion}. Update required? ${isNewer}`);
                 
                 return new Response(JSON.stringify({
                     updateAvailable: isNewer,
                     newVersion: latestVersion,
-                    url: latestUrl,
+                    url: latestVersionFile ? `${url.origin}/get/${latestVersionFile.key}` : null,
                     mandatory: true
                 }), {
-                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                    headers: { 
+                        ...corsHeaders, 
+                        "Content-Type": "application/json",
+                        "Cache-Control": "no-store, no-cache, must-revalidate"
+                    }
                 });
             }
 
@@ -323,7 +343,8 @@ export default {
                     'webp': 'image/webp',
                     'pdf': 'application/pdf',
                     'svg': 'image/svg+xml',
-                    'apk': 'application/vnd.android.package-archive'
+                    'apk': 'application/vnd.android.package-archive',
+                    'zip': 'application/zip'
                 };
 
                 if (!headers.has("Content-Type") || headers.get("Content-Type") === "application/octet-stream") {
@@ -1434,7 +1455,7 @@ export default {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 
-                const { id, next_maintenance_date, next_maintenance_km, toll_card, dkv_card } = body;
+                const { id, next_maintenance_date, next_maintenance_km, toll_card, dkv_card, last_ct_date } = body;
                 if (!id) return new Response("Missing vehicle ID", { status: 400, headers: corsHeaders });
                 
                 // Verify user owns it
@@ -1450,6 +1471,7 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
                     body: JSON.stringify({ 
                         next_maintenance_date: next_maintenance_date || null,
+                        last_ct_date: last_ct_date || null,
                         next_maintenance_km: next_maintenance_km ? parseInt(next_maintenance_km) : null,
                         toll_card: toll_card || null,
                         dkv_card: dkv_card || null,
@@ -2325,21 +2347,46 @@ export default {
 
                 // AUTOMATIONS
                 
-                // A. Rappel Kilométrage (Vendredi après-midi)
+                // A. Rappels Hebdomadaires (Vendredi après-midi)
                 try {
-                    if (globalConfig.auto_mileage !== false && day === 5 && hour >= 14 && hour < 16) {
-                        const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=assigned_user_id`, {
+                    if (day === 5 && hour >= 14 && hour < 16) {
+                        const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=*`, {
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
                         const vehicles = await vRes.json();
+                        
                         if (Array.isArray(vehicles)) {
-                            const userIds = [...new Set(vehicles.map(v => v.assigned_user_id))];
-                            if (userIds.length > 0) {
-                                await sendPushNotification(env, userIds, "🚗 Rappel : Veuillez mettre à jour le kilométrage de votre véhicule dans l'application.");
+                            // 1. Rappel Kilométrage
+                            if (globalConfig.auto_mileage !== false) {
+                                const userIds = [...new Set(vehicles.map(v => v.assigned_user_id))];
+                                if (userIds.length > 0) {
+                                    await sendPushNotification(env, userIds, "🚗 Rappel : Veuillez mettre à jour le kilométrage de votre véhicule dans l'application.");
+                                }
+                            }
+
+                            // 2. Rappel Contrôle Technique
+                            for (const v of vehicles) {
+                                if (v.last_ct_date && v.assigned_user_id) {
+                                    const lastCt = new Date(v.last_ct_date);
+                                    const nextCt = new Date(lastCt);
+                                    nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
+                                    
+                                    const diffDays = Math.ceil((nextCt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                                    
+                                    if (diffDays <= 60) {
+                                        let msg = "";
+                                        if (diffDays <= 0) {
+                                            msg = `🚨 Contrôle Technique DÉPASSÉ pour votre véhicule (${v.plate_number}) ! Veuillez le faire rapidement.`;
+                                        } else {
+                                            msg = `🔔 Rappel : Le contrôle technique de votre véhicule (${v.plate_number}) arrive à échéance le ${nextCt.toLocaleDateString('fr-FR')} (dans ${diffDays} jours).`;
+                                        }
+                                        await sendPushNotification(env, v.assigned_user_id, msg);
+                                    }
+                                }
                             }
                         }
                     }
-                } catch (e) { console.error("Auto-mileage error:", e); }
+                } catch (e) { console.error("Weekly reminders error:", e); }
 
                 // C. Friterie Notification (Mercredi 11:00)
                 try {
@@ -2790,9 +2837,12 @@ async function sendResendEmail(env, to, subject, html) {
 function compareVersions(v1, v2) {
     const a = v1.split('.').map(Number);
     const b = v2.split('.').map(Number);
-    for (let i = 0; i < 3; i++) {
-        if (a[i] > b[i]) return 1;
-        if (a[i] < b[i]) return -1;
+    // On compare segment par segment jusqu'au plus long
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const valA = a[i] || 0;
+        const valB = b[i] || 0;
+        if (valA > valB) return 1;
+        if (valA < valB) return -1;
     }
     return 0;
 }
