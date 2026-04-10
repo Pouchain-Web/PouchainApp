@@ -2505,7 +2505,7 @@ export default {
                                     if (s.target_type === 'specific') {
                                         targetIds = s.target_user_ids || (s.user_id ? [s.user_id] : null);
                                     }
-                                    const result = await sendPushNotification(env, targetIds, s.message);
+                                    const result = await sendPushNotification(env, targetIds, s.message, s.app_url);
                                     if (result.success) {
                                         await fetch(`${supabaseUrl}/rest/v1/notification_schedules?id=eq.${s.id}`, {
                                             method: "PATCH",
@@ -2647,7 +2647,7 @@ async function isAdmin(user, env) {
 /**
  * Helper to send Web Push (VAPID) or Native Push (FCM).
  */
-async function sendPushNotification(env, userId, message) {
+async function sendPushNotification(env, userId, message, appUrl = null) {
     const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
     const serviceKey = env.SUPABASE_SERVICE_KEY;
     
@@ -2700,7 +2700,7 @@ async function sendPushNotification(env, userId, message) {
         data: {
             message: message,
             click_action: "FCM_PLUGIN_ACTIVITY",
-            url: "dashboard.html"
+            url: appUrl || ""
         }
     };
 

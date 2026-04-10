@@ -8193,6 +8193,7 @@ window.renderAdminNotifications = async function() {
                         <button onclick="window.deleteSchedule('${s.id}')" style="background:rgba(255,59,48,0.1); border:none; padding:8px; border-radius:10px; color:#FF3B30; cursor:pointer; transition:0.2s;">🗑️</button>
                     </div>
                     <div style="font-size:15px; color:white; font-weight:600; line-height:1.4;">${window.escapeHTML(s.message)}</div>
+                    ${s.app_url ? `<div style="font-size:12px; color:#5AC8FA; margin-top:5px; word-break:break-all;">🔗 ${window.escapeHTML(s.app_url)}</div>` : ''}
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
                         <span style="font-size:12px; color:#888;">${targetLabel}</span>
                         <span style="font-size:10px; color:#555;">Dernier envoi: ${s.last_sent_at ? new Date(s.last_sent_at).toLocaleDateString() : 'Jamais'}</span>
@@ -8226,6 +8227,12 @@ window.renderAdminNotifications = async function() {
                     <div style="margin-bottom: 25px;">
                         <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Message de la notification</label>
                         <textarea id="sch-message" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:18px; color:white; padding:18px; resize:none; height:100px; font-size:16px; outline:none;" placeholder="Ex: N'oubliez pas votre pointage KIZEO..."></textarea>
+                    </div>
+
+                    <div style="margin-bottom: 25px;">
+                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">URL de l'application (Optionnel)</label>
+                        <input type="text" id="sch-app-url" value="${localStorage.getItem('last_notif_app_url') || ''}" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:15px; font-size:15px; outline:none;" placeholder="Ex: kizeo:// ou https://...">
+                        <p style="font-size: 11px; color: #555; margin-top: 5px;">Si renseignée, cliquer sur la notification ouvrira cette application.</p>
                     </div>
 
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
@@ -8313,6 +8320,7 @@ window.renderAdminNotifications = async function() {
 
             window.saveNewSchedule = async (btn) => {
                 const message = document.getElementById('sch-message').value.trim();
+                const appUrl = document.getElementById('sch-app-url').value.trim();
                 const targetType = document.getElementById('sch-target-type').value;
                 const frequency = document.getElementById('sch-frequency').value;
                 const hourVal = parseInt(document.getElementById('sch-hour').value);
@@ -8328,7 +8336,8 @@ window.renderAdminNotifications = async function() {
                     target_type: targetType,
                     target_user_ids: targetType === 'specific' ? selectedUsers : null,
                     user_id: targetType === 'specific' && selectedUsers.length === 1 ? selectedUsers[0] : null,
-                    frequency,
+                    app_url: appUrl || null,
+                    frequency: frequency,
                     hour: hourVal,
                     minute: minuteVal,
                     day_of_week: frequency === 'weekly' ? parseInt(document.getElementById('sch-val-day-week').value) : null,
@@ -8347,6 +8356,7 @@ window.renderAdminNotifications = async function() {
                         body: JSON.stringify(payload)
                     });
                     if (!res.ok) throw new Error(await res.text());
+                    if (appUrl) localStorage.setItem('last_notif_app_url', appUrl);
                     document.getElementById('modal-schedule').remove();
                     renderAdminNotifications();
                 } catch (e) {
