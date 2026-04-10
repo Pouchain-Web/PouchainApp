@@ -1106,7 +1106,8 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
                     body: JSON.stringify(body)
                 });
-                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             if (method === "PATCH" && url.pathname === "/admin/material/requests") {
@@ -2313,6 +2314,11 @@ export default {
                  return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            if (method === "POST" && url.pathname === "/admin/material/requests/remind") {
+                const result = await sendMaterialReminders(env);
+                return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // 404
             return new Response("Not Found", { status: 404, headers: corsHeaders });
         } catch (err) {
@@ -2513,6 +2519,13 @@ export default {
                     }
                 } catch (e) { console.error("General schedules error:", e); }
 
+                // I. Rappel Demandes Matériel (Lundi matin 09:00)
+                try {
+                    if (day === 1 && hour === 9) {
+                        await sendMaterialReminders(env);
+                    }
+                } catch (e) { console.error("Material reminder error:", e); }
+
                 // H. Archivage Hebdo (Lundi 08:00)
                 try {
                     if (day === 1 && hour === 8) {
@@ -2686,7 +2699,8 @@ async function sendPushNotification(env, userId, message) {
         body: message,
         data: {
             message: message,
-            click_action: "FCM_PLUGIN_ACTIVITY"
+            click_action: "FCM_PLUGIN_ACTIVITY",
+            url: "dashboard.html"
         }
     };
 
@@ -2793,6 +2807,59 @@ async function getGCPAccessToken(serviceAccountJson) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error_description || data.error);
     return data.access_token;
+}
+
+/**
+ * Find and notify admins about material requests older than 7 days
+ */
+async function sendMaterialReminders(env) {
+    const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+    const serviceKey = env.SUPABASE_SERVICE_KEY;
+    if (!serviceKey) return { success: false, message: "Missing service key" };
+
+    // 1. Fetch Config to get alert_users
+    const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1`, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+    const configs = await configRes.json();
+    const config = configs[0];
+    if (!config || !config.alert_users || config.alert_users.length === 0) {
+        return { success: false, message: "No alert users configured" };
+    }
+
+    // 2. Fetch Pending Requests older than 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const dateStr = sevenDaysAgo.toISOString();
+
+    const requestsRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?status=eq.requested&created_at=lt.${dateStr}`, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+    const requests = await requestsRes.json();
+    if (!Array.isArray(requests) || requests.length === 0) {
+        return { success: true, count: 0, message: "No old pending requests" };
+    }
+
+    // 3. Fetch Alert User Profiles for names
+    const usersRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=in.(${config.alert_users.join(',')})&select=id,first_name`, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+    const profiles = await usersRes.json();
+
+    // 4. Send personalized notifications
+    let totalSent = 0;
+    for (const p of profiles) {
+        const count = requests.length;
+        const name = p.first_name || 'Admin';
+        const message = count === 1 
+            ? `Bonjour ${name}, une demande de matériel est en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez cette demande de votre collaborateur.`
+            : `Bonjour ${name}, ${count} demandes de matériel sont en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez ces demandes de vos collaborateurs.`;
+            
+        const result = await sendPushNotification(env, [p.id], message);
+        if (result && result.success) totalSent++;
+    }
+
+    return { success: true, count: requests.length, notified: totalSent };
 }
 
 /**

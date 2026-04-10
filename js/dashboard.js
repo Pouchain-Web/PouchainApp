@@ -114,25 +114,31 @@ async function initDashboard() {
     const role = await auth.getUserRole();
     const isMobile = window.innerWidth <= 768;
 
-    // ... listener backButton logic ...
-
     // Gestion du bouton retour physique Android (Capacitor)
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-        window.Capacitor.Plugins.App.addListener('backButton', ({ canGoBack }) => {
-            const isLandscape = document.querySelector('.landscape-mode');
-            console.log("Hardware back button pressed. isLandscape:", !!isLandscape);
-            
-            if (isLandscape) {
-                // Si on voit un plan en plein écran, le bouton retour système nous ramène à la liste des bâtiments
-                if (typeof window.renderMobileMap === "function") {
-                    window.renderMobileMap();
+    if (window.Capacitor && window.Capacitor.Plugins) {
+        const { App, PushNotifications } = window.Capacitor.Plugins;
+
+        if (App) {
+            App.addListener('backButton', ({ canGoBack }) => {
+                const isLandscape = document.querySelector('.landscape-mode');
+                if (isLandscape) {
+                    if (typeof window.renderMobileMap === "function") {
+                        window.renderMobileMap();
+                    }
+                } else if (canGoBack) {
+                    window.history.back();
+                } else {
+                    App.exitApp();
                 }
-            } else if (canGoBack) {
-                window.history.back();
-            } else {
-                window.Capacitor.Plugins.App.exitApp();
-            }
-        });
+            });
+        }
+
+        if (PushNotifications) {
+            PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+                console.log('Action de notification détectée:', notification);
+                // Sur Android, Capacitor ouvre l'app automatiquement si ce listener est présent
+            });
+        }
     }
 
     // 3. Render View
@@ -5188,6 +5194,34 @@ window.renderAdminMaterialRequests = async function () {
             `;
             document.body.appendChild(modal);
 
+            window.triggerMaterialReminder = async () => {
+                const btn = document.getElementById('btn-test-reminders');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerText = "⌛ Test en cours...";
+                }
+                
+                try {
+                    const response = await fetch(`${config.api.workerUrl}/admin/material/requests/remind`, {
+                        method: 'POST',
+                        headers: await api.getAuthHeaders()
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        alert(`✅ Test réussi !\nDemandes trouvées : ${result.count}\nAdmins notifiés : ${result.notified}`);
+                    } else {
+                        alert(`⚠️ ${result.message || 'Aucune notification envoyée.'}`);
+                    }
+                } catch (e) {
+                    alert("❌ Erreur lors du test : " + e.message);
+                } finally {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerText = "🔔 Tester les rappels (+7j)";
+                    }
+                }
+            };
+
             window.saveAlertConfig = async () => {
                 const cbs = document.querySelectorAll('.alert-user-cb:checked');
                 const selectedIds = Array.from(cbs).map(cb => cb.value);
@@ -7959,6 +7993,10 @@ window.renderAdminNotifications = async function() {
                         <!-- Liste des admins avec cases à cocher -->
                         <div style="text-align:center; padding: 20px; color: #666;">Chargement des administrateurs...</div>
                     </div>
+
+                    <div style="margin-top: 25px; border-top: 1px dashed rgba(255,255,255,0.05); padding-top: 25px; display: flex; justify-content: flex-end;">
+                        <button id="btn-test-reminders" class="btn btn-secondary" style="border-color: #FF9500; color: #FF9500; font-size: 13px; background: rgba(255, 149, 0, 0.05); padding: 12px 20px; border-radius: 12px;" onclick="window.triggerMaterialReminder()">🔔 Tester les rappels de demandes (+7j)</button>
+                    </div>
                 </div>
 
                 <!-- SECTION 4: NOTIFICATIONS PLANIFIÉES (CUSTOM) -->
@@ -8455,6 +8493,105 @@ window.sendCustomNotification = async function() {
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = "Envoyer le message";
+        }
+    }
+};
+
+window.saveAutoSettings = async () => {
+    const autoPlanning = document.getElementById('auto-planning').checked;
+    const autoMileage = document.getElementById('auto-mileage').checked;
+    const autoDeadline = document.getElementById('auto-deadline').checked;
+    const autoMaterial = document.getElementById('auto-material').checked;
+    const maintAlertDays = document.getElementById('maint-alert-days').value;
+    
+    const maintBadges = document.querySelectorAll('.admin-badge-select.active');
+    const maintAlertUserIds = Array.from(maintBadges).map(b => b.dataset.userId);
+
+    const payload = {
+        auto_planning: autoPlanning,
+        auto_mileage: autoMileage,
+        auto_deadline: autoDeadline,
+        auto_material: autoMaterial,
+        maint_alert_days: parseInt(maintAlertDays),
+        maint_alert_userIds: maintAlertUserIds
+    };
+
+    try {
+        await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
+            body: JSON.stringify(payload)
+        });
+    } catch (e) {
+        console.error("Save config error", e);
+    }
+};
+
+window.saveAdminAlertSettings = async () => {
+    const selectedRows = document.querySelectorAll('.admin-alert-row.selected');
+    const selectedIds = Array.from(selectedRows).map(el => el.dataset.adminId);
+    const btn = document.querySelector('button[onclick="window.saveAdminAlertSettings()"]');
+    
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = "⏳ Enregistrement...";
+        }
+        
+        await api.saveMaterialConfig(selectedIds);
+        
+        if (btn) {
+            btn.innerText = "✅ Enregistré";
+            btn.style.background = "#34C759";
+            btn.style.color = "white";
+            btn.style.borderColor = "#34C759";
+            
+            showSuccessModal("Destinataires mis à jour avec succès !<br>Ils recevront désormais les alertes immédiates et les rappels hebdomadaires.");
+
+            setTimeout(() => {
+                btn.innerText = "Enregistrer les destinataires";
+                btn.style.background = "";
+                btn.style.color = "";
+                btn.style.borderColor = "";
+                btn.disabled = false;
+            }, 3000);
+        }
+    } catch (e) {
+        showSuccessModal(`❌ Erreur lors de l'enregistrement : ${e.message}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = "Enregistrer les destinataires";
+        }
+    }
+};
+
+window.triggerMaterialReminder = async () => {
+    const btn = document.getElementById('btn-test-reminders');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "⌛ Test en cours...";
+    }
+    
+    try {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/requests/remind`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(await api.getAuthHeaders())
+            }
+        });
+        const result = await response.json();
+        if (result.success) {
+            showSuccessModal(`✅ Test réussi !<br><br>Demandes trouvées : <b>${result.count}</b><br>Admins notifiés : <b>${result.notified}</b>`);
+        } else {
+            showSuccessModal(`⚠️ ${result.message || 'Aucune notification envoyée.'}`);
+        }
+    } catch (e) {
+        showSuccessModal(`❌ Erreur lors du test : ${e.message}`);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = "🔔 Tester les rappels de demandes (+7j)";
         }
     }
 };
