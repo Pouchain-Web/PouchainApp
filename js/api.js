@@ -9,6 +9,14 @@ const getAuthHeaders = async () => {
     };
 };
 
+// Helper function to block visitors from modifying data
+const checkVisitor = async () => {
+    const role = await auth.getUserRole();
+    if (role === 'visiteur') {
+        throw new Error("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !");
+    }
+};
+
 export const api = {
     // Add shared helper
     getAuthHeaders,
@@ -18,6 +26,7 @@ export const api = {
 
     // Upload a file (Admin only)
     async uploadFile(file, pathPrefix = '', onProgress) {
+        await checkVisitor();
         const authHeaders = await getAuthHeaders();
         return new Promise((resolve, reject) => {
             const formData = new FormData();
@@ -59,6 +68,7 @@ export const api = {
 
     // Delete a file
     async deleteFile(key) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/delete`, {
             method: 'DELETE',
             headers: {
@@ -77,6 +87,7 @@ export const api = {
 
     // Rename a file
     async renameFile(oldKey, newKey) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/files/rename`, {
             method: 'POST',
             headers: {
@@ -95,6 +106,7 @@ export const api = {
 
     // Rename a folder (and its content)
     async renameFolder(oldPrefix, newPrefix) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/folders/rename`, {
             method: 'POST',
             headers: {
@@ -135,6 +147,7 @@ export const api = {
     },
 
     async setFileAccess(path, userIds) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/access/set`, {
             method: 'POST',
             headers: {
@@ -148,15 +161,20 @@ export const api = {
     },
 
     // --- User Management (Admin) ---
-    async listUsers() {
+    async listUsers(includeVisitors = false) {
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             headers: { ...(await getAuthHeaders()) }
         });
         if (!response.ok) throw new Error(await response.text());
-        return await response.json();
+        const users = await response.json();
+        // Filtrer les visiteurs pour qu'ils n'apparaissent pas dans le planning ou les listes, 
+        // sauf si explicitement demandé (ex: gestion des utilisateurs)
+        if (includeVisitors) return users;
+        return users.filter(u => u.role !== 'visiteur');
     },
 
     async createUser(email, password, role, firstName, lastName) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'POST',
             headers: {
@@ -170,6 +188,7 @@ export const api = {
     },
 
     async inviteUser(email, role, redirectTo, firstName, lastName) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/invite`, {
             method: 'POST',
             headers: {
@@ -183,6 +202,7 @@ export const api = {
     },
 
     async sendPasswordReset(email, redirectTo) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/reset`, {
             method: 'POST',
             headers: {
@@ -196,6 +216,7 @@ export const api = {
     },
 
     async changeUserPassword(id, password) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/password`, {
             method: 'PUT',
             headers: {
@@ -209,6 +230,7 @@ export const api = {
     },
 
     async deleteUser(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'DELETE',
             headers: {
@@ -222,6 +244,7 @@ export const api = {
     },
 
     async changeUserRole(id, role) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/role`, {
             method: 'PUT',
             headers: {
@@ -235,6 +258,7 @@ export const api = {
     },
 
     async updateUserProfile(id, firstName, lastName) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/profile`, {
             method: 'PUT',
             headers: {
@@ -248,6 +272,7 @@ export const api = {
     },
 
     async updateUserColor(id, color) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/color`, {
             method: 'PUT',
             headers: {
@@ -287,6 +312,7 @@ export const api = {
     },
 
     async updateTask(id, data) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/tasks`, {
             method: 'PATCH',
             headers: {
@@ -300,6 +326,7 @@ export const api = {
     },
 
     async updateTaskAdmin(id, done) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
             method: 'PATCH',
             headers: {
@@ -325,6 +352,7 @@ export const api = {
     },
 
     async saveAdminTask(taskData) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
             method: 'POST',
             headers: {
@@ -338,6 +366,7 @@ export const api = {
     },
 
     async deleteAdminTask(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
             method: 'DELETE',
             headers: {
@@ -351,6 +380,7 @@ export const api = {
     },
 
     async archiveOldTasks() {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks/archive`, {
             method: 'POST',
             headers: await getAuthHeaders()
@@ -368,6 +398,7 @@ export const api = {
     },
 
     async setPlanningClosedDays(days) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/planning/closed-days`, {
             method: 'POST',
             headers: {
@@ -392,14 +423,16 @@ export const api = {
     async getMaterialRequests(userId = null) {
         const role = await auth.getUserRole();
         // If userId is provided, we force the user-specific route (only see your own)
-        // Otherwise, if admin, see all.
-        const url = `${config.api.workerUrl}${ (role === 'admin' && !userId) ? '/admin/material/requests' : '/material/requests'}`;
+        // Otherwise, if admin/visiteur, see all.
+        const isAdminOrVisitor = role === 'admin' || role === 'visiteur';
+        const url = `${config.api.workerUrl}${ (isAdminOrVisitor && !userId) ? '/admin/material/requests' : '/material/requests'}`;
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
     async createMaterialRequest(data) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/material/requests`, {
             method: 'POST',
             headers: {
@@ -413,6 +446,7 @@ export const api = {
     },
 
     async updateMaterialRequestStatus(id, status, adminName = null) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
             method: 'PATCH',
             headers: {
@@ -434,6 +468,7 @@ export const api = {
     },
 
     async addMaterialCategory(name) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
             method: 'POST',
             headers: {
@@ -447,6 +482,7 @@ export const api = {
     },
 
     async deleteMaterialCategory(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
             method: 'DELETE',
             headers: {
@@ -468,6 +504,7 @@ export const api = {
     },
 
     async saveMaterialConfig(alertUsers) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/config`, {
             method: 'POST',
             headers: {
@@ -481,6 +518,7 @@ export const api = {
     },
 
     async deleteArchivedMaterialRequest(id, key) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests/archived`, {
             method: "DELETE",
             headers: {
@@ -494,6 +532,7 @@ export const api = {
     },
 
     async deleteMaterialRequest(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
             method: 'DELETE',
             headers: {
@@ -507,6 +546,7 @@ export const api = {
     },
 
     async archiveMaterialRequests() {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests/archive`, {
             method: 'POST',
             headers: await getAuthHeaders()
@@ -533,6 +573,7 @@ export const api = {
     },
 
     async saveVehicle(vehicleData) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {
             method: 'POST',
             headers: {
@@ -546,6 +587,7 @@ export const api = {
     },
 
     async deleteVehicle(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {
             method: 'DELETE',
             headers: {
@@ -559,6 +601,7 @@ export const api = {
     },
     
     async uploadVehiclePhoto(vehicleId, file) {
+        await checkVisitor();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('vehicleId', vehicleId);
@@ -589,6 +632,7 @@ export const api = {
     },
 
     async submitVehicleLog(logData) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/vehicle/log`, {
             method: 'POST',
             headers: {
@@ -602,6 +646,7 @@ export const api = {
     },
 
     async deleteVehicleLog(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/vehicle/log`, {
             method: 'DELETE',
             headers: {
@@ -623,6 +668,7 @@ export const api = {
     },
 
     async saveDkvCard(data) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/dkv-cards`, {
             method: 'POST',
             headers: {
@@ -636,6 +682,7 @@ export const api = {
     },
 
     async deleteDkvCard(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/dkv-cards`, {
             method: 'DELETE',
             headers: {
@@ -657,6 +704,7 @@ export const api = {
     },
 
     async saveTollCard(data) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/toll-cards`, {
             method: 'POST',
             headers: {
@@ -670,6 +718,7 @@ export const api = {
     },
 
     async deleteTollCard(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/toll-cards`, {
             method: 'DELETE',
             headers: {
@@ -692,6 +741,7 @@ export const api = {
     },
 
     async saveBuilding(buildingData) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/buildings`, {
             method: 'POST',
             headers: { 
@@ -705,6 +755,7 @@ export const api = {
     },
 
     async deleteBuilding(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/buildings?id=${id}`, {
             method: 'DELETE',
             headers: await getAuthHeaders()
@@ -730,6 +781,7 @@ export const api = {
     },
 
     async saveMachine(machineData) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
             method: 'POST',
             headers: { 
@@ -744,6 +796,7 @@ export const api = {
     },
 
     async deleteMachine(id) {
+        await checkVisitor();
         console.log("API: Deleting machine:", id);
         const response = await fetch(`${config.api.workerUrl}/admin/machines?id=${id}`, {
             method: 'DELETE',
@@ -772,6 +825,7 @@ export const api = {
     },
 
     async addMachineLog(machineDbId, actionType, description) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines/logs`, {
             method: 'POST',
             headers: { 
@@ -785,14 +839,16 @@ export const api = {
     },
 
     // --- Push Notifications ---
-    async sendNotification(userId, message) {
+    async sendNotification(userId, message, userIds = null) {
+        await checkVisitor();
+        const payload = userIds ? { userIds, message } : { userId, message };
         const response = await fetch(`${config.api.workerUrl}/admin/notifications/send`, {
             method: 'POST',
             headers: { 
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ userId, message })
+            body: JSON.stringify(payload)
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -820,6 +876,7 @@ export const api = {
     },
 
     async saveMachineMaintenance(machineId, details, nextMaintenanceDate, vgpStatus = null, vgpObservations = null, lastControlType = 'Maintenance') {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines/maintenance`, {
             method: 'POST',
             headers: { 
@@ -848,6 +905,7 @@ export const api = {
     },
 
     async addMachineFamily(name) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machine-families`, {
             method: 'POST',
             headers: { 
@@ -861,6 +919,7 @@ export const api = {
     },
 
     async deleteMachineFamily(id) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machine-families?id=${id}`, {
             method: 'DELETE',
             headers: await getAuthHeaders()
@@ -870,6 +929,7 @@ export const api = {
     },
 
     async uploadMachinePhoto(machineId, file) {
+        await checkVisitor();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('machineId', machineId);
@@ -878,6 +938,86 @@ export const api = {
             method: 'POST',
             headers: await getAuthHeaders(),
             body: formData
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMyVehicle(payload) {
+        await checkVisitor();
+        const session = await auth.getSession();
+        const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // --- Notifications Admin ---
+    async getNotificationSubscribers() {
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/subscribers`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveNotificationConfig(configData) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(configData)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getNotificationSchedules() {
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/schedules`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveNotificationSchedule(scheduleData) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/schedules`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(scheduleData)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteNotificationSchedule(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/schedules?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async sendMaterialReminders() {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/requests/remind`, {
+            method: 'POST',
+            headers: await getAuthHeaders()
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

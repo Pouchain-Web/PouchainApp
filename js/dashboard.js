@@ -1,3 +1,15 @@
+// Injection des styles pour les modales personnalisées
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes modalBounce {
+        0% { transform: scale(0.8); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+    .modal-box {
+        animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+`;
+document.head.appendChild(style);
 
 import { auth } from './auth.js';
 import { api } from './api.js';
@@ -142,9 +154,15 @@ async function initDashboard() {
     }
 
     // 3. Render View
-    if (role === 'admin' && !isMobile) {
+    if ((role === 'admin' || role === 'visiteur') && !isMobile) {
         await renderAdminView(session);
         
+        // Popup de bienvenue pour les visiteurs
+        if (role === 'visiteur' && !sessionStorage.getItem('visitor_welcomed')) {
+            window.showVisitorWelcomeModal();
+            sessionStorage.setItem('visitor_welcomed', 'true');
+        }
+
         // Handle Fullscreen Intent after view is ready
         if (fsMode) {
             console.log("Auto-navigating to Planning for Fullscreen mode:", fsMode);
@@ -456,15 +474,7 @@ async function renderMobileView() {
                             dkv_card: document.getElementById('mi-dkv').value || null,
                             last_ct_date: document.getElementById('mi-ct').value || null
                         };
-                        const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
-                            method: "PATCH",
-                            headers: {
-                                "Content-Type": "application/json",
-                                'Authorization': `Bearer ${session.access_token}`
-                            },
-                            body: JSON.stringify(payload)
-                        });
-                        if (!response.ok) throw new Error(await response.text());
+                        await api.updateMyVehicle(payload);
                         
                         modal.remove();
                     } catch (e) {
@@ -2883,7 +2893,7 @@ window.renderAdminUsers = async function () {
     content.innerHTML = '<div style="text-align:center; margin-top:50px;">Chargement des utilisateurs...</div>';
 
     try {
-        const users = await api.listUsers();
+        const users = await api.listUsers(true);
 
         content.innerHTML = `
             <header>
@@ -2921,7 +2931,7 @@ window.renderAdminUsers = async function () {
                                 <td>${safeEmail}</td>
                                 <td>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
-                    ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : 'var(--badge-user-bg)'}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'var(--badge-user-text)'}">${u.role}</span>`
+                    ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : (u.role === 'visiteur' ? '#8E8E93' : 'var(--badge-user-bg)')}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'white'}">${u.role}</span>`
                     : `<select class="form-input" style="padding: 4px 8px; font-size: 13px; width: auto;" onchange="changeUserRole('${u.id}', this.value)">
                                             <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
                                             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
@@ -3056,19 +3066,47 @@ window.createNewUser = async function () {
 };
 
 
-window.showSuccessModal = function (message) {
+window.showCustomModal = function (title, message, icon = '⚠️', color = 'var(--primary-color)') {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.id = 'success-modal';
+    overlay.id = 'custom-modal-' + Date.now();
+    overlay.style.zIndex = '1000000';
     overlay.innerHTML = `
-        <div class="modal-box" style="text-align: center;">
-            <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
-            <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 20px;">Succès</h3>
-            <p style="margin-bottom: 24px; color: var(--text-secondary);">${message}</p>
-            <button class="btn-primary" style="width: 100%; justify-content: center;" onclick="closeModal('success-modal')">OK</button>
+        <div class="modal-box" style="text-align: center; max-width: 450px;">
+            <div style="font-size: 64px; margin-bottom: 20px;">${icon}</div>
+            <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 24px; font-weight: 800;">${title}</h3>
+            <div style="margin-bottom: 30px; color: var(--text-secondary); line-height: 1.6; font-size: 17px;">${message}</div>
+            <button class="btn-primary" style="width: 100%; justify-content: center; height: 50px; border-radius: 25px; font-size: 18px; background-color: ${color};" onclick="this.closest('.modal-overlay').remove()">Compris</button>
         </div>
     `;
     document.body.appendChild(overlay);
+};
+
+window.showSuccessModal = function (message) {
+    window.showCustomModal("Succès", message, '✅', 'var(--primary-color)');
+};
+
+window.showVisitorWelcomeModal = function() {
+    window.showCustomModal(
+        "Bienvenue (Mode Démo)", 
+        "Vous êtes connecté en tant que <b>Visiteur</b>.<br><br>Vous pouvez explorer toute l'interface admin, consulter les plannings, les documents et les configurations.<br><br>Cependant, <b>aucune modification de données</b> n'est autorisée avec ce compte.", 
+        "👋", 
+        '#007AFF'
+    );
+};
+
+// Redéfinition globale de alert() pour utiliser nos modales élégantes
+const _originalAlert = window.alert;
+window.alert = function(message) {
+    if (!message) return;
+    const msgStr = String(message);
+    if (msgStr.includes("Désolé")) {
+        window.showCustomModal("Accès Limité", msgStr, '🔒', '#8E8E93');
+    } else if (msgStr.includes("Succès") || msgStr.includes("réussi") || msgStr.includes("envoyée") || msgStr.includes("ajoutée")) {
+        window.showCustomModal("Succès", msgStr, '✅', 'var(--primary-color)');
+    } else {
+        window.showCustomModal("Information", msgStr, 'ℹ️', '#007AFF');
+    }
 };
 
 window.openAdminChangePasswordModal = function (id, firstName, lastName, email) {
@@ -5202,11 +5240,7 @@ window.renderAdminMaterialRequests = async function () {
                 }
                 
                 try {
-                    const response = await fetch(`${config.api.workerUrl}/admin/material/requests/remind`, {
-                        method: 'POST',
-                        headers: await api.getAuthHeaders()
-                    });
-                    const result = await response.json();
+                    const result = await api.sendMaterialReminders();
                     if (result.success) {
                         alert(`✅ Test réussi !\nDemandes trouvées : ${result.count}\nAdmins notifiés : ${result.notified}`);
                     } else {
@@ -8065,9 +8099,9 @@ window.renderAdminNotifications = async function() {
         // Chargement des données
         const [users, subsResult, configRes, schedules] = await Promise.all([
             api.listUsers(),
-            fetch(`${config.api.workerUrl}/admin/notifications/subscribers`, { headers: await api.getAuthHeaders() }).then(r => r.json()),
-            fetch(`${config.api.workerUrl}/admin/notifications/config`, { headers: await api.getAuthHeaders() }).then(r => r.json()),
-            fetch(`${config.api.workerUrl}/admin/notifications/schedules`, { headers: await api.getAuthHeaders() }).then(r => r.json()).catch(() => [])
+            api.getNotificationSubscribers(),
+            api.getNotificationConfig(),
+            api.getNotificationSchedules().catch(() => [])
         ]);
         
         const subscriberUserIds = new Set(subsResult.map(s => s.user_id));
@@ -8350,12 +8384,7 @@ window.renderAdminNotifications = async function() {
                 btn.innerText = "Création...";
 
                 try {
-                    const res = await fetch(`${config.api.workerUrl}/admin/notifications/schedules`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!res.ok) throw new Error(await res.text());
+                    await api.saveNotificationSchedule(payload);
                     if (appUrl) localStorage.setItem('last_notif_app_url', appUrl);
                     document.getElementById('modal-schedule').remove();
                     renderAdminNotifications();
@@ -8389,11 +8418,7 @@ window.renderAdminNotifications = async function() {
                 btn.disabled = true;
                 btn.innerText = "Suppression...";
                 try {
-                    const res = await fetch(`${config.api.workerUrl}/admin/notifications/schedules?id=${id}`, {
-                        method: 'DELETE',
-                        headers: await api.getAuthHeaders()
-                    });
-                    if (!res.ok) throw new Error(await res.text());
+                    await api.deleteNotificationSchedule(id);
                     modal.remove();
                     renderAdminNotifications();
                 } catch (e) {
@@ -8474,17 +8499,7 @@ window.sendCustomNotification = async function() {
     }
 
     try {
-        const response = await fetch(`${config.api.workerUrl}/admin/notifications/send`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                ...(await api.getAuthHeaders())
-            },
-            body: JSON.stringify(payload)
-        });
-        
-        if (!response.ok) throw new Error(`Erreur ${response.status}: ${await response.text()}`);
-        const result = await response.json();
+        const result = await api.sendNotification(userIds.length > 0 ? null : 'all', message, userIds.length > 0 ? userIds : null);
         
         if (result.success) {
             if (status) status.innerHTML = `<span style='color: #34C759; font-weight: 800;'>✅ Notification envoyée !</span>`;
@@ -8527,11 +8542,7 @@ window.saveAutoSettings = async () => {
     };
 
     try {
-        await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(await api.getAuthHeaders()) },
-            body: JSON.stringify(payload)
-        });
+        await api.saveNotificationConfig(payload);
     } catch (e) {
         console.error("Save config error", e);
     }
@@ -8583,14 +8594,7 @@ window.triggerMaterialReminder = async () => {
     }
     
     try {
-        const response = await fetch(`${config.api.workerUrl}/admin/material/requests/remind`, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                ...(await api.getAuthHeaders())
-            }
-        });
-        const result = await response.json();
+        const result = await api.sendMaterialReminders();
         if (result.success) {
             showSuccessModal(`✅ Test réussi !<br><br>Demandes trouvées : <b>${result.count}</b><br>Admins notifiés : <b>${result.notified}</b>`);
         } else {

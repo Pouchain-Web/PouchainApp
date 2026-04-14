@@ -34,8 +34,8 @@ export default {
             });
         }
 
-        // 2. Security Check
         const user = await getUser(request, env);
+        const userRole = await getUserRole(user, env);
 
         // Check Auth : Allow public access ONLY for /get/ files and /update/check
         const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check');
@@ -45,7 +45,15 @@ export default {
                 return new Response("Unauthorized", { status: 401, headers: corsHeaders });
             }
 
-            // Check Admin for /admin/ routes
+            // Visitor Protection: Block all mutations with custom message
+            if (method !== "GET" && userRole === 'visiteur') {
+                return new Response("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !", { 
+                    status: 403, 
+                    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" } 
+                });
+            }
+
+            // Check Admin/Visitor for /admin/ routes
             if (url.pathname.startsWith('/admin/')) {
                 // EXCEPTION: grant access to all authenticated users for "Cartes et Parc" and "Maint." apps
                 const isParcOrMaintPath = 
@@ -61,11 +69,10 @@ export default {
                     url.pathname.endsWith("/admin/toll-cards")
                 );
 
-                if (!isParcOrMaintPath && !isVehicleRead) {
-                    const admin = await isAdmin(user, env);
-                    if (!admin) {
-                        return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
-                    }
+                const isVisitorAllowed = method === "GET" && userRole === 'visiteur';
+
+                if (!isParcOrMaintPath && !isVehicleRead && userRole !== 'admin' && !isVisitorAllowed) {
+                    return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
                 }
             }
         }
@@ -2630,18 +2637,27 @@ async function getUser(request, env) {
     return await response.json();
 }
 
+async function getUserRole(user, env) {
+    if (!user) return null;
+    try {
+        const res = await fetch(`${env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co"}/rest/v1/profiles?id=eq.${user.id}&select=role`, {
+            headers: {
+                "apikey": env.SUPABASE_SERVICE_KEY,
+                "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`
+            }
+        });
+        if (!res.ok) return 'user';
+        const data = await res.json();
+        return data.length > 0 ? data[0].role : 'user';
+    } catch (e) {
+        console.error("getUserRole Error:", e);
+        return 'user';
+    }
+}
+
 async function isAdmin(user, env) {
-    if (!user) return false;
-    // Verify against profiles table
-    const res = await fetch(`${env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co"}/rest/v1/profiles?id=eq.${user.id}&select=role`, {
-        headers: {
-            "apikey": env.SUPABASE_SERVICE_KEY,
-            "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`
-        }
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.length > 0 && data[0].role === 'admin';
+    const role = await getUserRole(user, env);
+    return role === 'admin';
 }
 
 /**
