@@ -981,6 +981,14 @@ export const api = {
         return await response.json();
     },
 
+    async getNotificationConfig() {
+        const response = await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async getNotificationSchedules() {
         const response = await fetch(`${config.api.workerUrl}/admin/notifications/schedules`, {
             headers: await getAuthHeaders()

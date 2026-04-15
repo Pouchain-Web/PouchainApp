@@ -7907,6 +7907,7 @@ window.renderAdminNotifications = async function() {
                             <div id="char-count" style="text-align: right; margin-top: 8px; font-size: 12px; color: #666;">0 / 200</div>
                         </div>
 
+
                         <div id="notif-status" style="min-height: 30px; text-align: center;"></div>
 
                         <button class="btn btn-primary" onclick="window.sendCustomNotification()" id="btn-send-notif" 
@@ -8095,39 +8096,77 @@ window.renderAdminNotifications = async function() {
         </style>
     `;
 
+    const list = document.getElementById('recipient-list');
+    if (list) list.innerHTML = '<div style="padding: 20px; color: #888;">⌛ Chargement des utilisateurs...</div>';
+
     try {
-        // Chargement des données
-        const [users, subsResult, configRes, schedules] = await Promise.all([
+        // Chargement des données avec Promise.allSettled pour plus de robustesse
+        const results = await Promise.allSettled([
             api.listUsers(),
             api.getNotificationSubscribers(),
             api.getNotificationConfig(),
             api.getNotificationSchedules().catch(() => [])
         ]);
-        
-        const subscriberUserIds = new Set(subsResult.map(s => s.user_id));
+
+        const failed = results.filter(r => r.status === 'rejected');
+        if (failed.length > 0 && failed.some(f => {
+            const msg = (f.reason && f.reason.message) || String(f.reason || "");
+            return msg.includes("Unauthorized");
+        })) {
+             if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">
+                <p>⚠️ Session expirée ou accès refusé.</p>
+                <button onclick="location.reload()" class="btn" style="margin-top:10px; background:rgba(255,255,255,0.1); color:white; border:none; padding:8px 15px; border-radius:10px;">Réessayer</button>
+             </div>`;
+             return;
+        }
+
+        const users = results[0].status === 'fulfilled' ? results[0].value : [];
+        const subsResult = results[1].status === 'fulfilled' ? results[1].value : [];
+        const configRes = results[2].status === 'fulfilled' ? results[2].value : {};
+        const schedules = results[3].status === 'fulfilled' ? results[3].value : [];
+
+        if (results[0].status === 'rejected' || results[1].status === 'rejected') {
+            console.error("Certaines APIs de notification ont échoué", results);
+            if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">
+                <p>⚠️ Erreur lors du chargement des abonnés.</p>
+                <p style="font-size:10px; opacity:0.6;">${results[0].status === 'rejected' ? results[0].reason : results[1].reason}</p>
+            </div>`;
+        }
+
+        const subscriberUserIds = new Set(subsResult.filter(Boolean).map(s => s.user_id));
         const adminAlertIds = new Set(configRes.admin_alert_ids || []);
         
         // Appliquer les réglages d'automatisation (toggles)
-        document.getElementById('auto-planning').checked = configRes.auto_planning !== false;
-        document.getElementById('auto-mileage').checked = configRes.auto_mileage !== false;
-        document.getElementById('auto-deadline').checked = configRes.auto_deadline !== false;
-        document.getElementById('auto-material').checked = configRes.auto_material !== false;
+        const checkEl = (id) => document.getElementById(id);
+        if (checkEl('auto-planning')) checkEl('auto-planning').checked = configRes.auto_planning !== false;
+        if (checkEl('auto-mileage')) checkEl('auto-mileage').checked = configRes.auto_mileage !== false;
+        if (checkEl('auto-deadline')) checkEl('auto-deadline').checked = configRes.auto_deadline !== false;
+        if (checkEl('auto-material')) checkEl('auto-material').checked = configRes.auto_material !== false;
         
-        document.getElementById('maint-alert-days').value = configRes.maint_alert_days || 30;
-        document.getElementById('maint-alert-days-val').innerText = (configRes.maint_alert_days || 30) + ' jours';
+        if (checkEl('maint-alert-days')) {
+            checkEl('maint-alert-days').value = configRes.maint_alert_days || 30;
+            if (checkEl('maint-alert-days-val')) {
+                checkEl('maint-alert-days-val').innerText = (configRes.maint_alert_days || 30) + ' jours';
+            }
+        }
         const maintAlertUserIds = new Set(configRes.maint_alert_userIds || []);
 
         // Remplir la liste des destinataires (Envoi direct)
-        const list = document.getElementById('recipient-list');
-        list.innerHTML = "";
-        users.sort((a, b) => {
+        if (list) {
+            list.innerHTML = "";
+            if (users.length === 0 && results[0].status === 'fulfilled') {
+                list.innerHTML = '<div style="padding: 20px; color: #888; text-align:center;">Aucun utilisateur trouvé.</div>';
+            }
+        }
+        const validUsers = users.filter(u => u && u.id);
+        validUsers.sort((a, b) => {
             const subA = subscriberUserIds.has(a.id);
             const subB = subscriberUserIds.has(b.id);
             if (subA !== subB) return subB ? 1 : -1;
             return (a.first_name || "").localeCompare(b.first_name || "");
         });
 
-        users.forEach(u => {
+        validUsers.forEach(u => {
             const isSubbed = subscriberUserIds.has(u.id);
             const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email;
             const div = document.createElement('div');
@@ -8433,6 +8472,8 @@ window.renderAdminNotifications = async function() {
 
     } catch (e) {
         console.error("Render error", e);
+        const list = document.getElementById('recipient-list');
+        if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">⚠️ Une erreur est survenue lors de l'affichage :<br><small>${e.message}</small></div>`;
     }
 };
 
@@ -8607,6 +8648,122 @@ window.triggerMaterialReminder = async () => {
             btn.disabled = false;
             btn.innerHTML = "🔔 Tester les rappels de demandes (+7j)";
         }
+    }
+};
+
+
+window.renderAdminFriterie = async function() {
+    adminCurrentFolder = null;
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    document.getElementById('nav-friterie').classList.add('active');
+
+    const content = document.getElementById('admin-content');
+    content.innerHTML = `
+        <header style="margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(30,30,30,0.85); backdrop-filter: blur(16px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+            <h1 style="margin: 0;">Gestion Friterie 🍟</h1>
+            <div style="display:flex; gap:12px;">
+                <button onclick="window.renderAdminFriterie()" class="btn" style="background:rgba(255,255,255,0.05); border:none; color:white; padding:10px 20px; border-radius:12px; font-weight:700;">🔄 Rafraîchir</button>
+                <button onclick="window.adminDeleteAllFritOrdersFromAdmin()" class="btn btn-danger" style="background:#FF3B30; color:white; padding:10px 20px; border-radius:12px; font-weight:800; border:none;">🗑️ TOUT EFFACER</button>
+            </div>
+        </header>
+        <div id="frit-orders-container" style="padding: 20px;">
+            <div style="text-align:center; padding:50px; color:#888;">Chargement des commandes...</div>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`${config.api.workerUrl}/admin/friterie/orders`, {
+            headers: { 'Authorization': `Bearer ${(await auth.getSession()).access_token}` }
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const orders = await response.json();
+
+        const container = document.getElementById('frit-orders-container');
+        if (orders.length === 0) {
+            container.innerHTML = `<div style="text-align:center; padding:100px; background:rgba(255,255,255,0.03); border-radius:30px; border:2px dashed rgba(255,255,255,0.05);">
+                <div style="font-size:60px; margin-bottom:20px;">🍟</div>
+                <h3 style="color:white; margin-bottom:10px;">Aucune commande</h3>
+                <p style="color:#888;">Les collaborateurs n'ont pas encore commencé à commander.</p>
+            </div>`;
+            return;
+        }
+
+        // Group by user
+        const grouped = {};
+        orders.forEach(o => {
+            let profile = o.profiles;
+            if (Array.isArray(profile)) profile = profile[0];
+            const name = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : `User #${o.user_id.substring(0,5)}`;
+            if (!grouped[name]) grouped[name] = [];
+            grouped[name].push(o);
+        });
+
+        // Stats summary
+        const totalItems = orders.length;
+        const totalUsers = Object.keys(grouped).length;
+
+        container.innerHTML = `
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:20px; margin-bottom:30px;">
+                <div class="glass-panel" style="padding:20px; border-radius:15px; text-align:center;">
+                    <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Commandes Totales</div>
+                    <div style="font-size:32px; font-weight:900; color:white;">${totalItems}</div>
+                </div>
+                <div class="glass-panel" style="padding:20px; border-radius:15px; text-align:center;">
+                    <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Collaborateurs</div>
+                    <div style="font-size:32px; font-weight:900; color:#FFD60A;">${totalUsers}</div>
+                </div>
+                <div class="glass-panel" style="padding:20px; border-radius:15px; text-align:center; cursor:pointer;" onclick="renderAdminNotifications()">
+                    <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Rappel</div>
+                    <div style="font-size:14px; font-weight:600; color:#5856D6; margin-top:10px;">🔔 Envoyer un rappel</div>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap:20px;">
+                ${Object.entries(grouped).map(([name, items]) => `
+                    <div class="glass-panel" style="padding:25px; border-radius:25px; border:1px solid rgba(255,255,255,0.05);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px;">
+                            <h3 style="margin:0; font-size:18px; color:white;">${name}</h3>
+                            <span style="background:rgba(255,214,10,0.1); color:#FFD60A; padding:4px 12px; border-radius:10px; font-size:12px; font-weight:800;">${items.length} article(s)</span>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            ${items.map(o => {
+                                const date = o.created_at ? new Date(o.created_at) : null;
+                                const timeStr = date ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+                                return `
+                                    <div style="padding-left:12px; border-left:4px solid #FFD60A; position:relative;">
+                                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                            <span style="font-weight:700; color:white; font-size:15px;">${o.item_name}</span>
+                                            <span style="font-size:10px; color:#555;">${timeStr}</span>
+                                        </div>
+                                        <div style="font-size:13px; color:#888;">Catégorie: ${o.category}</div>
+                                        ${o.details ? `<div style="font-size:13px; color:#aaa;">Style: <b>${o.details}</b></div>` : ''}
+                                        ${o.sauce ? `<div style="font-size:13px; color:#FF9500; font-weight:700;">Sauce: ${o.sauce}</div>` : ''}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } catch (e) {
+        document.getElementById('frit-orders-container').innerHTML = `<div style="color:#FF3B30; padding:20px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.adminDeleteAllFritOrdersFromAdmin = async function() {
+    if (!confirm("⚠️ ACTION ADMINISTRATIVE : Voulez-vous vraiment effacer TOUTES les commandes de TOUT LE MONDE ? cette action est irréversible (prévu pour le nettoyage hebdomadaire).")) return;
+    try {
+        const session = await auth.getSession();
+        const res = await fetch(`${config.api.workerUrl}/admin/friterie/orders`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        if (!res.ok) throw new Error(await res.text());
+        showSuccessModal("Toutes les commandes ont été effacées avec succès.");
+        renderAdminFriterie();
+    } catch (e) {
+        alert("Erreur: " + e.message);
     }
 };
 

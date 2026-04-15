@@ -2312,6 +2312,8 @@ export default {
             }
 
             if (method === "GET" && url.pathname === "/admin/friterie/orders") {
+                 const isUserAdmin = await isAdmin(user, env);
+                 if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
                  const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                  const serviceKey = env.SUPABASE_SERVICE_KEY;
                  const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*,profiles(first_name,last_name)`, {
@@ -2319,6 +2321,20 @@ export default {
                  });
                  if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                  return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/admin/friterie/orders") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?id=neq.-1`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true, message: "Toutes les commandes ont été effacées." }), { 
+                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                });
             }
 
             if (method === "POST" && url.pathname === "/admin/material/requests/remind") {
@@ -2360,9 +2376,9 @@ export default {
 
                 // AUTOMATIONS
                 
-                // A. Rappels Hebdomadaires (Vendredi après-midi)
+                // A. Rappels Hebdomadaires (Vendredi après-midi 14:00)
                 try {
-                    if (day === 5 && hour >= 14 && hour < 16) {
+                    if (day === 5 && hour === 14 && min === 0) {
                         const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=*`, {
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
@@ -2403,7 +2419,7 @@ export default {
 
                 // C. Friterie Notification (Mercredi 11:00)
                 try {
-                    if (day === 3 && hour === 11) {
+                    if (day === 3 && hour === 11 && min === 0) {
                         const subRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=user_id`, {
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
@@ -2419,10 +2435,10 @@ export default {
                     }
                 } catch (e) { console.error("Friterie notification error:", e); }
 
-                // D. Friterie Cleanup (19h00)
+                // D. Friterie Cleanup (Mercredi matin 03:00)
                 try {
-                    if (hour === 19) {
-                        await fetch(`${supabaseUrl}/rest/v1/friterie_orders`, {
+                    if (day === 3 && hour === 3 && min === 0) {
+                        await fetch(`${supabaseUrl}/rest/v1/friterie_orders?id=neq.-1`, {
                             method: "DELETE",
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
@@ -2430,9 +2446,9 @@ export default {
                     }
                 } catch (e) { console.error("Friterie cleanup error:", e); }
 
-                // E. Échéances Véhicules
+                // E. Échéances Véhicules (Chaque matin à 08:30)
                 try {
-                    if (globalConfig.auto_deadline !== false) {
+                    if (hour === 8 && min === 30 && globalConfig.auto_deadline !== false) {
                         const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=*`, {
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
@@ -2461,9 +2477,9 @@ export default {
                     }
                 } catch (e) { console.error("Vehicle deadlines error:", e); }
 
-                // F. Maintenance Matériel
+                // F. Maintenance Matériel (Chaque matin à 08:30)
                 try {
-                    if (globalConfig.maint_alert_userIds && globalConfig.maint_alert_userIds.length > 0) {
+                    if (hour === 8 && min === 30 && globalConfig.maint_alert_userIds && globalConfig.maint_alert_userIds.length > 0) {
                         const mRes = await fetch(`${supabaseUrl}/rest/v1/machines?next_maintenance_date=is.not.null&select=*`, {
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
@@ -2528,14 +2544,14 @@ export default {
 
                 // I. Rappel Demandes Matériel (Lundi matin 09:00)
                 try {
-                    if (day === 1 && hour === 9) {
+                    if (day === 1 && hour === 9 && min === 0) {
                         await sendMaterialReminders(env);
                     }
                 } catch (e) { console.error("Material reminder error:", e); }
 
                 // H. Archivage Hebdo (Lundi 08:00)
                 try {
-                    if (day === 1 && hour === 8) {
+                    if (day === 1 && hour === 8 && min === 0) {
                         await performArchiving(env);
                     }
                 } catch (e) { console.error("Archiving error:", e); }
