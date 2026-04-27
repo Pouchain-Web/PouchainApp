@@ -1358,44 +1358,20 @@ export default {
             if (url.pathname.endsWith("/admin/material/stock/generate-refs") && method === "POST") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const marketCode = '01';
 
-                // Get all materials without qr_ref
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=is.null&select=id&order=designation.asc`, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                // Call the Supabase RPC function to assign all refs in one go
+                const res = await fetch(`${supabaseUrl}/rest/v1/rpc/assign_qr_refs`, {
+                    method: "POST",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ market_code: "01" })
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                const items = await res.json();
-
-                // Find current max
-                const maxRes = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=like.PCH${marketCode}*&select=qr_ref&order=qr_ref.desc&limit=1`, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                let nextNum = 1;
-                if (maxRes.ok) {
-                    const maxData = await maxRes.json();
-                    if (maxData.length > 0 && maxData[0].qr_ref) {
-                        nextNum = parseInt(maxData[0].qr_ref.slice(-4)) + 1;
-                    }
-                }
-
-                let count = 0;
-                for (const item of items) {
-                    const qrRef = `PCH${marketCode}${String(nextNum).padStart(4, '0')}`;
-                    await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${item.id}`, {
-                        method: "PATCH",
-                        headers: {
-                            "apikey": serviceKey,
-                            "Authorization": `Bearer ${serviceKey}`,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({ qr_ref: qrRef })
-                    });
-                    nextNum++;
-                    count++;
-                }
-
-                return new Response(JSON.stringify({ success: true, count, message: `${count} références générées (PCH${marketCode}0001 à PCH${marketCode}${String(nextNum - 1).padStart(4, '0')})` }), {
+                const result = await res.json();
+                return new Response(JSON.stringify({ success: true, count: result, message: `${result} références générées` }), {
                     headers: { ...corsHeaders, "Content-Type": "application/json" }
                 });
             }
