@@ -2943,10 +2943,11 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
 
     // Pre-fetch FCM Token if there are Capacitor subscriptions
     let fcmAccessToken = null;
+    let sa = null;
     const hasCapacitor = subs.some(s => s.type === 'capacitor' || s.token);
     if (hasCapacitor) {
         try {
-            const sa = typeof env.FIREBASE_SERVICE_ACCOUNT === 'string' ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT) : env.FIREBASE_SERVICE_ACCOUNT;
+            sa = typeof env.FIREBASE_SERVICE_ACCOUNT === 'string' ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT) : env.FIREBASE_SERVICE_ACCOUNT;
             fcmAccessToken = await getGCPAccessToken(sa);
         } catch (e) {
             console.error("FCM Auth Error:", e);
