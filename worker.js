@@ -69,9 +69,13 @@ export default {
                     url.pathname.endsWith("/admin/toll-cards")
                 );
 
+                // EXCEPTION: allow all users to see material stock and submit requests
+                const isMaterialAllowed = (method === "GET" && url.pathname.includes("/admin/material/stock")) ||
+                                          (method === "POST" && url.pathname.endsWith("/admin/material/stock/requests"));
+
                 const isVisitorAllowed = method === "GET" && userRole === 'visiteur';
 
-                if (!isParcOrMaintPath && !isVehicleRead && userRole !== 'admin' && !isVisitorAllowed) {
+                if (!isParcOrMaintPath && !isVehicleRead && !isMaterialAllowed && userRole !== 'admin' && !isVisitorAllowed) {
                     return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
                 }
             }
