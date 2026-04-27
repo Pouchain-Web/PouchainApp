@@ -2577,27 +2577,15 @@ export default {
                 const configData = await configRes.json();
                 const globalConfig = configData[0] || {};
 
-                const parisFormatter = new Intl.DateTimeFormat('en-GB', {
-                    timeZone: 'Europe/Paris',
-                    hour: 'numeric',
-                    minute: 'numeric',
-                    weekday: 'numeric',
-                    day: 'numeric',
-                    month: 'numeric',
-                    year: 'numeric',
-                    hour12: false
-                });
-                const parts = parisFormatter.formatToParts(now);
-                const getPart = (type) => parseInt(parts.find(p => p.type === type).value);
+                // Accurate Paris Time calculation
+                const parisTimeStr = now.toLocaleString("en-US", { timeZone: "Europe/Paris" });
+                const parisDate = new Date(parisTimeStr);
                 
-                const hour = getPart('hour');
-                const min = getPart('minute');
-                const month = getPart('month');
-                const dayOfMonth = getPart('day');
-                // getUTCDay style: 0 (Sun) to 6 (Sat)
-                // weekday in en-GB is 1 (Mon) to 7 (Sun)
-                let day = getPart('weekday');
-                if (day === 7) day = 0; 
+                const day = parisDate.getDay(); // 0 (Sun) to 6 (Sat)
+                const hour = parisDate.getHours();
+                const min = parisDate.getMinutes();
+                const dayOfMonth = parisDate.getDate();
+                const month = parisDate.getMonth() + 1; // 1-12
 
                 // AUTOMATIONS
 
