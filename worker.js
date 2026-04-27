@@ -38,7 +38,7 @@ export default {
         const userRole = await getUserRole(user, env);
 
         // Check Auth : Allow public access ONLY for /get/ files and /update/check
-        const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check') || url.pathname.startsWith('/material');
+        const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check') || url.pathname.includes('/update/apk-check') || url.pathname.startsWith('/material');
 
         // --- ROUTE: MATERIAL QR DEEP LINK (Public) ---
         if (method === "GET" && url.pathname === '/material') {
@@ -141,6 +141,34 @@ export default {
         }
 
         try {
+            // --- ROUTE: CHECK FOR APK UPDATE ---
+            if (url.pathname.includes("/update/apk-check")) {
+                const currentVersion = url.searchParams.get('current_version') || "0.0";
+                const listing = await env.MY_BUCKET.list({ prefix: 'app_dist/' });
+                let latestVersion = "0.0";
+                let latestFile = null;
+
+                for (const obj of listing.objects) {
+                    const match = obj.key.match(/PouchainApp[Vv](\d+[\.\d]*)\.apk$/i);
+                    if (match) {
+                        const ver = match[1];
+                        if (compareVersions(ver, latestVersion) > 0) {
+                            latestVersion = ver;
+                            latestFile = obj;
+                        }
+                    }
+                }
+
+                const isNewer = compareVersions(latestVersion, currentVersion) > 0;
+                return new Response(JSON.stringify({
+                    updateAvailable: isNewer,
+                    newVersion: latestVersion,
+                    url: latestFile ? `${url.origin}/get/${latestFile.key}` : null
+                }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache" }
+                });
+            }
+
             // --- ROUTE: CHECK FOR UPDATES (Auto-Detect zip files with version in name) ---
             if (url.pathname.includes("/update/check")) {
                 const currentVersion = url.searchParams.get('current_version') || "0.0.0";
@@ -2687,6 +2715,8 @@ export default {
                 const configData = await configRes.json();
                 const globalConfig = configData[0] || {};
 
+                const now = new Date();
+
                 // Ultra-robust Paris Time calculation
                 const parisParts = new Intl.DateTimeFormat('en-GB', {
                     timeZone: 'Europe/Paris',
@@ -2842,7 +2872,6 @@ export default {
                     if (scheduleRes.ok) {
                         const schedules = await scheduleRes.json();
                         if (Array.isArray(schedules)) {
-                            const todayStr = now.toISOString().split('T')[0];
                             for (const s of schedules) {
                                 let shouldSend = false;
                                 const targetHour = s.hour !== null && s.hour !== undefined ? Number(s.hour) : 0;

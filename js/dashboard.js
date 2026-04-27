@@ -5912,7 +5912,7 @@ window.updateMaterialStockBadge = async function () {
     try {
         const requests = await api.getMaterialStockRequests();
         const pendingCount = requests.filter(r => r.status === 'pending').length;
-        
+
         // Sidebar badge
         const sidebarBadge = document.getElementById('mat-stock-request-badge');
         if (sidebarBadge) {
@@ -7656,6 +7656,21 @@ window.openEditMaterialModal = async function (id = null) {
             </div>
             
             <form id="edit-material-form" style="display: grid; grid-template-columns: ${isMobile ? '1fr' : '1fr 1fr'}; gap: 20px;">
+
+                ${(id && item.qr_ref) ? `
+                <div style="grid-column: 1 / -1; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px;">
+                    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #FF9500; text-transform: uppercase; font-weight: 700;">📱 QR Code — ${item.qr_ref}</h3>
+                    <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                        <canvas id="qr-canvas-modal" style="border-radius: 8px; background: white; padding: 8px;"></canvas>
+                        <div style="flex: 1;">
+                            <div style="font-family: monospace; font-size: 22px; color: #FF9500; font-weight: 900; margin-bottom: 8px;">${item.qr_ref}</div>
+                            <div style="font-size: 12px; color: #8E8E93; margin-bottom: 16px;">Scannez ce QR code pour accéder directement à cette fiche matériel.</div>
+                            <button type="button" onclick="window.downloadSingleQr('${item.qr_ref}', '${(item.designation || 'materiel').replace(/'/g, "\\\\'")}')" style="padding: 10px 16px; background: #FF9500; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 13px;">📥 Télécharger ce QR</button>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+
                 <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
                     <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Désignation</label>
                     <input type="text" name="designation" value="${item.designation || ''}" class="form-input" style="width:100%;" required>
@@ -7717,19 +7732,6 @@ window.openEditMaterialModal = async function (id = null) {
                 </div>
                 ` : ''}
 
-                ${(id && item.qr_ref) ? `
-                <div style="grid-column: 1 / -1; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-                    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #FF9500; text-transform: uppercase; font-weight: 700;">📱 QR Code — ${item.qr_ref}</h3>
-                    <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                        <canvas id="qr-canvas-modal" style="border-radius: 8px; background: white; padding: 8px;"></canvas>
-                        <div style="flex: 1;">
-                            <div style="font-family: monospace; font-size: 22px; color: #FF9500; font-weight: 900; margin-bottom: 8px;">${item.qr_ref}</div>
-                            <div style="font-size: 12px; color: #8E8E93; margin-bottom: 16px;">Scannez ce QR code pour accéder directement à cette fiche matériel.</div>
-                            <button type="button" onclick="window.downloadSingleQr('${item.qr_ref}', '${(item.designation || 'materiel').replace(/'/g, "\\\\'")}')" style="padding: 10px 16px; background: #FF9500; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 13px;">📥 Télécharger ce QR</button>
-                        </div>
-                    </div>
-                </div>
-                ` : ''}
             </form>
         </div>
     `;
@@ -7877,10 +7879,10 @@ window.openQrExportModal = async function () {
             <div style="margin-bottom: 20px;">
                 <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:10px; font-weight:700; text-transform:uppercase;">Taille des QR codes sur le PDF</label>
                 <select id="qr-size-select" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:12px; color:white; padding:12px; font-size:15px; outline:none;">
-                    <option value="60">Petit (60×60 mm) — ~24 par page</option>
-                    <option value="80" selected>Moyen (80×80 mm) — ~12 par page</option>
-                    <option value="100">Grand (100×100 mm) — ~8 par page</option>
-                    <option value="120">Très grand (120×120 mm) — ~6 par page</option>
+                    <option value="60">Petit (60×60 mm) — 6 par page (2×3)</option>
+                    <option value="80" selected>Moyen (80×80 mm) — 4 par page (2×2)</option>
+                    <option value="100">Grand (100×100 mm) — 2 par page (1×2)</option>
+                    <option value="120">Très grand (120×120 mm) — 1 par page</option>
                 </select>
             </div>
 
@@ -7985,18 +7987,19 @@ window.exportAllQrPdf = async function (btn) {
         btn.innerText = `⏳ Page ${page + 1}/${totalPages}...`;
     }
 
-    // Download each page as PNG (simple approach without jsPDF dependency)
+    // Export all pages into a single PDF using jsPDF
+    btn.innerText = '⏳ Création du PDF...';
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     for (let i = 0; i < pages.length; i++) {
-        const link = document.createElement('a');
-        link.download = `QR_Codes_Pouchain_Page_${i + 1}.png`;
-        link.href = pages[i].toDataURL('image/png');
-        link.click();
-        await new Promise(r => setTimeout(r, 300));
+        if (i > 0) doc.addPage();
+        doc.addImage(pages[i].toDataURL('image/png'), 'PNG', 0, 0, 210, 297);
     }
+    doc.save('QR_Codes_Pouchain.pdf');
 
     btn.disabled = false;
     btn.innerText = origText;
-    showToast(`${pages.length} page(s) exportée(s) avec ${stock.length} QR codes`);
+    showToast(`PDF exporté — ${pages.length} page(s), ${stock.length} QR codes`);
 };
 
 window.loadMaterialHistory = async function (materialId, containerId) {
@@ -9458,7 +9461,7 @@ window.openMaterialRequestsModal = async function () {
     try {
         const requests = await api.getMaterialStockRequests();
         const container = document.getElementById('requests-list-container');
-        
+
         if (requests.length === 0) {
             container.innerHTML = `<div style="text-align: center; padding: 60px; color: #8E8E93;">Aucune demande en attente 🌟</div>`;
             return;
@@ -9506,7 +9509,7 @@ window.openMaterialRequestsModal = async function () {
 
 window.handleMaterialRequest = async function (id, status) {
     if (!confirm(`Voulez-vous vraiment ${status === 'approved' ? 'approuver' : 'refuser'} cette demande ?`)) return;
-    
+
     try {
         await api.updateMaterialStockRequestStatus(id, status);
         showToast(status === 'approved' ? "Demande approuvée et stock mis à jour" : "Demande refusée");
