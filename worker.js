@@ -2577,10 +2577,27 @@ export default {
                 const configData = await configRes.json();
                 const globalConfig = configData[0] || {};
 
-                const now = new Date();
-                const day = now.getUTCDay(); // 0:Sun, 1:Mon, ..., 5:Fri, 6:Sat
-                const hour = (now.getUTCHours() + 2) % 24; // Paris Time (approx)
-                const min = now.getUTCMinutes();
+                const parisFormatter = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: 'Europe/Paris',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    weekday: 'numeric',
+                    day: 'numeric',
+                    month: 'numeric',
+                    year: 'numeric',
+                    hour12: false
+                });
+                const parts = parisFormatter.formatToParts(now);
+                const getPart = (type) => parseInt(parts.find(p => p.type === type).value);
+                
+                const hour = getPart('hour');
+                const min = getPart('minute');
+                const month = getPart('month');
+                const dayOfMonth = getPart('day');
+                // getUTCDay style: 0 (Sun) to 6 (Sat)
+                // weekday in en-GB is 1 (Mon) to 7 (Sun)
+                let day = getPart('weekday');
+                if (day === 7) day = 0; 
 
                 // AUTOMATIONS
 
@@ -2718,17 +2735,20 @@ export default {
                             const todayStr = now.toISOString().split('T')[0];
                             for (const s of schedules) {
                                 let shouldSend = false;
+                                const targetHour = s.hour !== null && s.hour !== undefined ? Number(s.hour) : 0;
+                                const targetMin = s.minute !== null && s.minute !== undefined ? Number(s.minute) : 0;
+                                
+                                if (hour !== targetHour) continue;
+                                if (min !== targetMin) continue;
+                                
                                 const lastSentStr = s.last_sent_at ? s.last_sent_at.split('T')[0] : null;
                                 if (lastSentStr === todayStr) continue;
 
-                                if (s.hour !== undefined && s.hour !== null && hour !== s.hour) continue;
-                                if (s.minute !== undefined && s.minute !== null && min !== s.minute) continue;
-
                                 switch (s.frequency) {
                                     case 'daily': shouldSend = true; break;
-                                    case 'weekly': if (day === s.day_of_week) shouldSend = true; break;
-                                    case 'monthly': if (now.getUTCDate() === s.day_of_month) shouldSend = true; break;
-                                    case 'yearly': if ((now.getUTCMonth() + 1) === s.month && now.getUTCDate() === s.day_of_month) shouldSend = true; break;
+                                    case 'weekly': if (day === Number(s.day_of_week)) shouldSend = true; break;
+                                    case 'monthly': if (dayOfMonth === Number(s.day_of_month)) shouldSend = true; break;
+                                    case 'yearly': if (month === Number(s.month) && dayOfMonth === Number(s.day_of_month)) shouldSend = true; break;
                                 }
 
                                 if (shouldSend) {
