@@ -26,7 +26,34 @@ window.escapeHTML = function (str) {
         .replace(/'/g, '&#039;');
 };
 
-window.getISOWeekNumber = function(dateStr) {
+// Helper to show brief toast notifications
+window.showToast = function (message) {
+    const toast = document.createElement('div');
+    toast.innerText = message;
+    toast.style.position = 'fixed';
+    toast.style.bottom = '30px';
+    toast.style.left = '50%';
+    toast.style.transform = 'translateX(-50%)';
+    toast.style.background = 'rgba(30, 30, 35, 0.9)';
+    toast.style.color = 'white';
+    toast.style.padding = '12px 24px';
+    toast.style.borderRadius = '50px';
+    toast.style.zIndex = '10000001';
+    toast.style.backdropFilter = 'blur(10px)';
+    toast.style.fontSize = '14px';
+    toast.style.fontWeight = '600';
+    toast.style.border = '1px solid rgba(255,255,255,0.1)';
+    toast.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+    toast.style.animation = 'modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+};
+
+window.getISOWeekNumber = function (dateStr) {
     if (!dateStr) return '';
     const date = new Date(dateStr + 'T12:00:00');
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -36,12 +63,12 @@ window.getISOWeekNumber = function(dateStr) {
     return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 };
 
-window.isJoursFerieFrance = function(dateStr) {
+window.isJoursFerieFrance = function (dateStr) {
     const d = new Date(dateStr);
     const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
     const md = String(m).padStart(2, '0') + "-" + String(day).padStart(2, '0');
     if (["01-01", "05-01", "05-08", "07-14", "08-15", "11-01", "11-11", "12-25"].includes(md)) return true;
-    
+
     // Pâques
     let a = y % 19, b = Math.floor(y / 100), c = y % 100, d1 = Math.floor(b / 4), e = b % 4;
     let f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d1 - g + 15) % 30;
@@ -52,12 +79,12 @@ window.isJoursFerieFrance = function(dateStr) {
     let lPaq = new Date(paques); lPaq.setDate(paques.getDate() + 1);
     let asc = new Date(paques); asc.setDate(paques.getDate() + 39);
     let lPent = new Date(paques); lPent.setDate(paques.getDate() + 50);
-    
+
     const isSame = (d1, d2) => d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
     return isSame(d, lPaq) || isSame(d, asc) || isSame(d, lPent);
 };
 
-window.isClosedDay = function(dateStr) {
+window.isClosedDay = function (dateStr) {
     if (!window.currentClosedDays) return false;
     for (const item of window.currentClosedDays) {
         if (typeof item === 'string') {
@@ -69,7 +96,7 @@ window.isClosedDay = function(dateStr) {
     return false;
 };
 
-window.addClosedDay = async function() {
+window.addClosedDay = async function () {
     if (!window.currentClosedDays) window.currentClosedDays = [];
     const today = new Date().toISOString().split('T')[0];
     window.currentClosedDays.push({ start: today, end: today });
@@ -79,7 +106,7 @@ window.addClosedDay = async function() {
     }
 };
 
-window.updateClosedDay = async function(index, field, value) {
+window.updateClosedDay = async function (index, field, value) {
     if (!window.currentClosedDays || typeof window.currentClosedDays[index] === 'undefined') return;
     let item = window.currentClosedDays[index];
     if (typeof item === 'string') {
@@ -87,21 +114,21 @@ window.updateClosedDay = async function(index, field, value) {
         window.currentClosedDays[index] = item;
     }
     item[field] = value;
-    
+
     // Auto correct order
     if (item.start && item.end && item.start > item.end) {
         const temp = item.start;
         item.start = item.end;
         item.end = temp;
     }
-    
+
     await api.setPlanningClosedDays(window.currentClosedDays);
     if (window.renderAdminPlanning && window.currentPlanningMonday) {
         window.renderAdminPlanning(window.currentPlanningMonday, !!document.getElementById('planning-v2-container'), true);
     }
 };
 
-window.removeClosedDay = async function(index) {
+window.removeClosedDay = async function (index) {
     if (!window.currentClosedDays) return;
     window.currentClosedDays.splice(index, 1);
     await api.setPlanningClosedDays(window.currentClosedDays);
@@ -134,8 +161,8 @@ async function initDashboard() {
             App.addListener('backButton', ({ canGoBack }) => {
                 const isLandscape = document.querySelector('.landscape-mode');
                 if (isLandscape) {
-                    if (typeof window.renderMobileMap === "function") {
-                        window.renderMobileMap();
+                    if (typeof window.renderMobileMaterialTracking === "function") {
+                        window.renderMobileMaterialTracking();
                     }
                 } else if (canGoBack) {
                     window.history.back();
@@ -156,7 +183,7 @@ async function initDashboard() {
     // 3. Render View
     if ((role === 'admin' || role === 'visiteur') && !isMobile) {
         await renderAdminView(session);
-        
+
         // Popup de bienvenue pour les visiteurs
         if (role === 'visiteur' && !sessionStorage.getItem('visitor_welcomed')) {
             window.showVisitorWelcomeModal();
@@ -346,10 +373,10 @@ async function renderMobileView() {
                     .select('preferences')
                     .eq('id', session.user.id)
                     .single();
-                
+
                 let currentPreferences = (profile && profile.preferences) || {};
                 if (typeof currentPreferences === 'string') currentPreferences = JSON.parse(currentPreferences);
-                
+
                 // Set initial theme
                 const isDarkMode = currentPreferences.mobile_dark_mode === true;
                 applyMobileTheme(isDarkMode);
@@ -360,7 +387,7 @@ async function renderMobileView() {
                     themeBtn.onclick = async () => {
                         const isNewDark = document.documentElement.getAttribute('data-theme') !== 'dark';
                         applyMobileTheme(isNewDark);
-                        
+
                         // Re-render if in planning
                         if (mobileCurrentPath === 'planning') {
                             const dateInput = document.querySelector('input[type="date"]');
@@ -403,11 +430,11 @@ async function renderMobileView() {
                 const bg = dk ? '#1C1C1E' : '#ffffff';
                 const textColor = dk ? '#ffffff' : '#1c1c1e';
                 const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
-                
+
                 const modal = document.createElement('div');
                 modal.className = 'modal-overlay';
                 modal.style.zIndex = "10000";
-                
+
                 modal.innerHTML = `
                     <div id="missing-info-alert" class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
                         <div style="font-size: 40px; margin-bottom: 16px;">⚠️</div>
@@ -475,7 +502,7 @@ async function renderMobileView() {
                             last_ct_date: document.getElementById('mi-ct').value || null
                         };
                         await api.updateMyVehicle(payload);
-                        
+
                         modal.remove();
                     } catch (e) {
                         alert("Erreur: " + e.message);
@@ -509,7 +536,7 @@ function handleMobileSearch(query) {
     // Hide others
     categoriesView.classList.add('hidden');
     docListView.classList.add('hidden');
-        searchView.classList.remove('hidden');
+    searchView.classList.remove('hidden');
 
     // Filter — exclude internal config files (.keep, .meta_color_*)
     const isInternalFile = (key) => {
@@ -552,7 +579,7 @@ function generateMobileCategories(files, myVehicle = null) {
         const parts = file.key.split('/');
         if (parts.length > 1) {
             const folder = parts[0];
-            if (folder.toLowerCase() === 'archive') return; 
+            if (folder.toLowerCase() === 'archive') return;
             if (!categories.has(folder)) {
                 categories.set(folder, { files: [], color: null, emoji: '📁', order: 999, row: 1 });
             }
@@ -570,7 +597,7 @@ function generateMobileCategories(files, myVehicle = null) {
                 catData.files.push(file);
             }
         } else {
-            if (file.key.toLowerCase().includes('archive')) return; 
+            if (file.key.toLowerCase().includes('archive')) return;
             uncategorized.push(file);
         }
     });
@@ -636,16 +663,16 @@ function generateMobileCategories(files, myVehicle = null) {
         autoCard.onclick = () => window.renderMobileVehiclesList(myVehicle);
         grid.prepend(autoCard);
     }
-    
-    const mapCard = document.createElement('div');
-    mapCard.className = 'category-card';
-    mapCard.innerHTML = `
-        <div class="category-icon" style="background-color: #5856D6;">🗺️</div>
-        <div class="category-title" style="font-weight:bold;">Carte</div>
-    `;
-    mapCard.onclick = () => renderMobileMap();
 
-    grid.prepend(mapCard);
+    const matosStockCard = document.createElement('div');
+    matosStockCard.className = 'category-card';
+    matosStockCard.innerHTML = `
+        <div class="category-icon" style="background-color: #5856D6;">📦</div>
+        <div class="category-title" style="font-weight:bold;">Stock</div>
+    `;
+    matosStockCard.onclick = () => renderMobileMaterialTracking();
+
+    grid.prepend(matosStockCard);
     if (typeof autoCard !== 'undefined') grid.prepend(autoCard);
     grid.prepend(matosCard);
     grid.prepend(planningCard);
@@ -670,7 +697,7 @@ window.renderMobileMaterialRequests = async function () {
         const session = await auth.getSession();
         const requests = await api.getMaterialRequests(session.user.id);
         const categories = await api.getMaterialCategories();
-        
+
         const dk = document.documentElement.getAttribute('data-theme') === 'dark';
         const cardBg = dk ? '#1C1C1E' : '#fff';
         const textColor = dk ? '#FFFFFF' : '#1c1c1e';
@@ -695,14 +722,14 @@ window.renderMobileMaterialRequests = async function () {
             };
 
             const sortedKeys = ['requested', 'ordered'];
-            
+
             sortedKeys.forEach(status => {
                 const groupRequests = requests.filter(r => r.status === status);
                 if (groupRequests.length > 0) {
                     html += `<h3 style="color: ${groups[status].color}; font-size: 14px; text-transform: uppercase; margin: 20px 0 10px 4px; display: flex; align-items: center; gap: 8px;">
                                 ${groups[status].icon} ${groups[status].label}
                             </h3>`;
-                    
+
                     groupRequests.forEach(req => {
                         html += `
                             <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
@@ -730,9 +757,9 @@ window.renderMobileMaterialRequests = async function () {
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
             modal.style.zIndex = "10000";
-            
+
             let categoryOptions = categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-            
+
             modal.innerHTML = `
                 <div class="modal-box" style="padding: 24px; border-radius: 28px; width: 90%; max-width: 400px;">
                     <h2 style="margin-top: 0; margin-bottom: 20px; color: ${_textColor};">Nouvelle demande</h2>
@@ -804,7 +831,7 @@ window.renderMobileMaterialRequests = async function () {
                         const safeFileName = selectedFile.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
                         const fileName = `${timestamp}_${safeFileName}`;
                         const renamedFile = new File([selectedFile], fileName, { type: selectedFile.type });
-                        
+
                         await api.uploadFile(renamedFile, 'material_requests/');
                         image_path = 'material_requests/' + fileName;
                     }
@@ -867,14 +894,14 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
             const monday = new Date(d.setDate(diff));
             const sunday = new Date(monday);
             sunday.setDate(monday.getDate() + 6);
-            
+
             const startDate = monday.toISOString().split('T')[0];
             const endDate = sunday.toISOString().split('T')[0];
             weekRange = { startDate, endDate };
             tasks = await api.getTasks({ startDate, endDate });
         }
         const displayDate = new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-        
+
         // Dark mode detection for inline styles
         const dk = document.documentElement.getAttribute('data-theme') === 'dark';
         const bg = dk ? '#000000' : '#f8f9fa';
@@ -910,13 +937,13 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
                     <div style="margin-bottom: 12px; background: ${cardBg}; padding: 10px; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,${dk ? '0.2' : '0.04'}); display: flex; align-items: center; gap: 8px;">
                         <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">◀</button>
                         <div style="flex:1; position: relative; text-align:center;">
-                            ${mode === 'day' 
-                                ? `<input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 15px; color: ${textColor}; padding: 0;" value="${dateStr}" onchange="renderMobilePlanning(this.value, 'day')">`
-                                : `<div style="display:flex; flex-direction:column; align-items:center;">
+                            ${mode === 'day'
+                ? `<input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 15px; color: ${textColor}; padding: 0;" value="${dateStr}" onchange="renderMobilePlanning(this.value, 'day')">`
+                : `<div style="display:flex; flex-direction:column; align-items:center;">
                                      <span style="font-weight: 800; font-size: 11px; text-transform: uppercase; color: var(--primary); margin-bottom: 2px;">Semaine ${window.getISOWeekNumber(weekRange.startDate)}</span>
-                                     <div style="font-weight:800; font-size:14px; color:${textColor};">${new Date(weekRange.startDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})} - ${new Date(weekRange.endDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})}</div>
+                                     <div style="font-weight:800; font-size:14px; color:${textColor};">${new Date(weekRange.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} - ${new Date(weekRange.endDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</div>
                                    </div>`
-                            }
+            }
                         </div>
                         <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">▶</button>
                     </div>
@@ -954,7 +981,7 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
                     const dayTasks = grouped[date];
                     const d = new Date(date + 'T12:00:00');
                     const dayLabel = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-                    
+
                     html += `<div style="margin-bottom: 32px;">
                                 <div style="font-weight: 800; font-size: 14px; text-transform: uppercase; color: ${dk ? '#8E8E93' : '#666'}; margin-bottom: 12px; padding-left: 4px; display: flex; align-items: center; gap: 8px;">
                                     <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></div>
@@ -1232,9 +1259,11 @@ async function renderAdminView(session) {
                     <span>🚗 Gestion des véhicules</span>
                     <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
                 </a>
-                <div class="nav-section-title" style="font-size: 11px; text-transform: uppercase; color: #8E8E93; margin: 20px 0 10px 10px; font-weight: 700;">🚜 Gestion du Parc</div>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMap()" id="nav-map" style="padding-left: 25px;">📍 Carte des Machines</a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance" style="padding-left: 25px;">🛠️ Maintenance Matériel</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialTracking()" id="nav-material-stock" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>📦 Statut du matériel ATS</span>
+                    <span id="mat-stock-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance">🛠️ Maintenance Matériel</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
@@ -1311,13 +1340,17 @@ async function renderAdminView(session) {
     // Update material requests notification badge + auto refresh every 30s
     if (window.materialBadgeInterval) clearInterval(window.materialBadgeInterval);
     window.updateMaterialBadge();
-    window.materialBadgeInterval = setInterval(() => window.updateMaterialBadge(), 30000);
+    window.updateMaterialStockBadge();
+    window.materialBadgeInterval = setInterval(() => {
+        window.updateMaterialBadge();
+        window.updateMaterialStockBadge();
+    }, 30000);
 }
 
-window.openPersonalSettings = function() {
+window.openPersonalSettings = function () {
     const profile = window.currentUserProfile;
     if (!profile) return alert("Chargement du profil en cours...");
-    
+
     const prefs = profile.preferences || {};
     const currentBg = prefs.planning_bg || '#1C1C1E';
     const currentText = prefs.planning_text || '#FFFFFF';
@@ -1376,9 +1409,9 @@ window.openPersonalSettings = function() {
                 .eq('id', profile.id);
 
             if (error) throw error;
-            
+
             window.currentUserProfile.preferences = updatedPrefs;
-            
+
             // Immediate CSS override
             let style = document.getElementById('user-planning-custom-bg');
             if (!style) {
@@ -1390,7 +1423,7 @@ window.openPersonalSettings = function() {
                 .planning-inline { background: ${newBg} !important; color: ${newText} !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
                 .planning-inline header h1, .planning-inline header span { color: inherit !important; }
             `;
-            
+
             modal.remove();
         } catch (e) {
             alert("Erreur lors de la sauvegarde : " + e.message);
@@ -1482,7 +1515,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     }
 
     if (window.planningRefreshInterval) clearInterval(window.planningRefreshInterval);
-    
+
     // Auto-refresh logic
     window.lastAutoSortTime = window.lastAutoSortTime || Date.now();
     window.planningRefreshInterval = setInterval(async () => {
@@ -1520,7 +1553,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     if (navItem) navItem.classList.add('active');
     const existingContainer = document.getElementById('planning-v2-container') || document.getElementById('integrated-planning-container');
     const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-v2-container');
-    
+
     if (!existingContainer && !isRefresh) {
         content.innerHTML = `<div style="display:flex; justify-content:center; padding: 40px;"><div class="loader" style="border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div></div>`;
     }
@@ -1548,7 +1581,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
     try {
         let closedDays = [];
-        try { closedDays = await api.getPlanningClosedDays(); } catch(e) {}
+        try { closedDays = await api.getPlanningClosedDays(); } catch (e) { }
         window.currentClosedDays = closedDays;
 
         const users = await api.listUsers();
@@ -1560,7 +1593,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         }
 
         const tasksByUserDate = {};
-        
+
         // --- Ghost Users Logic ---
         // If archived tasks exist for users no longer in the DB, we add them dynamically
         const currentIds = new Set(users.map(u => u.id));
@@ -1777,27 +1810,68 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         // Save current order (including any new users)
         localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
 
-        let headerHTML = `
-                <header style="z-index: 100; display: flex; align-items: center; justify-content: space-between;">
+        let headerHTML = "";
+        if (isCurrentlyFullscreen) {
+            headerHTML = `
+                <header style="z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; background: rgba(0,0,0,0.2); margin-bottom: 10px;">
                     <h1 style="margin: 0; display:flex; align-items:center; gap: 15px; font-size: 20px; color: white !important;">
                         📅 Planning Semaine
                     </h1>
-                    <div style="display:flex; gap: 12px; align-items:center;">
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)">◀</button>
-                        <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 200px;">
-                            <span style="font-weight: 800; font-size: 11px; text-transform: uppercase; color: var(--primary); letter-spacing: 0.5px;">Semaine ${window.getISOWeekNumber(startStr)}</span>
-                            <span style="font-weight:600; font-size: 14px;">Du ${displayStart} au ${displayEnd}</span>
+                    <div style="display:flex; gap: 20px; align-items:center;">
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">◀</button>
+                        <div style="display: flex; align-items: center; gap: 25px; color: white;">
+                            <div style="font-weight: 700; font-size: 18px; letter-spacing: 0.5px;">Du ${displayStart} au ${displayEnd}</div>
+                            <div style="font-weight: 900; font-size: 28px; color: var(--primary); background: rgba(255,255,255,0.05); padding: 5px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">S${window.getISOWeekNumber(startStr)}</div>
                         </div>
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)">▶</button>
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">▶</button>
                     </div>
                     <div class="p-header-controls" style="display:flex; gap: 12px;">
-                        <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Exporter les données</button>
-                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ Plein Écran</button>
-                        <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ Plein Écran N°2</button>
-                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Nouvelle Tâche</button>
+                        <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Export</button>
+                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ TV</button>
+                        <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ V2</button>
+                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Tâche</button>
                     </div>
                 </header>
-        `;
+            `;
+        } else {
+            headerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #007AFF, #00C7BE); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(0, 122, 255, 0.2);">
+                        <span style="font-size: 28px;">📅</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Planning Hebdomadaire</h1>
+                        <div style="margin: 4px 0 0 0; font-size: 14px; color: white; font-weight: 600;">
+                            Du ${displayStart} au ${displayEnd}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-left: auto; margin-right: 30px; display: flex; align-items: center;">
+                    <div style="font-weight: 900; font-size: 52px; color: #5AC8FA; letter-spacing: -2px; line-height: 1; position: relative; text-shadow: 0 0 20px rgba(90, 200, 250, 0.3);">
+                        S${window.getISOWeekNumber(startStr)}
+                        <div style="position: absolute; bottom: -8px; right: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #5AC8FA; font-weight: 800; opacity: 0.6;">Semaine</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="display:flex; gap: 8px; align-items:center; background: rgba(255,255,255,0.05); padding: 5px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)" style="background: none; border: none; color: white; padding: 8px 12px; cursor: pointer; border-radius: 8px;">◀</button>
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)" style="background: none; border: none; color: white; padding: 8px 12px; cursor: pointer; border-radius: 8px;">▶</button>
+                    </div>
+                    
+                    <div class="p-header-controls" style="display:flex; gap: 10px;">
+                        <button class="btn-secondary" onclick="openPlanningExportModal()" style="border-radius: 12px; height: 44px; padding: 0 15px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; font-size: 13px; font-weight: 600; cursor: pointer;">📤 Export</button>
+                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" style="border-radius: 12px; height: 44px; padding: 0 15px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; font-size: 13px; font-weight: 600; cursor: pointer;">⛶ TV</button>
+                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')" style="border-radius: 12px; height: 44px; padding: 0 20px; background: #007AFF; font-weight: 700; border: none; color: white; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">+</span> Tâche
+                        </button>
+                    </div>
+                </div>
+            </div>
+            `;
+        }
 
         // Ensure we define startStr globally for toggleRefresh
         window.currentPlanningMonday = startStr;
@@ -1809,16 +1883,16 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                             Collaborateur
                         </div>
                         ${weekDays.map(d => {
-                            let style = 'background: inherit;';
-                            if (window.isClosedDay(d)) {
-                                style = 'background-color: #ff3b30 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
-                            } else if (d === new Date().toISOString().split('T')[0]) {
-                                style = 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
-                            } else if (window.isJoursFerieFrance(d)) {
-                                style = 'background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 10px, rgba(0,0,0,0.05) 10px, rgba(0,0,0,0.05) 20px) !important; color: inherit;';
-                            }
-                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${style}">${formatShortDate(d)}</div>`;
-                        }).join('')}
+            let style = 'background: inherit;';
+            if (window.isClosedDay(d)) {
+                style = 'background-color: #ff3b30 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
+            } else if (d === new Date().toISOString().split('T')[0]) {
+                style = 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
+            } else if (window.isJoursFerieFrance(d)) {
+                style = 'background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 10px, rgba(0,0,0,0.05) 10px, rgba(0,0,0,0.05) 20px) !important; color: inherit;';
+            }
+            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${style}">${formatShortDate(d)}</div>`;
+        }).join('')}
         `;
 
         let rowsHTML = '';
@@ -1851,11 +1925,11 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     const doneA = a.done === 'true' ? 1 : 0;
                     const doneB = b.done === 'true' ? 1 : 0;
                     if (doneA !== doneB) return doneA - doneB;
-                    
+
                     const isAllDayA = (a.start_time.indexOf('00:00') === 0 && a.end_time.indexOf('00:00') === 0);
                     const isAllDayB = (b.start_time.indexOf('00:00') === 0 && b.end_time.indexOf('00:00') === 0);
                     if (isAllDayA !== isAllDayB) return isAllDayA ? -1 : 1;
-                    
+
                     return a.start_time.localeCompare(b.start_time);
                 });
 
@@ -1866,7 +1940,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     const taskDesc = t.title.includes(':::DESC:::') ? t.title.split(':::DESC:::')[1] : '';
                     const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
                     const isDone = t.done === 'true' || t.done === true;
-                    
+
                     // Store task data for click handler
                     const taskDataEscaped = JSON.stringify(t).replace(/"/g, '&quot;');
 
@@ -1897,7 +1971,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     </div>
                 </div>
         `;
-        
+
         const finalContent = headerHTML + gridHTML + rowsHTML;
 
         // --- Fullscreen V2 (Planning 75% + Slideshow 25%) injection point ---
@@ -1911,7 +1985,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                         ${finalContent}
                     </div>
                 `;
-                return; 
+                return;
             }
         }
 
@@ -1920,7 +1994,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         try {
             const saved = localStorage.getItem('planning_fs_config');
             if (saved) fsConfig = JSON.parse(saved);
-        } catch (e) {}
+        } catch (e) { }
 
         const slideshowConfigHTML = `
             <div id="integrated-fs-config" style="display: flex; align-items: center; gap: 40px; width: 100%;">
@@ -1941,15 +2015,15 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
                 <div id="fs-files-mini-grid" style="flex: 1; display: flex; gap: 10px; overflow-x: auto; padding: 5px; scrollbar-width: thin;">
                     ${fsConfig.files.map((f, i) => {
-                            const isPdf = f.toLowerCase().endsWith('.pdf');
-                            const url = `${config.api.workerUrl}/get/${f}`;
-                        return `
+            const isPdf = f.toLowerCase().endsWith('.pdf');
+            const url = `${config.api.workerUrl}/get/${f}`;
+            return `
                             <div style="position: relative; height: 60px; aspect-ratio: 16/10; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
                                 ${isPdf ? `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; background: #1a1a1a; font-size: 14px;">📕</div>` : `<img src="${url}" loading="lazy" style="width:100%; height:100%; object-fit: cover;">`}
                                 <button onclick="removeFSFile(${i})" style="position:absolute; top:2px; right:2px; background: rgba(220,38,38,0.9); border:none; color:white; width:18px; height:18px; border-radius:4px; cursor:pointer; font-size:9px;">✕</button>
                             </div>
                         `;
-                    }).join('')}
+        }).join('')}
                     ${fsConfig.files.length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
                 </div>
 
@@ -1957,16 +2031,16 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     <label style="font-weight: 800; color: #ff3b30; font-size: 12px; text-transform: uppercase;">🔒 Jours Fermés (Général)</label>
                     <div style="display: flex; flex-direction: column; gap: 4px; max-height: 80px; overflow-y: auto; width: 100%; padding-right: 5px; scrollbar-width: thin;" id="closed-days-list">
                         ${(window.currentClosedDays || []).map((interval, i) => {
-                            const start = interval.start || interval;
-                            const end = interval.end || interval;
-                            return `
+            const start = interval.start || interval;
+            const end = interval.end || interval;
+            return `
                             <div style="display:flex; align-items:center; gap: 8px;">
                                 <input type="date" class="form-input" style="height: 24px; font-size: 11px; padding: 0 4px;" value="${start}" onchange="window.updateClosedDay(${i}, 'start', this.value)">
                                 <span style="color:#fff; font-size:10px;">au</span>
                                 <input type="date" class="form-input" style="height: 24px; font-size: 11px; padding: 0 4px;" value="${end}" onchange="window.updateClosedDay(${i}, 'end', this.value)">
                                 <button onclick="window.removeClosedDay(${i})" style="background: rgba(255, 59, 48, 0.2); border: 1px solid rgba(255,59,48,0.5); color: #fff; padding: 2px 6px; border-radius: 4px; cursor:pointer; font-size:10px; flex-shrink:0;">✕</button>
                             </div>`;
-                        }).join('')}
+        }).join('')}
                     </div>
                     ${(window.currentClosedDays || []).length === 0 ? `<span style="color: #666; font-size: 10px; font-style: italic;">Aucun intervalle configuré</span>` : ''}
                     <button class="btn-sm btn-primary" style="font-size: 10px; padding: 4px 10px; margin-top: 2px;" onclick="window.addClosedDay()">+ Ajouter Intervalle</button>
@@ -2004,12 +2078,12 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             }
         } else {
             content.innerHTML = `
-                <div id="integrated-planning-container" class="planning-inline" data-monday="${startStr}" style="height: calc(100vh - 80px); width: 100%; display: flex; flex-direction: column; overflow: hidden; border-radius: 8px;">
+                <div id="integrated-planning-container" class="planning-inline" data-monday="${startStr}" style="height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
                     <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
                         <div id="planning-main-desktop" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                             ${finalContent}
                         </div>
-                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0;">
+                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0; margin: 0 -30px -30px -30px;">
                             <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
                                 ${slideshowConfigHTML}
                             </div>
@@ -2024,17 +2098,17 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     }
 };
 
-window.openPlanningExportModal = async function() {
+window.openPlanningExportModal = async function () {
     try {
         const users = await api.listUsers();
-        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
+        users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100008';
-        
+
         const today = new Date().toISOString().split('T')[0];
-        
+
         modal.innerHTML = `
             <div class="modal-box glass-panel" style="width: 550px; padding: 40px; animation: modalPop 0.3s ease-out;">
                 <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white; display: flex; align-items: center; gap: 12px;">
@@ -2082,7 +2156,7 @@ window.openPlanningExportModal = async function() {
             const cbs = document.querySelectorAll('.export-user-cb');
             const btn = document.getElementById('toggle-all-btn');
             const anyChecked = Array.from(cbs).some(cb => cb.checked);
-            
+
             cbs.forEach(cb => cb.checked = !anyChecked);
             btn.innerText = !anyChecked ? "Tout déselectionner" : "Tout sélectionner";
         };
@@ -2102,7 +2176,7 @@ window.openPlanningExportModal = async function() {
             try {
                 const tasks = await api.getAdminTasks(start, end);
                 const filteredTasks = tasks.filter(t => selectedUserIds.includes(t.user_id));
-                
+
                 // Create CSV
                 const headers = ["Date", "Employé", "Début", "Fin", "Tâche", "Statut"];
                 const userMap = {};
@@ -2131,7 +2205,7 @@ window.openPlanningExportModal = async function() {
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                
+
                 modal.remove();
             } catch (e) {
                 alert("Erreur lors de l'export: " + e.message);
@@ -2145,7 +2219,7 @@ window.openPlanningExportModal = async function() {
     }
 };
 
-window.showConfirmModal = function(title, message, callback) {
+window.showConfirmModal = function (title, message, callback) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '100007';
@@ -2160,7 +2234,7 @@ window.showConfirmModal = function(title, message, callback) {
         </div>
     `;
     document.body.appendChild(overlay);
-    
+
     document.getElementById('confirm-cancel').onclick = () => overlay.remove();
     document.getElementById('confirm-ok').onclick = () => {
         overlay.remove();
@@ -2168,7 +2242,7 @@ window.showConfirmModal = function(title, message, callback) {
     };
 };
 
-window.showInfoModal = function(title, message) {
+window.showInfoModal = function (title, message) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '100006';
@@ -2214,17 +2288,17 @@ window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false, isSil
         users.forEach(u => {
             userTasks[u.id] = [];
         });
-        tasks.forEach(t => { 
-            if(!userTasks[t.user_id]) userTasks[t.user_id] = [];
+        tasks.forEach(t => {
+            if (!userTasks[t.user_id]) userTasks[t.user_id] = [];
             userTasks[t.user_id].push(t);
         });
-        
+
         // Helper to check if user has AT LEAST ONE task of type AT, AM, CP or RECUP
         const hasInactifTask = (uid) => {
             const uT = userTasks[uid] || [];
             return uT.some(t => {
                 const title = (t.title || "").toUpperCase().split(':::DESC:::')[0].trim();
-                return ["AT", "AM", "CP", "RECUP"].some(code => 
+                return ["AT", "AM", "CP", "RECUP"].some(code =>
                     title === code || title.startsWith(code + " ") || title.startsWith(code + "-") || title.startsWith(code + " -")
                 );
             });
@@ -2237,20 +2311,20 @@ window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false, isSil
         users.sort((a, b) => {
             const aT = userTasks[a.id] || [];
             const bT = userTasks[b.id] || [];
-            
+
             const aInactif = hasInactifTask(a.id);
             const bInactif = hasInactifTask(b.id);
-            
+
             let aScore = 0;
             if (aInactif) aScore = 2; // Inactif takes priority for the bottom
             else if (aT.length === 0) aScore = 1;
-            
+
             let bScore = 0;
             if (bInactif) bScore = 2;
             else if (bT.length === 0) bScore = 1;
-            
+
             if (aScore !== bScore) return aScore - bScore;
-            
+
             // If same score, sort by count DESC
             return bT.length - aT.length;
         });
@@ -2301,7 +2375,7 @@ window.togglePlanningFullscreen = function () {
     }
 };
 
-window.showFullscreenOverlay = function(mode) {
+window.showFullscreenOverlay = function (mode) {
     const overlay = document.createElement('div');
     overlay.id = 'fs-interaction-overlay';
     overlay.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999999; background:#000; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family: sans-serif;";
@@ -2337,19 +2411,19 @@ document.addEventListener('fullscreenchange', () => {
     const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
     const urlParams = new URLSearchParams(window.location.search);
-    
+
     if (el && !document.fullscreenElement) {
         el.classList.remove('planning-fullscreen');
         el.classList.add('planning-inline');
         if (scrollArea) scrollArea.style.padding = '0 20px 20px 20px'; // restore
-        
+
         // If we in a dedicated FS window and we exit FS, maybe we should close or show the button?
         // For now we just stay.
     }
 });
 
 // --- Fullscreen V2 Logic (Split Screen) ---
-window.togglePlanningFullscreenV2 = function() {
+window.togglePlanningFullscreenV2 = function () {
     // In the main window, open a NEW window. In the FS window, just toggle.
     const urlParams = new URLSearchParams(window.location.search);
     if (!urlParams.get('fullscreen')) {
@@ -2358,7 +2432,7 @@ window.togglePlanningFullscreenV2 = function() {
     }
 
     let v2 = document.getElementById('planning-v2-container');
-    
+
     // If opening
     if (!v2) {
         v2 = document.createElement('div');
@@ -2375,7 +2449,7 @@ window.togglePlanningFullscreenV2 = function() {
         document.body.appendChild(v2);
         v2.classList.add('active');
         v2.requestFullscreen().catch(e => console.warn("FS failed", e));
-        
+
         startSlideshow();
         renderAdminPlanning(window.currentPlanningMonday, true); // Render grid into p-v2-main
     } else {
@@ -2383,9 +2457,9 @@ window.togglePlanningFullscreenV2 = function() {
         v2.classList.remove('active');
         stopSlideshow();
         if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
+            document.exitFullscreen().catch(() => { });
         }
-        
+
         setTimeout(() => {
             if (v2 && v2.parentNode) v2.parentNode.removeChild(v2);
             renderAdminPlanning(window.currentPlanningMonday);
@@ -2396,14 +2470,14 @@ window.togglePlanningFullscreenV2 = function() {
 let slideInterval = null;
 function startSlideshow() {
     if (slideInterval) clearInterval(slideInterval);
-    
+
     const configStr = localStorage.getItem('planning_fs_config');
     let fsConfig = { timer: 10, files: [] };
     try {
         if (configStr) fsConfig = JSON.parse(saved);
-    } catch(e) {
+    } catch (e) {
         // Fallback to reading the one we just saved if local storage parse fails
-        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch(e2) {}
+        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch (e2) { }
     }
 
     const img = document.getElementById('p-v2-slideshow');
@@ -2465,7 +2539,7 @@ function stopSlideshow() {
     slideInterval = null;
 }
 
-window.handleFSDirectUpload = async function(input) {
+window.handleFSDirectUpload = async function (input) {
     if (!input.files || input.files.length === 0) return;
 
     const btn = document.querySelector('button[onclick*="fs-upload-input"]');
@@ -2475,7 +2549,7 @@ window.handleFSDirectUpload = async function(input) {
 
     try {
         const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
-        
+
         for (const file of input.files) {
             // The API returns the full key (path + filename)
             const res = await api.uploadFile(file, 'fullscreen_slides/');
@@ -2486,13 +2560,13 @@ window.handleFSDirectUpload = async function(input) {
 
         localStorage.setItem('planning_fs_config', JSON.stringify(config));
         showSuccessModal(`${input.files.length} fichier(s) ajouté(s) au diaporama.`);
-        
+
         // Sync live V2
         if (document.getElementById('planning-v2-container')) {
             stopSlideshow();
             startSlideshow();
         }
-        
+
         renderAdminPlanning(window.currentPlanningMonday);
     } catch (e) {
         alert("Erreur lors du téléchargement : " + e.message);
@@ -2503,7 +2577,7 @@ window.handleFSDirectUpload = async function(input) {
     }
 };
 
-window.openFSDocPicker = async function() {
+window.openFSDocPicker = async function () {
     const allFiles = await api.listFiles();
     const images = allFiles.filter(f => {
         const ext = f.key.split('.').pop().toLowerCase();
@@ -2556,55 +2630,55 @@ window.openFSDocPicker = async function() {
     };
 };
 
-window.addSelectedFSDocs = function() {
+window.addSelectedFSDocs = function () {
     const selected = Array.from(document.querySelectorAll('.fs-pick-cb:checked')).map(cb => cb.value);
     const configStr = localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}';
     const fsConfig = JSON.parse(configStr);
-    
+
     fsConfig.files = [...new Set([...fsConfig.files, ...selected])];
     localStorage.setItem('planning_fs_config', JSON.stringify(fsConfig));
-    
+
     const overlay = document.querySelector('.modal-overlay');
     if (overlay) overlay.remove();
-    
+
     showSuccessModal(`${selected.length} document(s) ajouté(s).`);
-    
+
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-    
+
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
 
-window.removeFSFile = function(index) {
+window.removeFSFile = function (index) {
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.files.splice(index, 1);
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    
+
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-    
+
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
-window.saveFSConfig = function(silent = false) {
+window.saveFSConfig = function (silent = false) {
     const timer = parseInt(document.getElementById('fs-timer').value) || 10;
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.timer = timer;
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    
+
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-    
+
     if (!silent) showSuccessModal("Configuration enregistrée !");
 };
 
@@ -2624,7 +2698,7 @@ window.toggleAdminTaskStatus = async function (taskId, currentStatusLegacy, curr
     // Optimistic UI Update
     const btn = event ? event.target.closest('button') : null;
     const taskEl = event ? event.target.closest('.p-task') : null;
-    
+
     // Check current state from DOM if available, otherwise use legacy param
     const currentStatus = taskEl ? (taskEl.getAttribute('data-task-done') === 'true') : !!currentStatusLegacy;
     const nextStatus = !currentStatus;
@@ -2655,7 +2729,7 @@ window.toggleAdminTaskStatus = async function (taskId, currentStatusLegacy, curr
 
     try {
         await api.updateTaskAdmin(taskId, nextStatus);
-        
+
         // Refresh only in fullscreen mode
         const isFS = !!document.fullscreenElement;
         if (isFS) renderAdminPlanning(currentWeekStartStr);
@@ -2793,7 +2867,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
 
     try {
         const users = await api.listUsers();
-        
+
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.id = 'edit-task-modal';
@@ -2848,7 +2922,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
             const newDesc = document.getElementById('edit-task-desc').value;
             const newDate = document.getElementById('edit-task-date').value;
             const hasTime = document.getElementById('edit-task-has-time').checked;
-            
+
             let startTime = "00:00:00";
             let endTime = "00:00:00";
             if (hasTime) {
@@ -2896,12 +2970,28 @@ window.renderAdminUsers = async function () {
         const users = await api.listUsers(true);
 
         content.innerHTML = `
-            <header>
-                <h1>Utilisateurs</h1>
-                <div class="actions">
-                    <button class="btn-primary" onclick="openNewUserModal()">+ Nouvel Utilisateur</button>
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header Section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #6366f1, #4f46e5); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(99, 102, 241, 0.2);">
+                        <span style="font-size: 28px;">👥</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Gestion des Utilisateurs</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Administration des comptes et accès</p>
+                    </div>
                 </div>
-            </header>
+
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-primary" onclick="openNewUserModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #6366f1; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 18px;">+</span> Nouvel Utilisateur
+                    </button>
+                    <button onclick="window.renderAdminUsers()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
 
                 <div class="table-container">
                     <table>
@@ -2953,7 +3043,8 @@ window.renderAdminUsers = async function () {
                         </tbody>
                     </table>
                 </div>
-            `;
+            </div>
+        `;
     } catch (e) {
         content.innerHTML = `<div style="color:red">Erreur chargement utilisateurs: ${e.message}</div>`;
     }
@@ -3086,18 +3177,18 @@ window.showSuccessModal = function (message) {
     window.showCustomModal("Succès", message, '✅', 'var(--primary-color)');
 };
 
-window.showVisitorWelcomeModal = function() {
+window.showVisitorWelcomeModal = function () {
     window.showCustomModal(
-        "Bienvenue (Mode Démo)", 
-        "Vous êtes connecté en tant que <b>Visiteur</b>.<br><br>Vous pouvez explorer toute l'interface admin, consulter les plannings, les documents et les configurations.<br><br>Cependant, <b>aucune modification de données</b> n'est autorisée avec ce compte.", 
-        "👋", 
+        "Bienvenue (Mode Démo)",
+        "Vous êtes connecté en tant que <b>Visiteur</b>.<br><br>Vous pouvez explorer toute l'interface admin, consulter les plannings, les documents et les configurations.<br><br>Cependant, <b>aucune modification de données</b> n'est autorisée avec ce compte.",
+        "👋",
         '#007AFF'
     );
 };
 
 // Redéfinition globale de alert() pour utiliser nos modales élégantes
 const _originalAlert = window.alert;
-window.alert = function(message) {
+window.alert = function (message) {
     if (!message) return;
     const msgStr = String(message);
     if (msgStr.includes("Désolé")) {
@@ -3342,7 +3433,7 @@ async function refreshAdminData() {
             api.listFiles(),
             api.getVehicles()
         ]);
-        
+
         adminFilesCache = files;
         if (window.updateVehicleSidebarBadge) window.updateVehicleSidebarBadge(vehicles);
 
@@ -4897,7 +4988,7 @@ window.renderAdminMaterialRequests = async function () {
         // Process archives: Fetch content of each CSV and parse it
         let historyConfirmed = [];
         let historyRefused = [];
-        
+
         try {
             console.log("Chargement de l'historique R2...", archivedFiles);
             const archiveContents = await Promise.all(
@@ -4906,13 +4997,13 @@ window.renderAdminMaterialRequests = async function () {
                         const r = await fetch(`${config.api.workerUrl}/get/${f.key}?t=${Date.now()}`);
                         if (!r.ok) return null;
                         return await r.text();
-                    } catch(e) { 
+                    } catch (e) {
                         console.error(`Echec fetch archive ${f.key}:`, e);
-                        return null; 
+                        return null;
                     }
                 })
             );
-            
+
             archiveContents.forEach(csv => {
                 if (!csv) return;
                 const lines = csv.split('\n').filter(l => l.trim());
@@ -4954,11 +5045,11 @@ window.renderAdminMaterialRequests = async function () {
                     else if (status === 'refused') historyRefused.push(item);
                 });
             });
-            
+
             // Sort history by date desc
-            historyConfirmed.sort((a,b) => new Date(b.date) - new Date(a.date));
-            historyRefused.sort((a,b) => new Date(b.date) - new Date(a.date));
-            
+            historyConfirmed.sort((a, b) => new Date(b.date) - new Date(a.date));
+            historyRefused.sort((a, b) => new Date(b.date) - new Date(a.date));
+
         } catch (err) {
             console.error("Erreur générale archives:", err);
         }
@@ -4971,13 +5062,33 @@ window.renderAdminMaterialRequests = async function () {
         };
 
         let html = `
-            <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
-                <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">Demande de matériel</h1>
-                <div style="display: flex; gap: 12px;">
-                    <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()">⚙️ Catégories</button>
-                    <button class="btn-secondary" onclick="openAdminAlertConfigModal()">🔔 Config Alertes</button>
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header Section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #FF9500, #FF3B30); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(255, 149, 0, 0.2);">
+                        <span style="font-size: 28px;">📦</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Demande de Matériel</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Gestion des demandes collaborateurs</p>
+                    </div>
                 </div>
-            </header>
+
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 16px;">⚙️</span> Catégories
+                    </button>
+                    <button class="btn-secondary" onclick="openAdminAlertConfigModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 16px;">🔔</span> Alertes
+                    </button>
+                    <button onclick="window.renderAdminMaterialRequests()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
 
             <div class="material-admin-container" style="display: grid; gap: 40px; padding-bottom: 60px;">
         `;
@@ -5025,7 +5136,7 @@ window.renderAdminMaterialRequests = async function () {
                 catRequests.forEach(req => {
                     const userName = [req.profiles?.first_name, req.profiles?.last_name].filter(Boolean).join(' ') || 'Inconnu';
                     const statusInfo = groups[req.status] || { label: req.status, color: '#fff' };
-                    
+
                     html += `
                         <tr>
                             <td><div style="font-weight: 600;">${userName}</div></td>
@@ -5122,8 +5233,8 @@ window.renderAdminMaterialRequests = async function () {
                 ${renderHistoryTable(historyRefused, 'Demandes Refusées', '#FF3B30')}
             </section>
         `;
-        
-        html += `</div>`; // Close material-admin-container
+
+        html += `</div></div></div>`; // Close scroll area, material-admin-container, and outer container
 
         content.innerHTML = html;
 
@@ -5142,7 +5253,7 @@ window.renderAdminMaterialRequests = async function () {
             try {
                 const profile = await auth.getCurrentProfile();
                 const adminName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : 'Admin';
-                
+
                 // Now we just update status, deletion happens during archiving
                 await api.updateMaterialRequestStatus(id, status, adminName);
                 renderAdminMaterialRequests();
@@ -5204,16 +5315,16 @@ window.renderAdminMaterialRequests = async function () {
         window.openAdminAlertConfigModal = () => {
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
-            
+
             const currentAlertUsers = new Set(configData.alert_users || []);
-            
+
             modal.innerHTML = `
                 <div class="modal-box glass-panel" style="width: 550px; padding: 40px;">
                     <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white;">Configuration des alertes Planning</h2>
                     <p style="color: #aaa; font-size: 14px; margin-bottom: 24px;">Sélectionnez les personnes qui recevront une tâche "Check besoin de matériel" sur leur planning dès qu'une demande est faite.</p>
                     
                     <div style="max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 20px; padding: 16px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.05);">
-                        ${allUsers.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || '')).map(u => `
+                        ${allUsers.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || '')).map(u => `
                             <label style="display: flex; align-items: center; gap: 16px; padding: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; border-radius: 12px; margin-bottom: 4px;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
                                 <input type="checkbox" class="alert-user-cb" value="${u.id}" ${currentAlertUsers.has(u.id) ? 'checked' : ''} style="width: 20px; height: 20px; accent-color: var(--primary);">
                                 <div style="display:flex; flex-direction:column;">
@@ -5238,7 +5349,7 @@ window.renderAdminMaterialRequests = async function () {
                     btn.disabled = true;
                     btn.innerText = "⌛ Test en cours...";
                 }
-                
+
                 try {
                     const result = await api.sendMaterialReminders();
                     if (result.success) {
@@ -5259,7 +5370,7 @@ window.renderAdminMaterialRequests = async function () {
             window.saveAlertConfig = async () => {
                 const cbs = document.querySelectorAll('.alert-user-cb:checked');
                 const selectedIds = Array.from(cbs).map(cb => cb.value);
-                
+
                 try {
                     await api.saveMaterialConfig(selectedIds);
                     modal.remove();
@@ -5276,21 +5387,41 @@ window.renderAdminMaterialRequests = async function () {
 };
 
 // --- VEHICLE MANAGEMENT (Admin) ---
-window.renderAdminVehicles = async function() {
+window.renderAdminVehicles = async function () {
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('nav-vehicles').classList.add('active');
 
     const content = document.getElementById('admin-content');
     content.innerHTML = `
-        <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
-            <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">🚐 Flotte Automobile</h1>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn-primary" onclick="openAddVehicleModal()">➕ Ajouter un véhicule</button>
-                <button class="btn-secondary" style="border-color: #34C759; color: #34C759;" onclick="openDkvManagementModal()">💳 Gestion DKV</button>
-                <button class="btn-secondary" style="border-color: #007AFF; color: #007AFF;" onclick="openTollManagementModal()">🛣️ Badges</button>
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header Section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #007AFF, #0056b3); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(0, 122, 255, 0.2);">
+                        <span style="font-size: 28px;">🚐</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Flotte Automobile</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Gestion des véhicules et abonnements</p>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-primary" onclick="openAddVehicleModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 18px;">+</span> Ajouter véhicule
+                    </button>
+                    <button class="btn-secondary" onclick="openDkvManagementModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: #34C759; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 16px;">💳</span> DKV
+                    </button>
+                    <button class="btn-secondary" onclick="openTollManagementModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: #007AFF; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 16px;">🛣️</span> Badges
+                    </button>
+                    <button onclick="window.renderAdminVehicles()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
             </div>
-        </header>
         <div id="admin-vehicle-list-wrapper">
             <div class="loader-spinner" style="margin: 50px auto;"></div>
         </div>
@@ -5324,18 +5455,18 @@ window.renderAdminVehicles = async function() {
         } else {
             vehicles.forEach(v => {
                 const userName = v.profiles ? `${v.profiles.first_name} ${v.profiles.last_name}`.trim() : '<span style="color:#666">Non affecté</span>';
-                
+
                 // Alert logic
                 let maintenanceAlert = false;
                 let maintenanceCritical = false;
                 let maintenanceLabel = "OK";
-                
+
                 if (v.next_maintenance_km) {
                     const diff = v.next_maintenance_km - v.last_mileage;
                     if (diff <= 0) { maintenanceCritical = true; maintenanceLabel = "Dépassé (km)"; }
                     else if (diff <= 2000) { maintenanceAlert = true; maintenanceLabel = "Bientôt (km)"; }
                 }
-                
+
                 if (v.next_maintenance_date && !maintenanceCritical) {
                     const today = new Date();
                     const target = new Date(v.next_maintenance_date);
@@ -5352,13 +5483,13 @@ window.renderAdminVehicles = async function() {
                 let ctCritical = false;
                 let ctLabel = "OK";
                 const today = new Date();
-                
+
                 if (v.last_ct_date) {
                     const ctDate = new Date(v.last_ct_date);
                     const nextCt = new Date(ctDate);
                     nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
                     const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
-                    
+
                     if (diffDays <= 0) {
                         ctCritical = true;
                         ctLabel = "À faire !";
@@ -5366,7 +5497,7 @@ window.renderAdminVehicles = async function() {
                         ctAlert = true;
                         ctLabel = `Dans ${diffDays} j.`;
                     } else {
-                        ctLabel = nextCt.toLocaleDateString('fr-FR', {month: 'short', year: 'numeric'});
+                        ctLabel = nextCt.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
                     }
                 } else {
                     ctAlert = true;
@@ -5438,7 +5569,7 @@ window.renderAdminVehicles = async function() {
     }
 };
 
-window.openDkvManagementModal = async function() {
+window.openDkvManagementModal = async function () {
     const renderDkvList = async (container) => {
         try {
             const cards = await api.getDkvCards();
@@ -5492,26 +5623,26 @@ window.openDkvManagementModal = async function() {
     window.handleAddDkvCard = async () => {
         const cardNumber = document.getElementById('new-dkv-number').value.trim();
         const description = document.getElementById('new-dkv-desc').value.trim();
-        if(!cardNumber) return alert("N° de carte obligatoire");
-        
+        if (!cardNumber) return alert("N° de carte obligatoire");
+
         try {
             await api.saveDkvCard({ card_number: cardNumber, description });
             document.getElementById('new-dkv-number').value = '';
             document.getElementById('new-dkv-desc').value = '';
             renderDkvList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 
     window.handleDeleteDkvCard = async (id) => {
-        if(!confirm("Supprimer cette carte ?")) return;
+        if (!confirm("Supprimer cette carte ?")) return;
         try {
             await api.deleteDkvCard(id);
             renderDkvList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 };
 
-window.openTollManagementModal = async function() {
+window.openTollManagementModal = async function () {
     const renderTollList = async (container) => {
         try {
             const cards = await api.getTollCards();
@@ -5565,34 +5696,34 @@ window.openTollManagementModal = async function() {
     window.handleAddTollCard = async () => {
         const cardNumber = document.getElementById('new-toll-number').value.trim();
         const description = document.getElementById('new-toll-desc').value.trim();
-        if(!cardNumber) return alert("N° de badge obligatoire");
-        
+        if (!cardNumber) return alert("N° de badge obligatoire");
+
         try {
             await api.saveTollCard({ card_number: cardNumber, description });
             document.getElementById('new-toll-number').value = '';
             document.getElementById('new-toll-desc').value = '';
             renderTollList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 
     window.handleDeleteTollCard = async (id) => {
-        if(!confirm("Supprimer ce badge ?")) return;
+        if (!confirm("Supprimer ce badge ?")) return;
         try {
             await api.deleteTollCard(id);
             renderTollList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 };
 
-window.openAddVehicleModal = async function(vehicleId = null) {
+window.openAddVehicleModal = async function (vehicleId = null) {
     try {
         const [users, dkvCards, tollCards] = await Promise.all([
             api.listUsers(),
             api.getDkvCards(),
             api.getTollCards()
         ]);
-        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
-        
+        users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+
         let existing = null;
         if (vehicleId) {
             const vehicles = await api.getVehicles();
@@ -5602,7 +5733,7 @@ window.openAddVehicleModal = async function(vehicleId = null) {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100009';
-        
+
         modal.innerHTML = `
             <div class="modal-box glass-panel" style="width: 500px; padding: 32px; animation: modalPop 0.3s ease-out;">
                 <h2 style="margin-top: 0; margin-bottom: 24px;">${existing ? 'Modifier le véhicule' : 'Ajouter un véhicule'}</h2>
@@ -5713,7 +5844,7 @@ window.openAddVehicleModal = async function(vehicleId = null) {
 
             try {
                 const savedVehicle = await api.saveVehicle(data);
-                
+
                 // Photo upload
                 const photoInput = document.getElementById('v-photo');
                 if (photoInput.files.length > 0) {
@@ -5734,7 +5865,7 @@ window.openAddVehicleModal = async function(vehicleId = null) {
     }
 };
 
-window.deleteAdminVehicle = async function(id) {
+window.deleteAdminVehicle = async function (id) {
     if (!confirm("Voulez-vous vraiment supprimer ce véhicule ?")) return;
     try {
         await api.deleteVehicle(id);
@@ -5744,8 +5875,8 @@ window.deleteAdminVehicle = async function(id) {
     }
 };
 
-// Global badge update for admin sidebar
-window.updateMaterialBadge = async function() {
+// Global badge update for admin sidebar (Material Orders)
+window.updateMaterialBadge = async function () {
     try {
         const requests = await api.getMaterialRequests();
         const pendingCount = requests.filter(r => r.status === 'requested').length;
@@ -5763,8 +5894,43 @@ window.updateMaterialBadge = async function() {
     }
 };
 
+// Global badge update for admin sidebar (Material Stock Modifications)
+window.updateMaterialStockBadge = async function () {
+    try {
+        const requests = await api.getMaterialStockRequests();
+        const pendingCount = requests.filter(r => r.status === 'pending').length;
+        
+        // Sidebar badge
+        const sidebarBadge = document.getElementById('mat-stock-request-badge');
+        if (sidebarBadge) {
+            if (pendingCount > 0) {
+                sidebarBadge.textContent = pendingCount;
+                sidebarBadge.style.display = 'flex';
+            } else {
+                sidebarBadge.style.display = 'none';
+            }
+        }
+
+        // Internal button badge (if view is open)
+        const innerBadge = document.getElementById('requests-badge');
+        const innerBtn = document.getElementById('material-requests-btn');
+        if (innerBadge) {
+            if (pendingCount > 0) {
+                innerBadge.textContent = pendingCount;
+                innerBadge.style.display = 'block';
+                if (innerBtn) innerBtn.classList.add('clignotant');
+            } else {
+                innerBadge.style.display = 'none';
+                if (innerBtn) innerBtn.classList.remove('clignotant');
+            }
+        }
+    } catch (e) {
+        console.warn("Could not update material stock badge", e);
+    }
+};
+
 // --- MOBILE VEHICLES LIST ---
-window.renderMobileVehiclesList = async function(myVehicleData) {
+window.renderMobileVehiclesList = async function (myVehicleData) {
     document.getElementById('categories-view').classList.add('hidden');
     document.getElementById('search-results-view').classList.add('hidden');
     const searchContainer = document.querySelector('.mobile-search-container');
@@ -5823,7 +5989,7 @@ window.renderMobileVehiclesList = async function(myVehicleData) {
 };
 
 // --- MOBILE VEHICLE APP ---
-window.renderMobileVehicleApp = async function(vehicle) {
+window.renderMobileVehicleApp = async function (vehicle) {
     document.getElementById('categories-view').classList.add('hidden');
     document.getElementById('search-results-view').classList.add('hidden');
     const searchContainer = document.querySelector('.mobile-search-container');
@@ -5913,7 +6079,7 @@ window.renderMobileVehicleApp = async function(vehicle) {
                             <div style="font-weight: 600; color: ${textColor}; font-size: 14px;">
                                 ${log.type === 'mileage' ? `Mise à jour : ${parseInt(log.value).toLocaleString()} km` : (log.type === 'fuel' ? `Plein : ${log.value} €` : log.description)}
                             </div>
-                            <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</div>
+                            <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>
                         </div>
                     </div>
                 `;
@@ -5932,7 +6098,7 @@ window.renderMobileVehicleApp = async function(vehicle) {
             nextCt.setMonth(nextCt.getMonth() + (vehicle.ct_interval_months || 12));
             const today = new Date();
             const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
-            
+
             if (diffDays <= 0) {
                 ctStatusEl.innerText = "À faire immédiatement !";
                 ctStatusEl.style.color = "#FF3B30";
@@ -5956,7 +6122,7 @@ window.renderMobileVehicleApp = async function(vehicle) {
     }
 };
 
-window.mobileAlert = function(title, message) {
+window.mobileAlert = function (title, message) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -5974,7 +6140,7 @@ window.mobileAlert = function(title, message) {
     document.body.appendChild(modal);
 };
 
-window.updateMobileMileage = function(vehicleId, current) {
+window.updateMobileMileage = function (vehicleId, current) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -6020,7 +6186,7 @@ window.updateMobileMileage = function(vehicleId, current) {
             await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: val.toString() });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-            
+
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -6036,7 +6202,7 @@ window.updateMobileMileage = function(vehicleId, current) {
     };
 };
 
-window.reportMobileVehicleIssue = function(vehicleId) {
+window.reportMobileVehicleIssue = function (vehicleId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -6079,7 +6245,7 @@ window.reportMobileVehicleIssue = function(vehicleId) {
             await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'issue', description: desc });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-            
+
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -6095,7 +6261,7 @@ window.reportMobileVehicleIssue = function(vehicleId) {
     };
 };
 
-window.logMobileFuel = async function(vehicleId, dkvCard) {
+window.logMobileFuel = async function (vehicleId, dkvCard) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -6103,7 +6269,7 @@ window.logMobileFuel = async function(vehicleId, dkvCard) {
 
     // Fetch DKV cards for selection if it's a common vehicle OR if we want to allow picking
     let allCards = [];
-    try { allCards = await api.getDkvCards(); } catch(e) {}
+    try { allCards = await api.getDkvCards(); } catch (e) { }
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -6165,16 +6331,16 @@ window.logMobileFuel = async function(vehicleId, dkvCard) {
         const description = `Plein : ${volume} L pour ${amount} € à ${km} km (Carte : ${usedDkv})`;
 
         try {
-            await api.submitVehicleLog({ 
-                vehicle_id: vehicleId, 
-                type: 'fuel', 
-                value: amount, 
+            await api.submitVehicleLog({
+                vehicle_id: vehicleId,
+                type: 'fuel',
+                value: amount,
                 description: description,
                 current_mileage: km
             });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-            
+
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -6190,10 +6356,10 @@ window.logMobileFuel = async function(vehicleId, dkvCard) {
     };
 };
 
-window.updateVehicleSidebarBadge = function(vehicles) {
+window.updateVehicleSidebarBadge = function (vehicles) {
     let alertCount = 0;
     const today = new Date();
-    
+
     vehicles.forEach(v => {
         let isAlert = false;
         if (v.next_maintenance_km && (v.next_maintenance_km - v.last_mileage <= 2000)) isAlert = true;
@@ -6202,7 +6368,7 @@ window.updateVehicleSidebarBadge = function(vehicles) {
             const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
             if (diffDays <= 30) isAlert = true;
         }
-        
+
         // CT Alert
         if (!v.last_ct_date) {
             isAlert = true;
@@ -6227,7 +6393,7 @@ window.updateVehicleSidebarBadge = function(vehicles) {
     }
 };
 
-window.openVehicleDetailModal = async function(vehicleId) {
+window.openVehicleDetailModal = async function (vehicleId) {
     try {
         const [vehicles, logs] = await Promise.all([
             api.getVehicles(),
@@ -6243,7 +6409,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
         modal.id = 'vehicle-detail-modal';
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100010';
-        
+
         modal.innerHTML = `
             <div class="modal-box" style="width: 1150px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #ffffff; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
                 <!-- Header -->
@@ -6305,11 +6471,11 @@ window.openVehicleDetailModal = async function(vehicleId) {
                                 <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Prochain CT (est.)</div>
                                 <div style="font-size: 18px; font-weight: 800; color: #5856D6;">
                                     ${(() => {
-                                        if (!v.last_ct_date) return '--';
-                                        const next = new Date(v.last_ct_date);
-                                        next.setMonth(next.getMonth() + (v.ct_interval_months || 12));
-                                        return next.toLocaleDateString();
-                                    })()}
+                if (!v.last_ct_date) return '--';
+                const next = new Date(v.last_ct_date);
+                next.setMonth(next.getMonth() + (v.ct_interval_months || 12));
+                return next.toLocaleDateString();
+            })()}
                                 </div>
                             </div>
                         </div>
@@ -6381,8 +6547,8 @@ window.openVehicleDetailModal = async function(vehicleId) {
         document.body.appendChild(modal);
 
         // --- Data Processing ---
-        const fuelLogs = logs.filter(l => l.type === 'fuel').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-        const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+        const fuelLogs = logs.filter(l => l.type === 'fuel').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
         let totalEuro = 0, totalLiters = 0, avgCons = 0;
         const fuelDataPoints = fuelLogs.map(l => {
@@ -6417,7 +6583,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
                 vMil.style.display = 'none'; vFue.style.display = 'flex';
                 tFue.style.background = '#fff'; tFue.style.color = '#007AFF'; tFue.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
                 tMil.style.background = 'transparent'; tMil.style.color = '#888'; tMil.style.boxShadow = 'none';
-                
+
                 // Init Fuel Stats if in fuel view
                 document.getElementById('fuel-stats-grid-tabs').innerHTML = `
                     <div style="background: rgba(52, 199, 89, 0.05); padding: 12px; border-radius: 16px; border: 1px solid rgba(52,199,89,0.1); text-align: center;">
@@ -6477,7 +6643,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
 
 // Start
 // Event Modal for Vehicle
-window.openAddVehicleEventModal = function(vehicleId) {
+window.openAddVehicleEventModal = function (vehicleId) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.zIndex = '100020';
@@ -6512,19 +6678,19 @@ window.openAddVehicleEventModal = function(vehicleId) {
         const dateStr = modal.querySelector('#event-date').value;
         const desc = modal.querySelector('#event-desc').value;
         const fileInput = modal.querySelector('#event-file');
-        
+
         if (!desc) return alert("Veuillez saisir une description");
-        
+
         saveBtn.disabled = true;
         saveBtn.innerText = "Téléchargement en cours...";
-        
+
         try {
             let filePath = null;
             if (fileInput.files.length > 0) {
                 const uploadRes = await api.uploadFile(fileInput.files[0], 'fleet/events/');
                 filePath = uploadRes.key;
             }
-            
+
             saveBtn.innerText = "Enregistrement...";
             await api.submitVehicleLog({
                 vehicle_id: vehicleId,
@@ -6533,10 +6699,10 @@ window.openAddVehicleEventModal = function(vehicleId) {
                 event_date: dateStr ? (new Date(dateStr + 'T12:00:00')).toISOString() : new Date().toISOString(),
                 image_path: filePath
             });
-            
+
             modal.remove();
             await window.openVehicleDetailModal(vehicleId);
-        } catch(e) {
+        } catch (e) {
             console.error(e);
             alert("Erreur: " + e.message);
             saveBtn.disabled = false;
@@ -6545,16 +6711,16 @@ window.openAddVehicleEventModal = function(vehicleId) {
     };
 };
 
-window.handleDeleteVehicleLog = async function(id, vehicleId) {
+window.handleDeleteVehicleLog = async function (id, vehicleId) {
     try {
         await api.deleteVehicleLog(id);
         await window.openVehicleDetailModal(vehicleId);
-    } catch(e) {
+    } catch (e) {
         alert("Erreur: " + e.message);
     }
 };
 
-window.updateAdminVehicleMileage = function(vehicleId, current) {
+window.updateAdminVehicleMileage = function (vehicleId, current) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.zIndex = "100050";
@@ -6598,9 +6764,9 @@ window.updateAdminVehicleMileage = function(vehicleId, current) {
     };
 };
 
-window.logAdminVehicleFuel = async function(vehicleId, dkvCard) {
+window.logAdminVehicleFuel = async function (vehicleId, dkvCard) {
     let allCards = [];
-    try { allCards = await api.getDkvCards(); } catch(e) {}
+    try { allCards = await api.getDkvCards(); } catch (e) { }
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -6659,10 +6825,10 @@ window.logAdminVehicleFuel = async function(vehicleId, dkvCard) {
         const description = `Plein : ${volume} L pour ${amount} € à ${km} km (Carte : ${usedDkv})`;
 
         try {
-            await api.submitVehicleLog({ 
-                vehicle_id: vehicleId, 
-                type: 'fuel', 
-                value: amount, 
+            await api.submitVehicleLog({
+                vehicle_id: vehicleId,
+                type: 'fuel',
+                value: amount,
                 description: description,
                 current_mileage: km
             });
@@ -6677,43 +6843,51 @@ window.logAdminVehicleFuel = async function(vehicleId, dkvCard) {
 };
 
 // --- GESTION DU PARC : MAINTENANCE MATERIEL ---
-window.renderAdminMaintenance = async function() {
+window.renderAdminMaintenance = async function () {
     const content = document.getElementById('admin-content');
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     const navItem = document.getElementById('nav-maintenance');
     if (navItem) navItem.classList.add('active');
 
     content.innerHTML = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 40px; background: rgba(0,0,0,0.2); backdrop-filter: blur(20px);">
-            <!-- Header (Style Flotte Automobile) -->
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:40px;">
-                <div style="background:#111; padding:12px 30px; border-radius:18px; display:flex; align-items:center; gap:12px; box-shadow:0 4px 20px rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05);">
-                    <span style="font-size:24px;">🛠️</span>
-                    <h1 style="margin:0; font-size:24px; font-weight:800; color:white;">Maintenance Matériel</h1>
-                </div>
-                
-                <div style="display:flex; gap:12px; align-items:center;">
-                    <!-- Search & Filter Area Integrated -->
-                    <div style="position: relative; display: flex; align-items: center; gap: 10px; margin-right: 10px;">
-                        <input type="text" id="maintenance-search" placeholder="Rechercher..." style="width: 220px; height: 44px; background: #111; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; color: white; padding: 0 16px 0 40px; font-size: 14px; outline: none;">
-                        <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; opacity: 0.5;">🔍</span>
-                        
-                        <select id="maintenance-family-filter" style="height: 44px; background: #111; border: 1px solid rgba(255,255,255,0.1); border-radius: 50px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 12px center; background-size: 14px;">
-                            <option value="">Toutes les familles</option>
-                        </select>
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header Section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #007AFF, #0056b3); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(0, 122, 255, 0.2);">
+                        <span style="font-size: 28px;">🛠️</span>
                     </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Maintenance Matériel</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Suivi des entretiens et réparations</p>
+                    </div>
+                </div>
 
-                    <button class="btn-primary" onclick="window.openMachineEditModal()" style="border-radius:50px; padding:12px 25px; background:#34C759; font-weight:700; display:flex; align-items:center; gap:8px; border:none; color:white; cursor:pointer;">
-                        <span style="font-size:18px;">+</span> Ajouter Matériel
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-primary" onclick="window.openMachineEditModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 18px;">+</span> Ajouter Matériel
                     </button>
-                    
-                    <button class="btn-secondary" onclick="window.openManageFamiliesModal()" style="border-radius:50px; padding:10px 20px; background:#111; border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:8px; color:white; cursor:pointer;">
-                        <span style="font-size:16px;">📁</span> Familles
+                    <button class="btn-secondary" onclick="window.openManageFamiliesModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 16px;">📁</span> Familles
                     </button>
+                    <button onclick="window.renderAdminMaintenance()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
 
-                    <button onclick="window.renderAdminMaintenance()" title="Rafraîchir" style="width: 44px; height: 44px; border-radius: 50px; background: #111; border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                    </button>
+            <!-- Filters Bar -->
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 24px; padding: 0 10px;">
+                <div style="position: relative; flex: 1;">
+                    <input type="text" id="maintenance-search" placeholder="Rechercher par identifiant, type, nom..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 20px 0 45px; font-size: 14px; outline: none;">
+                    <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
+                </div>
+
+                <div style="position: relative; min-width: 250px;">
+                    <select id="maintenance-family-filter" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="" style="background: #1c1c1e;">🛠️ Toutes les familles</option>
+                    </select>
+                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
                 </div>
             </div>
             <style>
@@ -6751,10 +6925,10 @@ window.renderAdminMaintenance = async function() {
             api.getMachines(),
             api.getMachineFamilies()
         ]);
-        
+
         const tbody = document.getElementById('maintenance-table-body');
         const familyFilter = document.getElementById('maintenance-family-filter');
-        
+
         // Populate family filter
         families.forEach(f => {
             const opt = document.createElement('option');
@@ -6768,10 +6942,10 @@ window.renderAdminMaintenance = async function() {
             const selectedFamily = familyFilter.value;
 
             const list = machines.filter(m => {
-                const matchesSearch = m.machine_id.toLowerCase().includes(searchText) || 
-                                     (m.name && m.name.toLowerCase().includes(searchText)) ||
-                                     (m.serial_number && m.serial_number.toLowerCase().includes(searchText)) ||
-                                     (m.assigned_to && m.assigned_to.toLowerCase().includes(searchText));
+                const matchesSearch = m.machine_id.toLowerCase().includes(searchText) ||
+                    (m.name && m.name.toLowerCase().includes(searchText)) ||
+                    (m.serial_number && m.serial_number.toLowerCase().includes(searchText)) ||
+                    (m.assigned_to && m.assigned_to.toLowerCase().includes(searchText));
                 const matchesFamily = !selectedFamily || m.family === selectedFamily;
                 return matchesSearch && matchesFamily;
             });
@@ -6784,8 +6958,8 @@ window.renderAdminMaintenance = async function() {
             tbody.innerHTML = list.map(m => {
                 const nextDate = m.next_maintenance_date ? new Date(m.next_maintenance_date) : null;
                 const today = new Date();
-                today.setHours(0,0,0,0);
-                
+                today.setHours(0, 0, 0, 0);
+
                 let validityHtml = '--';
                 if (nextDate) {
                     let color = '#2da140';
@@ -6843,7 +7017,7 @@ window.renderAdminMaintenance = async function() {
     }
 };
 
-window.openMachineDetailModal = async function(id) {
+window.openMachineDetailModal = async function (id) {
     try {
         const machines = await api.getMachines();
         const m = machines.find(item => item.id === id);
@@ -6987,7 +7161,7 @@ window.openMachineDetailModal = async function(id) {
             const details = document.getElementById('maint-details').value.trim();
             const type = document.getElementById('maint-type').value;
             const nextDate = updatePreview();
-            
+
             let vgpStatus = null;
             let vgpObservations = null;
             if (type === 'VGP') {
@@ -7019,7 +7193,7 @@ window.openMachineDetailModal = async function(id) {
     }
 };
 
-window.openManageFamiliesModal = async function() {
+window.openManageFamiliesModal = async function () {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.zIndex = '2000000';
@@ -7075,7 +7249,7 @@ window.openManageFamiliesModal = async function() {
     refreshFamilies();
 };
 
-window.openMachineEditModal = async function(id = null) {
+window.openMachineEditModal = async function (id = null) {
     let m = null;
     let families = [];
     try {
@@ -7085,7 +7259,7 @@ window.openMachineEditModal = async function(id = null) {
         ]);
         families = fams;
         if (id) m = machines.find(x => x.id === id);
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -7195,7 +7369,7 @@ window.openMachineEditModal = async function(id = null) {
             expiration_date: document.getElementById('m-expiration').value || null,
             comments: document.getElementById('m-comments').value.trim(),
             // Legacy mapping for compatibility
-            description: document.getElementById('m-serial').value.trim(), 
+            description: document.getElementById('m-serial').value.trim(),
             type: document.getElementById('m-family').value
         };
 
@@ -7218,7 +7392,7 @@ window.openMachineEditModal = async function(id = null) {
     };
 };
 
-window.deleteAdminMachine = async function(id) {
+window.deleteAdminMachine = async function (id) {
     if (!confirm("Voulez-vous vraiment supprimer ce matériel ? Cette action est irréversible et supprimera également l'historique de maintenance associé.")) return;
     try {
         await api.deleteMachine(id);
@@ -7233,136 +7407,405 @@ window.deleteAdminMachine = async function(id) {
 window.currentBuilding = null;
 window.machineIcons = [];
 
-window.renderAdminMap = async function() {
+window.renderAdminMaterialTracking = async function () {
     const content = document.getElementById('admin-content');
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
-    const navItem = document.getElementById('nav-map');
+    const navItem = document.getElementById('nav-material-stock');
     if (navItem) navItem.classList.add('active');
 
-    try {
-        const buildings = await api.getBuildings();
-        content.innerHTML = `
-            <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
-                <div style="padding: 20px; background: rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <h2 style="margin:0; color: white;">🏢 Plans des Bâtiments</h2>
-                    <div style="display: flex; gap: 10px; position: relative;">
-                        <input type="text" id="machine-global-search" placeholder="Rechercher MI... (ID)" class="form-input" style="width: 250px;">
-                        <div id="admin-m-suggestions" style="display:none; position: absolute; left:0; right:0; top: 100%; max-height: 300px; overflow-y: auto; background: #1C1C1E; border: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 12px 12px; z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.5);"></div>
-                        <button class="btn-primary" onclick="window.openAddBuildingModal()">+ Nouveau Bâtiment</button>
+    content.innerHTML = `
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header Section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #34C759, #2da140); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(52, 199, 89, 0.2);">
+                        <span style="font-size: 28px;">📦</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Statut du matériel ATS</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Gestion et inventaire du stock</p>
                     </div>
                 </div>
-                <div id="buildings-grid" style="flex: 1; padding: 30px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; overflow-y: auto; background: var(--bg-darker, #000);">
-                    ${buildings.length === 0 ? `
-                        <div style="grid-column: 1/-1; text-align: center; color: #8E8E93; padding-top: 100px;">
-                            <div style="font-size: 64px; margin-bottom: 20px;">🏢</div>
-                            <h3>Aucun bâtiment configuré</h3>
-                            <p>Commencez par ajouter un bâtiment et son plan SVG.</p>
-                        </div>
-                    ` : buildings.map(b => `
-                        <div class="category-card" onclick="window.renderBuildingSchematic('${b.id}')" style="background: rgba(255,255,255,0.05); padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; position: relative;">
-                            <div style="font-size: 40px; margin-bottom: 15px;">🏪</div>
-                            <h3 style="margin:0; color: white; font-size: 20px;">${b.name}</h3>
-                            <div style="margin-top: 10px; font-size: 13px; color: #8E8E93;">Cliquer pour voir le plan</div>
-                            <button onclick="event.stopPropagation(); window.handleDeleteBuilding('${b.id}')" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 16px; cursor: pointer; opacity: 0.5;">🗑️</button>
-                        </div>
-                    `).join('')}
+
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-primary" id="material-requests-btn" onclick="window.openMaterialRequestsModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #5856D6; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s; position: relative;">
+                        <span style="font-size: 18px;">🔔</span> Demandes
+                        <span id="requests-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: #FF3B30; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; border: 2px solid #1c1c1e;">0</span>
+                    </button>
+                    <button class="btn-primary" onclick="window.openEditMaterialModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 18px;">+</span> Ajouter Matériel
+                    </button>
+                    <button onclick="window.renderAdminMaterialTracking()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
                 </div>
             </div>
+
+            <!-- Filters Bar -->
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 24px; padding: 0 10px;">
+                <div style="position: relative; flex: 1;">
+                    <input type="text" id="material-search" placeholder="Rechercher par nom, type, référence..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 20px 0 45px; font-size: 14px; outline: none;">
+                    <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 10px; background: rgba(255, 59, 48, 0.1); padding: 0 16px; border-radius: 12px; height: 48px; border: 1px solid rgba(255, 59, 48, 0.2); cursor: pointer;" onclick="document.getElementById('material-filter-missing').click()">
+                    <input type="checkbox" id="material-filter-missing" style="width: 18px; height: 18px; accent-color: #FF3B30; cursor: pointer;">
+                    <span style="color: #FF3B30; font-size: 14px; font-weight: 700;">Manquants</span>
+                </div>
+
+                <div style="position: relative; min-width: 200px;">
+                    <select id="material-filter-location" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="" style="background: #1c1c1e;">📍 Tous les lieux</option>
+                    </select>
+                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
+                </div>
+            </div>
+
+            <div id="material-list-container" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                <div id="material-list-loader" style="text-align:center; padding: 80px;">
+                    <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: #34C759; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                </div>
+                <div id="material-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; padding-bottom: 40px;"></div>
+            </div>
+        </div>
+    `;
+
+    // Ensure we have clignotant style
+    if (!document.getElementById('clignotant-style')) {
+        const style = document.createElement('style');
+        style.id = 'clignotant-style';
+        style.innerHTML = `
+            @keyframes pulse-red {
+                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
+                70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
+                100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
+            }
+            .clignotant {
+                animation: clignote 1.5s infinite;
+            }
+            @keyframes clignote {
+                0% { opacity: 1; }
+                50% { opacity: 0.6; transform: scale(1.02); }
+                100% { opacity: 1; }
+            }
         `;
-        const globalSearch = document.getElementById('machine-global-search');
-        const adminMSugg = document.getElementById('admin-m-suggestions');
-        
-        globalSearch.oninput = async (e) => {
-            const val = e.target.value.trim().toUpperCase();
-            if (val.length < 2) { adminMSugg.style.display = 'none'; return; }
-            
-            const machines = await api.getMachines();
-            const filtered = machines.filter(m => (m.machine_id || "").toUpperCase().includes(val)).slice(0, 10);
-            
-            if (filtered.length > 0) {
-                adminMSugg.style.display = 'block';
-                adminMSugg.innerHTML = filtered.map(m => {
-                    const bName = m.building_id ? buildings.find(b => b.id === m.building_id)?.name : 'N/A';
-                    return `
-                        <div onclick="window.renderBuildingSchematic('${m.building_id}', '${m.id}')" style="padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); color: white; cursor: pointer; display: flex; justify-content: space-between; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">
-                            <span style="font-weight: 600;">${m.machine_id}</span>
-                            <small style="opacity: 0.6;">${bName}</small>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                adminMSugg.style.display = 'none';
-            }
-        };
-
-        // Close suggestions on click outside
-        document.addEventListener('click', (e) => {
-            if (!globalSearch.contains(e.target) && !adminMSugg.contains(e.target)) {
-                adminMSugg.style.display = 'none';
-            }
-        }, { once: true });
-
-    } catch (e) { alert("Erreur: " + e.message); }
-};
-
-window.renderMobileMap = async function() {
-    window.stopPlacingMachine();
-    document.body.classList.remove('hide-main-nav');
-    const container = document.getElementById('list-content');
-    if (container) {
-        container.style.position = '';
-        container.style.inset = '';
-        container.style.zIndex = '';
-        container.classList.remove('landscape-mode');
+        document.head.appendChild(style);
     }
-    document.getElementById('categories-view').classList.add('hidden');
-    document.getElementById('search-results-view').classList.add('hidden');
-    const searchContainer = document.querySelector('.mobile-search-container');
-    if (searchContainer) searchContainer.classList.add('hidden');
-    document.getElementById('document-list').classList.remove('hidden');
-    document.getElementById('selected-category-title').innerText = "Plans Bâtiments";
-    mobileCurrentPath = "map";
+
+    // Update badge immediately
+    window.updateMaterialStockBadge();
+
     try {
-        const buildings = await api.getBuildings();
-        container.innerHTML = `
-            <div style="padding: 20px; display: grid; gap: 15px; background: var(--bg-color);">
-                <div style="position: relative;">
-                    <input type="text" id="mobile-machine-search" placeholder="🔍 Rechercher N° MI..." style="width:100%; padding: 14px; border-radius: 14px; border:none; background: rgba(142, 142, 147, 0.12); color: var(--text-color);">
-                    <div id="m-suggestions" style="display:none; position: absolute; left:0; right:0; top: 100%; max-height: 200px; overflow-y: auto; background: var(--bg-color); border-radius: 0 0 14px 14px; box-shadow: 0 10px 15px rgba(0,0,0,0.2); z-index: 1000; border-top: 1px solid rgba(142,142,147,0.1);"></div>
-                </div>
-                ${buildings.map(b => `
-                    <div style="background: rgba(142, 142, 147, 0.1); padding: 20px; border-radius: 20px; display: flex; align-items: center; gap: 15px;" onclick="window.renderBuildingSchematic('${b.id}')">
-                        <div style="font-size: 32px;">🏢</div>
-                        <div style="flex:1;"><div style="font-weight: bold; color: var(--text-color);">${b.name}</div><div style="font-size: 12px; color: #8E8E93;">Voir le plan</div></div>
-                        <div style="color: #8E8E93;">→</div>
+        const stock = await api.getMaterialStock();
+
+        // Populate locations filter
+        const locations = [...new Set(stock.map(s => s.lieu_de_stockage).filter(Boolean))].sort();
+        const filterSelect = document.getElementById('material-filter-location');
+        locations.forEach(loc => {
+            const opt = document.createElement('option');
+            opt.value = loc;
+            opt.textContent = loc;
+            opt.style.background = "#1c1c1e";
+            opt.style.color = "white";
+            filterSelect.appendChild(opt);
+        });
+
+        const renderGrid = (items) => {
+            const grid = document.getElementById('material-grid');
+            const countBadge = document.getElementById('material-count-badge');
+            if (countBadge) countBadge.innerText = `${items.length} articles`;
+
+            if (items.length === 0) {
+                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #71717a; padding: 120px; font-size: 18px;">Aucun matériel trouvé</div>`;
+                return;
+            }
+            grid.innerHTML = items.map(item => {
+                const isMissing = (item.nb_souhaite || 0) > (item.stock_reel || 0);
+                const missingQty = (item.nb_souhaite || 0) - (item.stock_reel || 0);
+
+                return `
+                    <div class="material-card" onclick="window.openEditMaterialModal('${item.id}')" style="background: rgba(45, 45, 50, 0.4); backdrop-filter: blur(20px); border: 1px solid ${isMissing ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255,255,255,0.05)'}; border-radius: 24px; padding: 24px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; gap: 16px; position: relative; overflow: hidden;">
+                        <!-- Header: Designation & Stock -->
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 800; color: white; font-size: 16px; line-height: 1.3; margin-bottom: 6px;">${item.designation || 'Sans nom'}</div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 10px; color: #5856D6; background: rgba(88, 86, 214, 0.1); padding: 4px 8px; border-radius: 6px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(88, 86, 214, 0.15);">${item.type || 'MATÉRIEL'}</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                                <div style="background: ${item.stock_reel > 0 ? 'rgba(52, 199, 89, 0.1)' : 'rgba(255, 59, 48, 0.1)'}; color: ${item.stock_reel > 0 ? '#34C759' : '#FF453A'}; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; border: 1px solid ${item.stock_reel > 0 ? 'rgba(52, 199, 89, 0.2)' : 'rgba(255, 59, 48, 0.2)'};">
+                                    ${item.stock_reel || 0}
+                                </div>
+                                <div style="font-size: 10px; color: #8E8E93; margin-top: 6px; font-weight: 700; text-transform: uppercase;">Cible: ${item.nb_souhaite || 0}</div>
+                            </div>
+                        </div>
+
+                        <!-- Metadata: Ref & Supplier -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 14px; border: 1px solid rgba(255,255,255,0.03);">
+                            <div style="overflow: hidden;">
+                                <div style="font-size: 9px; color: #8E8E93; font-weight: 800; text-transform: uppercase; margin-bottom: 2px;">Référence</div>
+                                <div style="font-size: 12px; color: #D1D1D6; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${item.reference_fournisseur || ''}">${item.reference_fournisseur || '—'}</div>
+                            </div>
+                            <div style="overflow: hidden;">
+                                <div style="font-size: 9px; color: #8E8E93; font-weight: 800; text-transform: uppercase; margin-bottom: 2px;">Fournisseur</div>
+                                <div style="font-size: 12px; color: #D1D1D6; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${item.fournisseur || ''}">${item.fournisseur || '—'}</div>
+                            </div>
+                        </div>
+
+                        <!-- Description -->
+                        <div style="font-size: 13px; color: #AEAEB2; line-height: 1.5; font-weight: 400; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 40px;">
+                            ${item.caracteristiques || 'Aucune description détaillée.'}
+                        </div>
+
+                        <!-- Footer: Location & Status -->
+                        <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 14px;">
+                            <div style="display: flex; align-items: center; gap: 6px; color: #8E8E93; font-size: 12px; font-weight: 500;">
+                                <span style="font-size: 14px;">📍</span> ${item.lieu_de_stockage || 'Non localisé'}
+                            </div>
+                            ${isMissing ? `<span style="background: #FF3B30; color: white; padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 900; box-shadow: 0 4px 12px rgba(255, 59, 48, 0.2);">MANQUANT: ${missingQty}</span>` : ''}
+                        </div>
+
+                        <!-- Status bar at bottom -->
+                        <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: ${isMissing ? '#FF3B30' : '#34C759'}; opacity: 0.6;"></div>
                     </div>
-                `).join('')}
-            </div>
-        `;
-        const mSearch = document.getElementById('mobile-machine-search');
-        const mSugg = document.getElementById('m-suggestions');
-        mSearch.oninput = async (e) => {
-            const val = e.target.value.trim().toUpperCase();
-            if (val.length < 2) { mSugg.style.display = 'none'; return; }
-            const machines = await api.getMachines();
-            const filtered = machines.filter(m => (m.machine_id || "").toUpperCase().includes(val)).slice(0, 5);
-            if (filtered.length > 0) {
-                mSugg.style.display = 'block';
-                mSugg.innerHTML = filtered.map(m => `
-                    <div onclick="window.renderBuildingSchematic('${m.building_id}', '${m.id}')" style="padding: 12px 15px; border-bottom: 1px solid rgba(142,142,147,0.1); color: var(--text-color); display: flex; justify-content: space-between;">
-                        <span>${m.machine_id}</span>
-                        <small style="opacity: 0.6;">Bât. ${m.building_id ? buildings.find(b => b.id === m.building_id)?.name : 'N/A'}</small>
-                    </div>
-                `).join('');
-            } else { mSugg.style.display = 'none'; }
+                `;
+            }).join('');
         };
-    } catch (e) { container.innerHTML = `<p style="padding:20px;">Erreur: ${e.message}</p>`; }
+
+        const loader = document.getElementById('material-list-loader');
+        if (loader) loader.remove();
+        renderGrid(stock);
+
+        const searchInput = document.getElementById('material-search');
+        const locationFilter = document.getElementById('material-filter-location');
+        const missingFilter = document.getElementById('material-filter-missing');
+
+        const handleFilter = () => {
+            const search = searchInput.value.toLowerCase();
+            const location = locationFilter.value;
+            const onlyMissing = missingFilter.checked;
+
+            const filtered = stock.filter(s => {
+                const matchesSearch = (s.designation || '').toLowerCase().includes(search) ||
+                    (s.type || '').toLowerCase().includes(search) ||
+                    (s.caracteristiques || '').toLowerCase().includes(search) ||
+                    (s.reference_fournisseur || '').toLowerCase().includes(search) ||
+                    (s.fournisseur || '').toLowerCase().includes(search);
+                const matchesLocation = !location || s.lieu_de_stockage === location;
+                const matchesMissing = !onlyMissing || (s.nb_souhaite || 0) > (s.stock_reel || 0);
+                return matchesSearch && matchesLocation && matchesMissing;
+            });
+            renderGrid(filtered);
+        };
+
+        searchInput.oninput = handleFilter;
+        locationFilter.onchange = handleFilter;
+        missingFilter.onchange = handleFilter;
+
+        // Save stock for modal
+        window._currentStock = stock;
+
+    } catch (e) {
+        console.error(e);
+        document.getElementById('material-list-container').innerHTML = `<div style="color:red; padding: 20px;">Erreur lors du chargement du stock: ${e.message}</div>`;
+    }
 };
 
-window.renderBuildingSchematic = async function(buildingId, highlightMachineId = null) {
+window.openEditMaterialModal = async function (id = null) {
+    const isMobile = window.innerWidth <= 768;
+    const item = id ? window._currentStock.find(s => s.id === id) : {
+        designation: '',
+        type: '',
+        caracteristiques: '',
+        reference_fournisseur: '',
+        fournisseur: '',
+        stock_reel: 0,
+        nb_souhaite: 0,
+        lieu_de_stockage: ''
+    };
+
+    if (!item) return;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '1000000';
+    modal.style.backdropFilter = 'blur(8px)';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 90%; max-width: 650px; padding: ${isMobile ? '24px' : '40px'}; border-radius: 32px; background: rgba(28, 28, 30, 0.8); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); animation: modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                <h2 style="margin:0; font-size: ${isMobile ? '20px' : '24px'}; font-weight: 800;">${id ? 'Modifier' : 'Ajouter'} Matériel</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+            
+            <form id="edit-material-form" style="display: grid; grid-template-columns: ${isMobile ? '1fr' : '1fr 1fr'}; gap: 20px;">
+                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Désignation</label>
+                    <input type="text" name="designation" value="${item.designation || ''}" class="form-input" style="width:100%;" required>
+                </div>
+
+                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Type / Localisation Principale</label>
+                    <input type="text" name="type" list="existing-types" value="${item.type || ''}" class="form-input" style="width:100%;">
+                    <datalist id="existing-types">
+                        ${[...new Set(window._currentStock.map(s => s.type).filter(Boolean))].sort().map(t => `<option value="${t}">`).join('')}
+                    </datalist>
+                </div>
+                
+                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Caractéristiques</label>
+                    <textarea name="caracteristiques" class="form-input" style="width:100%; height: 80px; resize: vertical;">${item.caracteristiques || ''}</textarea>
+                </div>
+                
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Référence Fournisseur</label>
+                    <input type="text" name="reference_fournisseur" value="${item.reference_fournisseur || ''}" class="form-input" style="width:100%;">
+                </div>
+                
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Fournisseur</label>
+                    <input type="text" name="fournisseur" value="${item.fournisseur || ''}" class="form-input" style="width:100%;">
+                </div>
+                
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Stock Réel</label>
+                    <input type="number" step="0.01" name="stock_reel" value="${item.stock_reel || 0}" class="form-input" style="width:100%;">
+                </div>
+                
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Nb Souhaité</label>
+                    <input type="number" step="0.01" name="nb_souhaite" value="${item.nb_souhaite || 0}" class="form-input" style="width:100%;">
+                </div>
+                
+                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Lieu de Stockage</label>
+                    <input type="text" name="lieu_de_stockage" list="existing-locations" value="${item.lieu_de_stockage || ''}" class="form-input" style="width:100%;">
+                    <datalist id="existing-locations">
+                        ${[...new Set(window._currentStock.map(s => s.lieu_de_stockage).filter(Boolean))].sort().map(loc => `<option value="${loc}">`).join('')}
+                    </datalist>
+                </div>
+
+                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'} display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                    ${id ? `<button type="button" id="delete-material-btn" style="margin-right: auto; padding: 12px 20px; border-radius: 12px; background: rgba(255, 59, 48, 0.1); border: 1px solid #FF3B30; color: #FF3B30; font-weight: 700; cursor: pointer;">Supprimer</button>` : ''}
+                    <button type="button" class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                    <button type="submit" class="btn-primary" style="padding: 12px 30px; font-weight: 700; flex: ${isMobile ? '1' : 'none'};">${id ? 'Enregistrer' : 'Créer'}</button>
+                </div>
+
+                ${id ? `
+                <div style="grid-column: 1 / -1; margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
+                    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Historique des logs</h3>
+                    <div id="material-history-list" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 10px;">
+                        <div style="text-align:center; color:#8E8E93;">Chargement de l'historique...</div>
+                    </div>
+                </div>
+                ` : ''}
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    if (id) {
+        window.loadMaterialHistory(id, 'material-history-list');
+    }
+
+    modal.querySelector('form').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button[type="submit"]');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = "Sauvegarde...";
+
+        const formData = new FormData(e.target);
+        const updates = Object.fromEntries(formData.entries());
+
+        // Convert numbers
+        updates.stock_reel = parseFloat(updates.stock_reel) || 0;
+        updates.nb_souhaite = parseFloat(updates.nb_souhaite) || 0;
+
+        try {
+            if (id) {
+                const prevItem = window._currentStock.find(s => s.id === id);
+                await api.updateMaterialStock(id, updates);
+
+                // Create logs for changes
+                if (prevItem) {
+                    if (prevItem.lieu_de_stockage !== updates.lieu_de_stockage) {
+                        await api.addMaterialLog(id, 'Deplacement', `Lieu : ${prevItem.lieu_de_stockage || 'Nouveau'} -> ${updates.lieu_de_stockage || 'Non localisé'}`);
+                    }
+                    if (prevItem.stock_reel !== updates.stock_reel) {
+                        await api.addMaterialLog(id, 'Stock', `Quantité : ${prevItem.stock_reel} -> ${updates.stock_reel}`);
+                    }
+                }
+
+                showToast("Matériel mis à jour");
+            } else {
+                const created = await api.createMaterialStock(updates);
+                if (created && created.id) {
+                    await api.addMaterialLog(created.id, 'Creation', 'Matériel ajouté au stock');
+                }
+                showToast("Matériel ajouté");
+            }
+            modal.remove();
+            renderAdminMaterialTracking(); // Refresh
+        } catch (err) {
+            alert("Erreur lors de la sauvegarde: " + err.message);
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+    };
+
+    const deleteBtn = modal.querySelector('#delete-material-btn');
+    if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+            if (confirm("Voulez-vous vraiment supprimer ce matériel ?")) {
+                try {
+                    await api.deleteMaterialStock(id);
+                    showToast("Matériel supprimé");
+                    modal.remove();
+                    renderAdminMaterialTracking();
+                } catch (err) {
+                    alert("Erreur lors de la suppression: " + err.message);
+                }
+            }
+        };
+    }
+};
+
+window.loadMaterialHistory = async function (materialId, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+
+    try {
+        const logs = await api.getMaterialHistory(materialId);
+        if (!logs || logs.length === 0) {
+            container.innerHTML = `<div style="color: #8E8E93; font-size: 13px; text-align: center; padding: 10px;">Aucun historique disponible</div>`;
+            return;
+        }
+
+        container.innerHTML = logs.map(log => {
+            const date = new Date(log.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            let userName = 'Système';
+            if (log.profiles) {
+                userName = `${log.profiles.first_name || ''} ${log.profiles.last_name || ''}`.trim() || 'Utilisateur inconnu';
+            }
+            return `
+                <div style="padding: 12px; border-left: 3px solid #5856D6; background: rgba(88, 86, 214, 0.05); border-radius: 0 10px 10px 0; margin-bottom: 8px;">
+                    <div style="font-size: 11px; color: #8E8E93; font-weight: 600;">${date} • ${userName}</div>
+                    <div style="font-size: 13px; color: ${textColor}; font-weight: 500; margin-top: 4px;">${log.details}</div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = `<div style="color: red; font-size: 12px;">Erreur historique: ${e.message}</div>`;
+    }
+};
+
+window.renderBuildingSchematic = async function (buildingId, highlightMachineId = null) {
     const isMobile = window.innerWidth <= 768;
     const container = isMobile ? document.getElementById('list-content') : document.getElementById('admin-content');
-    
+
     // Si c'est mobile et qu'on cherche une machine, on passe en plein écran horizontal (rotation 90)
     if (isMobile && highlightMachineId) {
         document.body.classList.add('hide-main-nav');
@@ -7371,7 +7814,7 @@ window.renderBuildingSchematic = async function(buildingId, highlightMachineId =
         document.body.classList.remove('hide-main-nav');
         container.classList.remove('landscape-mode');
     }
-    
+
     try {
         const buildings = await api.getBuildings();
         const b = buildings.find(x => x.id === buildingId);
@@ -7386,7 +7829,7 @@ window.renderBuildingSchematic = async function(buildingId, highlightMachineId =
                     <!-- Bouton retour flottant supprimé au profit du bouton retour Android -->
                 ` : `
                     <div style="padding: 15px 20px; background: rgba(0,0,0,0.4); display: flex; align-items: center; gap: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); z-index: 10;">
-                        <button onclick="${isMobile ? 'window.renderMobileMap()' : 'window.renderAdminMap()'}" style="background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <button onclick="${isMobile ? 'window.renderMobileMaterialTracking()' : 'window.renderAdminMaterialTracking()'}" style="background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; gap: 5px;">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                             ${isMobile ? '' : 'Retour'}
                         </button>
@@ -7429,10 +7872,10 @@ window.renderBuildingSchematic = async function(buildingId, highlightMachineId =
                     pin.className = 'machine-pin' + (m.id === highlightMachineId ? ' pin-searched' : '');
                     pin.style.cssText = `position: absolute; left: ${m.x_pos}%; top: ${m.y_pos}%; width: 32px; height: 32px; margin: -16px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: rgba(255,255,255,0.25); border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); cursor: pointer; z-index: ${m.id === highlightMachineId ? 10000 : 100}; transition: all 0.2s ease; backdrop-filter: blur(5px);`;
                     pin.innerHTML = m.emoji || '🔧';
-                    pin.onclick = (ev) => { 
-                        ev.stopPropagation(); 
-                        if(window.isPlacingMachine) return; 
-                        window.renderMachineDetailsUI(m.id); 
+                    pin.onclick = (ev) => {
+                        ev.stopPropagation();
+                        if (window.isPlacingMachine) return;
+                        window.renderMachineDetailsUI(m.id);
                     };
                     sc.appendChild(pin);
                 }
@@ -7442,7 +7885,7 @@ window.renderBuildingSchematic = async function(buildingId, highlightMachineId =
     } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.focusMachineOnSchematic = function(id) {
+window.focusMachineOnSchematic = function (id) {
     const pins = document.querySelectorAll('.machine-pin');
     pins.forEach(p => p.style.background = '#5856D6');
     const target = document.getElementById(`pin-${id}`);
@@ -7450,11 +7893,11 @@ window.focusMachineOnSchematic = function(id) {
         target.style.background = '#FF3B30';
         target.style.transform = 'scale(1.5)';
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => { if(target) target.style.transform = 'scale(1)'; }, 1000);
+        setTimeout(() => { if (target) target.style.transform = 'scale(1)'; }, 1000);
     }
 };
 
-window.openAddBuildingModal = function() {
+window.openAddBuildingModal = function () {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -7481,24 +7924,24 @@ window.openAddBuildingModal = function() {
             const svg_url = `${config.api.workerUrl}/get/${key}`;
             await api.saveBuilding({ name, svg_url });
             modal.remove();
-            window.renderAdminMap();
-        } catch(e) { alert("Erreur: " + e.message); }
+            window.renderAdminMaterialTracking();
+        } catch (e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.handleDeleteBuilding = async function(id) {
+window.handleDeleteBuilding = async function (id) {
     if (!confirm("Supprimer ce bâtiment ?")) return;
-    try { await api.deleteBuilding(id); window.renderAdminMap(); } catch(e) { alert("Erreur: " + e.message); }
+    try { await api.deleteBuilding(id); window.renderAdminMaterialTracking(); } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.startPlacingMachine = function(buildingId) {
+window.startPlacingMachine = function (buildingId) {
     window.isPlacingMachine = true;
     document.getElementById('add-m-btn').style.display = 'none';
     document.getElementById('cancel-m-btn').style.display = 'block';
     document.getElementById('placement-hint').style.display = 'block';
 };
 
-window.stopPlacingMachine = function() {
+window.stopPlacingMachine = function () {
     window.isPlacingMachine = false;
     const addBtn = document.getElementById('add-m-btn');
     const cancelBtn = document.getElementById('cancel-m-btn');
@@ -7508,7 +7951,7 @@ window.stopPlacingMachine = function() {
     if (hint) hint.style.display = 'none';
 };
 
-window.openAddMachineModal = function(x, y, buildingId) {
+window.openAddMachineModal = function (x, y, buildingId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -7524,7 +7967,7 @@ window.openAddMachineModal = function(x, y, buildingId) {
             <div style="margin-bottom: 12px;">
                 <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Emoji Représentatif</label>
                 <div style="display:flex; gap: 8px; flex-wrap: wrap;" id="emoji-picker">
-                    ${['🔧','🚜','🏭','⛽','⚡','💧','🌪️','📦','🦾','🌡️'].map(e => `<div onclick="window.selectEmoji(this, '${e}')" style="font-size: 24px; padding: 5px; cursor: pointer; border-radius: 8px; border: 2px solid transparent;">${e}</div>`).join('')}
+                    ${['🔧', '🚜', '🏭', '⛽', '⚡', '💧', '🌪️', '📦', '🦾', '🌡️'].map(e => `<div onclick="window.selectEmoji(this, '${e}')" style="font-size: 24px; padding: 5px; cursor: pointer; border-radius: 8px; border: 2px solid transparent;">${e}</div>`).join('')}
                 </div>
                 <input type="hidden" id="new-m-emoji" value="🔧">
             </div>
@@ -7559,12 +8002,12 @@ window.openAddMachineModal = function(x, y, buildingId) {
             await api.saveMachine({ machine_id: id, type, x_pos: x, y_pos: y, building_id: buildingId, image_url, emoji });
             window.stopPlacingMachine();
             modal.remove();
-            if (buildingId) window.renderBuildingSchematic(buildingId); else window.renderAdminMap();
-        } catch(e) { alert("Erreur: " + e.message); }
+            if (buildingId) window.renderBuildingSchematic(buildingId); else window.renderAdminMaterialTracking();
+        } catch (e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.renderMachineDetailsUI = async function(machineDbId) {
+window.renderMachineDetailsUI = async function (machineDbId) {
     try {
         const machines = await api.getMachines();
         const machine = machines.find(m => m.id === machineDbId);
@@ -7601,10 +8044,10 @@ window.renderMachineDetailsUI = async function(machineDbId) {
             </div>
         `;
         document.body.appendChild(modal);
-    } catch(e) { alert("Erreur: " + e.message); }
+    } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.openAddMachineLogModal = function(machineDbId) {
+window.openAddMachineLogModal = function (machineDbId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -7635,33 +8078,33 @@ window.openAddMachineLogModal = function(machineDbId) {
             await api.addMachineLog(machineDbId, actionType, desc);
             document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
             renderMachineDetailsUI(machineDbId);
-        } catch(e) { alert("Erreur: " + e.message); }
+        } catch (e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.handleDeleteMachine = async function(id, buildingId = null) {
+window.handleDeleteMachine = async function (id, buildingId = null) {
     if (!confirm("Supprimer cette machine ?")) return;
     console.log("UI: Starting machine deletion for:", id);
     try {
         await api.deleteMachine(id);
         console.log("UI: Machine deleted successfully, closing modals...");
         document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
-        
+
         console.log("UI: Refreshing view... BuildingId:", buildingId);
         if (buildingId && typeof window.renderBuildingSchematic === "function") {
             window.renderBuildingSchematic(buildingId);
-        } else if (typeof window.renderMobileMap === "function") {
-            window.renderMobileMap();
+        } else if (typeof window.renderMobileMaterialTracking === "function") {
+            window.renderMobileMaterialTracking();
         } else {
-            renderAdminMap();
+            renderAdminMaterialTracking();
         }
-    } catch(e) { 
+    } catch (e) {
         console.error("UI: Machine deletion FAILED:", e);
-        alert("Erreur: " + e.message); 
+        alert("Erreur: " + e.message);
     }
 };
 
-window.openStorageAnalysisModal = async function(event) {
+window.openStorageAnalysisModal = async function (event) {
     const originalBtn = event?.currentTarget;
     if (originalBtn) originalBtn.innerText = '📊 Analyse...';
 
@@ -7670,7 +8113,7 @@ window.openStorageAnalysisModal = async function(event) {
     try {
         // Fetch both the full file list AND the official space usage
         [fullFiles, spaceData] = await Promise.all([
-            api.listFiles(null, true), 
+            api.listFiles(null, true),
             api.getSpaceUsage()
         ]);
         if (originalBtn) originalBtn.innerText = '📊 Analyser le stockage';
@@ -7693,7 +8136,7 @@ window.openStorageAnalysisModal = async function(event) {
     const extStats = {};
     let listedTotalSize = 0;
     const allFiles = [];
-    
+
     fullFiles.forEach(f => {
         if (f.key.startsWith('.meta_')) return;
         listedTotalSize += f.size;
@@ -7769,9 +8212,9 @@ window.openStorageAnalysisModal = async function(event) {
     const circ = 2 * Math.PI * radius;
     let currentOffset = 0;
     const activeCats = Object.entries(finalCategories).filter(([_, data]) => data.size > 0).sort((a, b) => b[1].size - a[1].size);
-    
+
     let svgContent = `<circle cx="50" cy="50" r="${radius}" fill="transparent" stroke="rgba(255,255,255,0.05)" stroke-width="12"/>`;
-    
+
     activeCats.forEach(([_, data]) => {
         const p = data.size / totalSize;
         const dashArray = p * circ;
@@ -7796,7 +8239,7 @@ window.openStorageAnalysisModal = async function(event) {
     modal.className = 'modal-overlay storage-analysis-overlay';
     modal.style.zIndex = "10000001";
     modal.style.padding = "20px";
-    
+
     // Inject Custom Styles for Scrollbar
     const styleTag = document.createElement('style');
     styleTag.innerHTML = `
@@ -7848,10 +8291,10 @@ window.openStorageAnalysisModal = async function(event) {
                     <h3 style="font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 25px; font-weight: 900;">📂 Top 5 des fichiers les plus lourds</h3>
                     <div style="display: flex; flex-direction: column; gap: 12px;">
                         ${topFiles.map((f, i) => {
-                            const name = f.key.split('/').pop();
-                            return `
+        const name = f.key.split('/').pop();
+        return `
                                 <div style="display: flex; align-items: center; gap: 20px; padding: 15px 25px; background: #000; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 16px; font-weight: 900; color: #333; width: 25px;">#${i+1}</span>
+                                    <span style="font-size: 16px; font-weight: 900; color: #333; width: 25px;">#${i + 1}</span>
                                     <div style="flex: 1; min-width: 0;">
                                         <div style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${window.escapeHTML(name)}</div>
                                         <div style="font-size: 11px; color: #555; margin-top: 3px;">${f.key}</div>
@@ -7859,7 +8302,7 @@ window.openStorageAnalysisModal = async function(event) {
                                     <div style="font-weight: 900; color: var(--primary); font-size: 14px;">${formatSize(f.size)}</div>
                                 </div>
                             `;
-                        }).join('')}
+    }).join('')}
                     </div>
                 </div>
 
@@ -7874,11 +8317,11 @@ window.openStorageAnalysisModal = async function(event) {
     document.body.appendChild(modal);
 };
 
-window.renderAdminNotifications = async function() {
+window.renderAdminNotifications = async function () {
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('nav-notifications').classList.add('active');
     const container = document.getElementById('admin-content');
-    
+
     // Structure HTML Ultra Premium avec Glassmorphism et SCROLLABLE
     container.innerHTML = `
         <div style="height: 100%; width: 100%; position: relative; overflow: hidden; background: url('https://images.unsplash.com/photo-1550745165-9bc0b25272a7?auto=format&fit=crop&q=80&w=2070') center/cover no-repeat fixed; border-radius: 20px;">
@@ -8113,11 +8556,11 @@ window.renderAdminNotifications = async function() {
             const msg = (f.reason && f.reason.message) || String(f.reason || "");
             return msg.includes("Unauthorized");
         })) {
-             if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">
+            if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">
                 <p>⚠️ Session expirée ou accès refusé.</p>
                 <button onclick="location.reload()" class="btn" style="margin-top:10px; background:rgba(255,255,255,0.1); color:white; border:none; padding:8px 15px; border-radius:10px;">Réessayer</button>
              </div>`;
-             return;
+            return;
         }
 
         const users = results[0].status === 'fulfilled' ? results[0].value : [];
@@ -8135,14 +8578,14 @@ window.renderAdminNotifications = async function() {
 
         const subscriberUserIds = new Set(subsResult.filter(Boolean).map(s => s.user_id));
         const adminAlertIds = new Set(configRes.admin_alert_ids || []);
-        
+
         // Appliquer les réglages d'automatisation (toggles)
         const checkEl = (id) => document.getElementById(id);
         if (checkEl('auto-planning')) checkEl('auto-planning').checked = configRes.auto_planning !== false;
         if (checkEl('auto-mileage')) checkEl('auto-mileage').checked = configRes.auto_mileage !== false;
         if (checkEl('auto-deadline')) checkEl('auto-deadline').checked = configRes.auto_deadline !== false;
         if (checkEl('auto-material')) checkEl('auto-material').checked = configRes.auto_material !== false;
-        
+
         if (checkEl('maint-alert-days')) {
             checkEl('maint-alert-days').value = configRes.maint_alert_days || 30;
             if (checkEl('maint-alert-days-val')) {
@@ -8191,7 +8634,7 @@ window.renderAdminNotifications = async function() {
         adminList.innerHTML = "";
         maintUserList.innerHTML = "";
         const admins = users.filter(u => u.role === 'admin');
-        
+
         admins.forEach(u => {
             const isSelected = adminAlertIds.has(u.id);
             const div = document.createElement('div');
@@ -8247,12 +8690,12 @@ window.renderAdminNotifications = async function() {
                         targetLabel = `👥 ${ids.length} collaborateurs sélectionnés`;
                     }
                 }
-                
+
                 let freqInfo = "";
-                const timeString = s.hour !== undefined && s.hour !== null 
-                    ? ` à ${s.hour}h${(s.minute || 0).toString().padStart(2, '0')}` 
+                const timeString = s.hour !== undefined && s.hour !== null
+                    ? ` à ${s.hour}h${(s.minute || 0).toString().padStart(2, '0')}`
                     : "";
-                
+
                 if (s.frequency === 'daily') freqInfo = "Chaque jour" + timeString;
                 else if (s.frequency === 'weekly') freqInfo = `Chaque ${daysNames[s.day_of_week]}` + timeString;
                 else if (s.frequency === 'monthly') freqInfo = `Chaque ${s.day_of_month} du mois` + timeString;
@@ -8281,9 +8724,9 @@ window.renderAdminNotifications = async function() {
             modal.id = 'modal-schedule'; // Unique ID for easier removal
             modal.className = 'modal-overlay';
             modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px;";
-            
+
             // Sort users and filter for multi-selection
-            users.sort((a,b) => (a.first_name || "").localeCompare(b.first_name || ""));
+            users.sort((a, b) => (a.first_name || "").localeCompare(b.first_name || ""));
             const userSelectionHTML = users.map(u => `
                 <div class="sch-user-option" data-id="${u.id}" style="display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px; background:rgba(255,255,255,0.03); cursor:pointer; transition:0.2s;" onclick="this.classList.toggle('selected'); this.style.background = this.classList.contains('selected') ? 'rgba(88, 86, 214, 0.3)' : 'rgba(255,255,255,0.03)'">
                     <div style="width:18px; height:18px; border:2px solid rgba(255,255,255,0.2); border-radius:4px; display:flex; align-items:center; justify-content:center;">
@@ -8292,7 +8735,7 @@ window.renderAdminNotifications = async function() {
                     <span style="font-size:13px; font-weight:600;">${u.first_name} ${u.last_name}</span>
                 </div>
             `).join('');
-            
+
             modal.innerHTML = `
                 <div class="modal-box" style="padding: 35px; border-radius: 35px; width: 100%; max-width: 650px; background: #1C1C1E; color: white; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 30px 60px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;">
                     <h2 style="margin: 0 0 30px 0; font-size: 26px; font-weight:800; letter-spacing:-1px;">✨ Nouvelle Programmation</h2>
@@ -8320,11 +8763,11 @@ window.renderAdminNotifications = async function() {
                             <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Heure exacte d'envoi</label>
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <select id="sch-hour" style="flex:1; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
-                                    ${Array.from({length: 24}, (_, i) => `<option value="${i}" ${i === 8 ? 'selected' : ''}>${i}h</option>`).join('')}
+                                    ${Array.from({ length: 24 }, (_, i) => `<option value="${i}" ${i === 8 ? 'selected' : ''}>${i}h</option>`).join('')}
                                 </select>
                                 <span style="font-weight:800;">:</span>
                                 <select id="sch-minute" style="flex:1; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
-                                    ${Array.from({length: 60}, (_, i) => `<option value="${i}" ${i === 0 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+                                    ${Array.from({ length: 60 }, (_, i) => `<option value="${i}" ${i === 0 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
                                 </select>
                             </div>
                         </div>
@@ -8398,9 +8841,9 @@ window.renderAdminNotifications = async function() {
                 const frequency = document.getElementById('sch-frequency').value;
                 const hourVal = parseInt(document.getElementById('sch-hour').value);
                 const minuteVal = parseInt(document.getElementById('sch-minute').value);
-                
+
                 const selectedUsers = Array.from(document.querySelectorAll('.sch-user-option.selected')).map(el => el.dataset.id);
-                
+
                 if (!message) return alert("Veuillez saisir un message.");
                 if (targetType === 'specific' && selectedUsers.length === 0) return alert("Veuillez sélectionner au moins un collaborateur.");
 
@@ -8451,7 +8894,7 @@ window.renderAdminNotifications = async function() {
                 </div>
             `;
             document.body.appendChild(modal);
-            
+
             modal.querySelector('#confirm-delete-btn').onclick = async () => {
                 const btn = modal.querySelector('#confirm-delete-btn');
                 btn.disabled = true;
@@ -8477,7 +8920,7 @@ window.renderAdminNotifications = async function() {
     }
 };
 
-window.toggleAllRecipients = function() {
+window.toggleAllRecipients = function () {
     const rows = document.querySelectorAll('.recipient-row');
     if (!rows.length) return;
     const allSelected = Array.from(rows).every(r => r.classList.contains('selected'));
@@ -8485,13 +8928,13 @@ window.toggleAllRecipients = function() {
     window.updateSelectedCount();
 };
 
-window.updateSelectedCount = function() {
+window.updateSelectedCount = function () {
     const countEl = document.getElementById('selected-count');
     if (!countEl) return;
-    
+
     const selected = document.querySelectorAll('.recipient-row.selected');
     countEl.innerText = `${selected.length} destinataire(s) sélectionné(s)`;
-    
+
     // Styliser les checkboxes visuelles
     document.querySelectorAll('.recipient-row').forEach(r => {
         const check = r.querySelector('.check-mark');
@@ -8508,7 +8951,7 @@ window.updateSelectedCount = function() {
     });
 };
 
-window.setNotifTemplate = function(text) {
+window.setNotifTemplate = function (text) {
     const textarea = document.getElementById('notif-message');
     if (textarea) {
         textarea.value = text;
@@ -8516,7 +8959,7 @@ window.setNotifTemplate = function(text) {
     }
 };
 
-window.sendCustomNotification = async function() {
+window.sendCustomNotification = async function () {
     const selectedRows = document.querySelectorAll('.recipient-row.selected');
     const message = document.getElementById('notif-message') ? document.getElementById('notif-message').value.trim() : "";
     const btn = document.getElementById('btn-send-notif');
@@ -8541,14 +8984,14 @@ window.sendCustomNotification = async function() {
 
     try {
         const result = await api.sendNotification(userIds.length > 0 ? null : 'all', message, userIds.length > 0 ? userIds : null);
-        
+
         if (result.success) {
             if (status) status.innerHTML = `<span style='color: #34C759; font-weight: 800;'>✅ Notification envoyée !</span>`;
             if (document.getElementById('notif-message')) document.getElementById('notif-message').value = "";
-            
+
             selectedRows.forEach(r => r.classList.remove('selected'));
             window.updateSelectedCount();
-            
+
             setTimeout(() => { if (status) status.innerHTML = ''; }, 5000);
         } else {
             if (status) status.innerHTML = `<span style='color: #FF3B30;'>⚠️ ${result.details || 'Échec'}</span>`;
@@ -8569,7 +9012,7 @@ window.saveAutoSettings = async () => {
     const autoDeadline = document.getElementById('auto-deadline').checked;
     const autoMaterial = document.getElementById('auto-material').checked;
     const maintAlertDays = document.getElementById('maint-alert-days').value;
-    
+
     const maintBadges = document.querySelectorAll('.admin-badge-select.active');
     const maintAlertUserIds = Array.from(maintBadges).map(b => b.dataset.userId);
 
@@ -8593,21 +9036,21 @@ window.saveAdminAlertSettings = async () => {
     const selectedRows = document.querySelectorAll('.admin-alert-row.selected');
     const selectedIds = Array.from(selectedRows).map(el => el.dataset.adminId);
     const btn = document.querySelector('button[onclick="window.saveAdminAlertSettings()"]');
-    
+
     try {
         if (btn) {
             btn.disabled = true;
             btn.innerText = "⏳ Enregistrement...";
         }
-        
+
         await api.saveMaterialConfig(selectedIds);
-        
+
         if (btn) {
             btn.innerText = "✅ Enregistré";
             btn.style.background = "#34C759";
             btn.style.color = "white";
             btn.style.borderColor = "#34C759";
-            
+
             showSuccessModal("Destinataires mis à jour avec succès !<br>Ils recevront désormais les alertes immédiates et les rappels hebdomadaires.");
 
             setTimeout(() => {
@@ -8633,7 +9076,7 @@ window.triggerMaterialReminder = async () => {
         btn.disabled = true;
         btn.innerText = "⌛ Test en cours...";
     }
-    
+
     try {
         const result = await api.sendMaterialReminders();
         if (result.success) {
@@ -8652,7 +9095,7 @@ window.triggerMaterialReminder = async () => {
 };
 
 
-window.renderAdminFriterie = async function() {
+window.renderAdminFriterie = async function () {
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('nav-friterie').classList.add('active');
@@ -8693,7 +9136,7 @@ window.renderAdminFriterie = async function() {
         orders.forEach(o => {
             let profile = o.profiles;
             if (Array.isArray(profile)) profile = profile[0];
-            const name = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : `User #${o.user_id.substring(0,5)}`;
+            const name = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : `User #${o.user_id.substring(0, 5)}`;
             if (!grouped[name]) grouped[name] = [];
             grouped[name].push(o);
         });
@@ -8727,9 +9170,9 @@ window.renderAdminFriterie = async function() {
                         </div>
                         <div style="display:flex; flex-direction:column; gap:12px;">
                             ${items.map(o => {
-                                const date = o.created_at ? new Date(o.created_at) : null;
-                                const timeStr = date ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
-                                return `
+            const date = o.created_at ? new Date(o.created_at) : null;
+            const timeStr = date ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+            return `
                                     <div style="padding-left:12px; border-left:4px solid #FFD60A; position:relative;">
                                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                                             <span style="font-weight:700; color:white; font-size:15px;">${o.item_name}</span>
@@ -8740,7 +9183,7 @@ window.renderAdminFriterie = async function() {
                                         ${o.sauce ? `<div style="font-size:13px; color:#FF9500; font-weight:700;">Sauce: ${o.sauce}</div>` : ''}
                                     </div>
                                 `;
-                            }).join('')}
+        }).join('')}
                         </div>
                     </div>
                 `).join('')}
@@ -8751,7 +9194,7 @@ window.renderAdminFriterie = async function() {
     }
 };
 
-window.adminDeleteAllFritOrdersFromAdmin = async function() {
+window.adminDeleteAllFritOrdersFromAdmin = async function () {
     if (!confirm("⚠️ ACTION ADMINISTRATIVE : Voulez-vous vraiment effacer TOUTES les commandes de TOUT LE MONDE ? cette action est irréversible (prévu pour le nettoyage hebdomadaire).")) return;
     try {
         const session = await auth.getSession();
@@ -8762,6 +9205,85 @@ window.adminDeleteAllFritOrdersFromAdmin = async function() {
         if (!res.ok) throw new Error(await res.text());
         showSuccessModal("Toutes les commandes ont été effacées avec succès.");
         renderAdminFriterie();
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.openMaterialRequestsModal = async function () {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '10001';
+    modal.innerHTML = `
+        <div class="modal-box" style="width: 800px; max-height: 80vh; display: flex; flex-direction: column; background: #1c1c1e; border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+            <div style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02);">
+                <h2 style="margin: 0; color: white; font-size: 18px; font-weight: 800;">Demandes de modification de stock</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; cursor: pointer; font-size: 20px; opacity: 0.5;">✕</button>
+            </div>
+            <div id="requests-list-container" style="padding: 24px; overflow-y: auto; flex: 1;">
+                <div style="text-align: center; padding: 40px; color: #8E8E93;">Chargement des demandes...</div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    try {
+        const requests = await api.getMaterialRequests();
+        const container = document.getElementById('requests-list-container');
+        
+        if (requests.length === 0) {
+            container.innerHTML = `<div style="text-align: center; padding: 60px; color: #8E8E93;">Aucune demande en attente 🌟</div>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <table style="width: 100%; border-collapse: collapse; color: white;">
+                <thead>
+                    <tr style="text-align: left; border-bottom: 2px solid rgba(255,255,255,0.05); color: #8E8E93; font-size: 12px; text-transform: uppercase;">
+                        <th style="padding: 12px;">Matériel</th>
+                        <th style="padding: 12px;">Utilisateur</th>
+                        <th style="padding: 12px;">Modification demandée</th>
+                        <th style="padding: 12px; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${requests.map(req => `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 16px 12px;">
+                                <div style="font-weight: 700;">${req.material_stock.designation}</div>
+                                <div style="font-size: 12px; color: #8E8E93;">Actuel: ${req.material_stock.stock_reel} à ${req.material_stock.lieu_de_stockage}</div>
+                            </td>
+                            <td style="padding: 16px 12px;">
+                                ${req.profiles.first_name} ${req.profiles.last_name}
+                            </td>
+                            <td style="padding: 16px 12px;">
+                                <div style="color: #34C759; font-weight: 700;">Stock: ${req.new_stock_reel}</div>
+                                <div style="color: #5856D6; font-weight: 700;">Lieu: ${req.new_lieu_de_stockage}</div>
+                            </td>
+                            <td style="padding: 16px 12px; text-align: right;">
+                                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                                    <button onclick="handleMaterialRequest('${req.id}', 'approved')" style="background: #34C759; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;">Approuver</button>
+                                    <button onclick="handleMaterialRequest('${req.id}', 'rejected')" style="background: #FF3B30; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;">Refuser</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (e) {
+        document.getElementById('requests-list-container').innerHTML = `<div style="color: red; text-align: center;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.handleMaterialRequest = async function (id, status) {
+    if (!confirm(`Voulez-vous vraiment ${status === 'approved' ? 'approuver' : 'refuser'} cette demande ?`)) return;
+    
+    try {
+        await api.updateMaterialStockRequestStatus(id, status);
+        showToast(status === 'approved' ? "Demande approuvée et stock mis à jour" : "Demande refusée");
+        document.querySelector('.modal-overlay').remove();
+        window.renderAdminMaterialTracking();
     } catch (e) {
         alert("Erreur: " + e.message);
     }

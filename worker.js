@@ -28,9 +28,9 @@ export default {
 
         // Safety check for R2 binding
         if (!env.MY_BUCKET) {
-            return new Response("Erreur de configuration: R2 Bucket (MY_BUCKET) non trouvÃ© dans le Worker.", { 
-                status: 500, 
-                headers: { ...corsHeaders, "Content-Type": "text/plain" } 
+            return new Response("Erreur de configuration: R2 Bucket (MY_BUCKET) non trouvÃ© dans le Worker.", {
+                status: 500,
+                headers: { ...corsHeaders, "Content-Type": "text/plain" }
             });
         }
 
@@ -39,7 +39,7 @@ export default {
 
         // Check Auth : Allow public access ONLY for /get/ files and /update/check
         const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check');
-        
+
         if (!isPublicPath) {
             if (!user) {
                 return new Response("Unauthorized", { status: 401, headers: corsHeaders });
@@ -47,23 +47,23 @@ export default {
 
             // Visitor Protection: Block all mutations with custom message
             if (method !== "GET" && userRole === 'visiteur') {
-                return new Response("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !", { 
-                    status: 403, 
-                    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" } 
+                return new Response("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !", {
+                    status: 403,
+                    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" }
                 });
             }
 
             // Check Admin/Visitor for /admin/ routes
             if (url.pathname.startsWith('/admin/')) {
                 // EXCEPTION: grant access to all authenticated users for "Cartes et Parc" and "Maint." apps
-                const isParcOrMaintPath = 
-                    url.pathname.includes("/admin/machines") || 
-                    url.pathname.includes("/admin/machine-families") || 
+                const isParcOrMaintPath =
+                    url.pathname.includes("/admin/machines") ||
+                    url.pathname.includes("/admin/machine-families") ||
                     url.pathname.includes("/admin/buildings");
-                
+
                 // EXCEPTION: allow GET on vehicles/logs/cards for non-admins
                 const isVehicleRead = method === "GET" && (
-                    url.pathname.endsWith("/admin/vehicles") || 
+                    url.pathname.endsWith("/admin/vehicles") ||
                     url.pathname.endsWith("/admin/vehicle/all-logs") ||
                     url.pathname.endsWith("/admin/dkv-cards") ||
                     url.pathname.endsWith("/admin/toll-cards")
@@ -81,7 +81,7 @@ export default {
             // --- ROUTE: CHECK FOR UPDATES (Auto-Detect zip files with version in name) ---
             if (url.pathname.includes("/update/check")) {
                 const currentVersion = url.searchParams.get('current_version') || "0.0.0";
-                
+
                 // Scan the WHOLE bucket (recursive search for safety)
                 const listing = await env.MY_BUCKET.list();
                 let latestVersion = "0.0.0";
@@ -96,9 +96,9 @@ export default {
                     if (match) {
                         const ver = match[1];
                         const uploadTime = new Date(obj.uploaded).getTime();
-                        
+
                         const cmp = compareVersions(ver, latestVersion);
-                        
+
                         // We take the HIGHEST version. If versions are equal, take the newest upload.
                         if (cmp > 0 || (cmp === 0 && uploadTime > latestTimestamp)) {
                             latestVersion = ver;
@@ -108,18 +108,18 @@ export default {
                         }
                     }
                 }
-                
+
                 const isNewer = compareVersions(latestVersion, currentVersion) > 0;
                 console.log(`[Updater] Result: Last Version found: ${latestVersion}. Current App: ${currentVersion}. Update required? ${isNewer}`);
-                
+
                 return new Response(JSON.stringify({
                     updateAvailable: isNewer,
                     newVersion: latestVersion,
                     url: latestVersionFile ? `${url.origin}/get/${latestVersionFile.key}` : null,
                     mandatory: true
                 }), {
-                    headers: { 
-                        ...corsHeaders, 
+                    headers: {
+                        ...corsHeaders,
                         "Content-Type": "application/json",
                         "Cache-Control": "no-store, no-cache, must-revalidate"
                     }
@@ -145,14 +145,14 @@ export default {
 
                 // Hide internal folders from listing UNLESS explicitly asked
                 if (!includeHidden) {
-                    objects = objects.filter(obj => 
-                        !obj.key.startsWith('material_requests/') && 
+                    objects = objects.filter(obj =>
+                        !obj.key.startsWith('material_requests/') &&
                         !obj.key.startsWith('fleet/') &&
                         !obj.key.startsWith('vehicles/') &&
                         !obj.key.startsWith('archives/') &&
                         !obj.key.startsWith('fullscreen_slides/') &&
                         !obj.key.startsWith('buildings/') &&
-                        !obj.key.startsWith('machines/') && 
+                        !obj.key.startsWith('machines/') &&
                         !obj.key.startsWith('machines_photos/') &&
                         !obj.key.startsWith('autre/') &&
                         !obj.key.startsWith('app_dist/') &&
@@ -336,10 +336,10 @@ export default {
 
                 const headers = new Headers(corsHeaders);
                 object.writeHttpMetadata(headers);
-                
+
                 // FORCE INLINE to prevent unwanted download prompts and allow direct viewing
                 headers.set("Content-Disposition", "inline");
-                
+
                 // FORCE CONTENT TYPE if missing or generic to ensure browser rendering
                 const ext = key.split('.').pop().toLowerCase();
                 const mimeTypes = {
@@ -823,7 +823,7 @@ export default {
                 const startDate = searchParams.get('start_date');
                 const endDate = searchParams.get('end_date');
                 const dateParam = searchParams.get('date');
-                
+
                 const today = new Date().toISOString().split('T')[0];
 
                 let queryUrl = `${supabaseUrl}/rest/v1/tasks?select=*`;
@@ -838,7 +838,7 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!response.ok) return new Response(await response.text(), { status: response.status, headers: corsHeaders });
-                
+
                 let results = await response.json();
 
                 // FALLBACK: If 0 results in Supabase for a past week, search and parse R2 archives
@@ -855,7 +855,7 @@ export default {
                                 if (lines.length < 2) continue;
                                 const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, ''));
                                 const dateIdx = headers.indexOf('date');
-                                
+
                                 for (let i = 1; i < lines.length; i++) {
                                     if (!lines[i]) continue;
                                     const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
@@ -864,7 +864,7 @@ export default {
                                         const rowDate = cleanRow[dateIdx];
                                         if (rowDate >= startDate && rowDate <= (endDate || startDate)) {
                                             const task = {};
-                                            headers.forEach((h, idx) => { if(h) task[h] = cleanRow[idx]; });
+                                            headers.forEach((h, idx) => { if (h) task[h] = cleanRow[idx]; });
                                             results.push(task);
                                         }
                                     }
@@ -873,12 +873,12 @@ export default {
                             }
                         }
                     } catch (e) {
-                         console.error("Archive retrieval fallback failed", e);
+                        console.error("Archive retrieval fallback failed", e);
                     }
                 }
 
-                return new Response(JSON.stringify(results), { 
-                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                return new Response(JSON.stringify(results), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
                 });
             }
 
@@ -906,7 +906,7 @@ export default {
                     },
                     body: JSON.stringify(payload)
                 });
-                
+
                 if (updateRes.ok && !id) {
                     // NEW TASK ALERT
                     try {
@@ -917,7 +917,7 @@ export default {
                         if (configData[0]?.auto_planning !== false) {
                             await sendPushNotification(env, user_id, `📅 Nouvelle tâche : ${title} (${date})`);
                         }
-                    } catch(e) { console.error("Auto notif planning failed", e); }
+                    } catch (e) { console.error("Auto notif planning failed", e); }
                 }
 
                 if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
@@ -946,8 +946,8 @@ export default {
             if (method === "POST" && url.pathname.endsWith("/admin/tasks/archive")) {
                 try {
                     const result = await performArchiving(env);
-                    return new Response(JSON.stringify({ 
-                        message: result.count > 0 ? "Archived successfuly into yearly files." : "Nothing to archive.", 
+                    return new Response(JSON.stringify({
+                        message: result.count > 0 ? "Archived successfuly into yearly files." : "Nothing to archive.",
                         count: result.count,
                         details: result.details
                     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -964,7 +964,7 @@ export default {
                     if (obj) {
                         closedDays = await obj.json();
                     }
-                } catch(e) {}
+                } catch (e) { }
                 return new Response(JSON.stringify(closedDays), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
@@ -1067,7 +1067,7 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-                                    // --- ROUTE: MATERIAL REQUESTS (Admin) ---
+            // --- ROUTE: MATERIAL REQUESTS (Admin) ---
             if (method === "GET" && url.pathname === "/admin/material/requests") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
@@ -1146,7 +1146,7 @@ export default {
                         if (status === 'received') label = 'Reçue ✅';
                         await sendPushNotification(env, r.user_id, `🧰 Matériel : Votre demande pour "${r.material_name}" est maintenant ${label}.`);
                     }
-                } catch(e) { console.error("Auto material notif failed", e); }
+                } catch (e) { console.error("Auto material notif failed", e); }
 
                 // 3. Action based on status
                 if (status === 'received' || status === 'refused') {
@@ -1156,7 +1156,7 @@ export default {
                     try {
                         const obj = await env.MY_BUCKET.get(key);
                         if (obj) csvContent = await obj.text();
-                    } catch(e) {}
+                    } catch (e) { }
                     if (!csvContent) {
                         csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path,handled_by\n";
                     }
@@ -1167,7 +1167,7 @@ export default {
                         return '"' + str + '"';
                     };
                     const line = [
-                        escapeCsv(r.id), escapeCsv(r.user_id), 
+                        escapeCsv(r.id), escapeCsv(r.user_id),
                         escapeCsv(r.profiles ? (r.profiles.first_name + " " + r.profiles.last_name) : 'Inconnu'),
                         escapeCsv(r.category), escapeCsv(r.material_name), escapeCsv(r.quantity), escapeCsv(r.comment),
                         escapeCsv(status), escapeCsv(r.created_at), escapeCsv(r.image_path), escapeCsv(adminName || 'Admin')
@@ -1218,56 +1218,106 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            // --- ROUTE: MATERIAL CATEGORIES (Public for Authenticated Users) ---
-            if (method === "GET" && url.pathname === "/material/categories") {
+            // --- ROUTE: MATERIAL STOCK (Admin) ---
+            if (url.pathname.endsWith("/admin/material/stock")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?select=*&order=designation.asc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST" || method === "PATCH") {
+                    const body = await request.json();
+                    const { id, ...data } = body;
+
+                    let query = `${supabaseUrl}/rest/v1/material_stock`;
+                    let fetchMethod = "POST";
+                    let headers = {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation"
+                    };
+
+                    if (id || method === "PATCH") {
+                        if (id) {
+                            query += `?id=eq.${id}`;
+                            fetchMethod = "PATCH";
+                        } else {
+                            return new Response("Missing ID for update", { status: 400, headers: corsHeaders });
+                        }
+                    } else {
+                        headers["Prefer"] += ",resolution=merge-duplicates";
+                    }
+
+                    const res = await fetch(query, {
+                        method: fetchMethod,
+                        headers: headers,
+                        body: JSON.stringify(data)
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    const saved = await res.json();
+                    return new Response(JSON.stringify(saved[0] || saved), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const body = await request.json();
+                    const { id } = body;
+                    if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
             }
 
-            // --- ROUTE: MATERIAL CATEGORIES (Admin - Same as above but prefixed) ---
-            if (method === "GET" && url.pathname === "/admin/material/categories") {
+            // --- ROUTE: MATERIAL CATEGORIES ---
+            if (url.pathname.includes("/material/categories")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST" && url.pathname.includes("/admin/")) {
+                    const body = await request.json();
+                    const { name } = body;
+                    if (!name) return new Response("Missing name", { status: 400, headers: corsHeaders });
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_categories`, {
+                        method: "POST",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ name })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE" && url.pathname.includes("/admin/")) {
+                    const body = await request.json();
+                    const { id } = body;
+                    if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
             }
 
-            if (method === "POST" && url.pathname.endsWith("/admin/material/categories")) {
-                const body = await request.json();
-                const { name } = body;
-                if (!name) return new Response("Missing name", { status: 400, headers: corsHeaders });
-                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
-                const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories`, {
-                    method: "POST",
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ name })
-                });
-                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            }
 
-            if (method === "DELETE" && url.pathname.endsWith("/admin/material/categories")) {
-                const body = await request.json();
-                const { id } = body;
-                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
-                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
-                const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?id=eq.${id}`, {
-                    method: "DELETE",
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            }
 
             // --- ROUTE: VEHICLES (Admin) ---
             if (method === "GET" && url.pathname.endsWith("/admin/vehicles")) {
@@ -1284,16 +1334,16 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 const { id, ...vehicleData } = body;
                 const upsertBody = { ...vehicleData, updated_at: new Date().toISOString() };
                 if (id) upsertBody.id = id;
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicles`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "return=representation,resolution=merge-duplicates"
                     },
@@ -1314,7 +1364,7 @@ export default {
                 // 1. Try to delete photo from R2 if exists
                 try {
                     await env.MY_BUCKET.delete(`vehicles/photos/${id}.png`);
-                } catch(e) {}
+                } catch (e) { }
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
                     method: "DELETE",
@@ -1390,7 +1440,7 @@ export default {
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 let query = `${supabaseUrl}/rest/v1/vehicle_logs?select=*,profiles(first_name,last_name)&order=created_at.desc&limit=100`;
                 if (vehicle_id) query += `&vehicle_id=eq.${vehicle_id}`;
-                
+
                 const res = await fetch(query, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -1434,7 +1484,7 @@ export default {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 // 1. Fetch user assigned vehicle
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=eq.${user.id}&select=*`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
@@ -1462,10 +1512,10 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 const { id, next_maintenance_date, next_maintenance_km, toll_card, dkv_card, last_ct_date } = body;
                 if (!id) return new Response("Missing vehicle ID", { status: 400, headers: corsHeaders });
-                
+
                 // Verify user owns it
                 const checkRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}&assigned_user_id=eq.${user.id}`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
@@ -1477,7 +1527,7 @@ export default {
                 const updateRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
                     method: "PATCH",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         next_maintenance_date: next_maintenance_date || null,
                         last_ct_date: last_ct_date || null,
                         next_maintenance_km: next_maintenance_km ? parseInt(next_maintenance_km) : null,
@@ -1495,17 +1545,17 @@ export default {
                 const body = await request.json();
                 const { vehicle_id, type, value, description, image_path, event_date } = body;
                 if (!vehicle_id || !type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
-                
+
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
                 // 1. Insert Log
-                const insertObj = { 
-                    vehicle_id, 
-                    user_id: user.id, 
-                    type, 
-                    value, 
-                    description, 
+                const insertObj = {
+                    vehicle_id,
+                    user_id: user.id,
+                    type,
+                    value,
+                    description,
                     image_path,
                     created_at: event_date || new Date().toISOString()
                 };
@@ -1531,12 +1581,12 @@ export default {
                         await fetch(`${supabaseUrl}/rest/v1/vehicle_logs`, {
                             method: "POST",
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ 
-                                vehicle_id, 
-                                user_id: user.id, 
-                                type: 'mileage', 
-                                value: mileageVal, 
-                                description: `RelevÃ© auto (Plein)`, 
+                            body: JSON.stringify({
+                                vehicle_id,
+                                user_id: user.id,
+                                type: 'mileage',
+                                value: mileageVal,
+                                description: `RelevÃ© auto (Plein)`,
                                 created_at: event_date || new Date().toISOString()
                             })
                         });
@@ -1562,16 +1612,16 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 const { id, card_number, description } = body;
                 const upsertBody = { card_number, description, updated_at: new Date().toISOString() };
                 if (id) upsertBody.id = id;
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/dkv_cards`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "resolution=merge-duplicates"
                     },
@@ -1656,9 +1706,9 @@ export default {
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_request_config`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "resolution=merge-duplicates"
                     },
@@ -1718,7 +1768,7 @@ export default {
                     const origin = new URL(request.url).origin;
                     const imageUrl = image_path ? `${origin}/get/${image_path}` : null;
                     const imageHtml = imageUrl ? `<div style="margin-top:20px;"><img src="${imageUrl}" style="max-width:100%; border-radius:12px; border: 1px solid #eee;" alt="Photo matériel"></div>` : '';
-                    
+
                     const emailBody = `
                         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2c3e50; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
                             <div style="background: #2da140; padding: 30px; text-align: center;">
@@ -1799,27 +1849,27 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const { 
-                    id, machine_id, name, type, description, latitude, longitude, 
+                const {
+                    id, machine_id, name, type, description, latitude, longitude,
                     last_maintenance_date, next_maintenance_date,
-                    family, serial_number, periodicity, status_active, 
-                    vgp_status, vgp_observations, assigned_to, 
+                    family, serial_number, periodicity, status_active,
+                    vgp_status, vgp_observations, assigned_to,
                     commissioning_date, last_control_type, expiration_date, comments
                 } = body;
-                const upsertBody = { 
-                    machine_id, name, type, description, latitude, longitude, 
+                const upsertBody = {
+                    machine_id, name, type, description, latitude, longitude,
                     last_maintenance_date, next_maintenance_date,
-                    family, serial_number, periodicity, status_active, 
-                    vgp_status, vgp_observations, assigned_to, 
+                    family, serial_number, periodicity, status_active,
+                    vgp_status, vgp_observations, assigned_to,
                     commissioning_date, last_control_type, expiration_date, comments,
-                    updated_at: new Date().toISOString() 
+                    updated_at: new Date().toISOString()
                 };
                 if (id) upsertBody.id = id;
                 const res = await fetch(`${supabaseUrl}/rest/v1/machines?on_conflict=machine_id`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "return=representation,resolution=merge-duplicates"
                     },
@@ -1839,7 +1889,7 @@ export default {
                 // 1. Delete Photo from R2 if exists
                 try {
                     await env.MY_BUCKET.delete(`machines_photos/${id}.png`);
-                } catch(e) {}
+                } catch (e) { }
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/machines?id=eq.${id}`, {
                     method: "DELETE",
@@ -1857,7 +1907,7 @@ export default {
                 let query = `${supabaseUrl}/rest/v1/material_maintenance_history?select=*,profiles(first_name,last_name)&order=date.desc&limit=50`;
                 if (machineId) query += `&machine_id=eq.${machineId}`;
 
-                const res = await fetch(query, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }});
+                const res = await fetch(query, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } });
                 return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
@@ -1874,15 +1924,15 @@ export default {
                 const histRes = await fetch(`${supabaseUrl}/rest/v1/material_maintenance_history`, {
                     method: "POST",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
-                        machine_id, user_id: user.id, details, next_maintenance_date, 
-                        date: new Date().toISOString() 
+                    body: JSON.stringify({
+                        machine_id, user_id: user.id, details, next_maintenance_date,
+                        date: new Date().toISOString()
                     })
                 });
                 if (!histRes.ok) return new Response(await histRes.text(), { status: histRes.status, headers: corsHeaders });
 
                 // 2. Update Machine Status & Dates
-                const machUpdate = { 
+                const machUpdate = {
                     last_maintenance_date: new Date().toISOString().split('T')[0],
                     next_maintenance_date: next_maintenance_date,
                     vgp_status: vgp_status || null,
@@ -1948,7 +1998,7 @@ export default {
             if (method === "GET" && url.pathname === "/admin/buildings") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 const res = await fetch(`${supabaseUrl}/rest/v1/buildings?select=*&order=name.asc`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -1992,10 +2042,10 @@ export default {
                 const machine_db_id = url.searchParams.get('machine_db_id');
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 let query = `${supabaseUrl}/rest/v1/machine_logs?select=*,profiles(first_name,last_name)&order=created_at.desc&limit=50`;
                 if (machine_db_id) query += `&machine_db_id=eq.${machine_db_id}`;
-                
+
                 const res = await fetch(query, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -2007,7 +2057,7 @@ export default {
                 const body = await request.json();
                 const { machine_db_id, action_type, description } = body;
                 if (!machine_db_id || !action_type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
-                
+
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -2016,16 +2066,170 @@ export default {
                 const res = await fetch(`${supabaseUrl}/rest/v1/machine_logs`, {
                     method: "POST",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
-                        machine_db_id, 
-                        user_id: user.id, 
-                        action_type, 
+                    body: JSON.stringify({
+                        machine_db_id,
+                        user_id: user.id,
+                        action_type,
                         description,
                         created_at: new Date().toISOString()
                     })
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- MATERIAL STOCK ---
+            if (url.pathname === "/admin/material/stock") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?select=*&order=designation.asc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST" || method === "PATCH") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock`, {
+                        method: "POST",
+                        headers: { 
+                            "apikey": serviceKey, 
+                            "Authorization": `Bearer ${serviceKey}`, 
+                            "Content-Type": "application/json",
+                            "Prefer": "resolution=merge-duplicates"
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${body.id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
+            // --- MATERIAL LOGS ---
+            if (url.pathname === "/admin/material/stock/logs") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const matId = url.searchParams.get("material_id");
+                    let query = `${supabaseUrl}/rest/v1/material_stock_logs?select=*,profiles(first_name,last_name)&order=created_at.desc`;
+                    if (matId) query += `&material_id=eq.${matId}`;
+                    
+                    const res = await fetch(query, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    
+                    if (!res.ok) {
+                        const err = await res.text();
+                        return new Response(err, { status: res.status, headers: corsHeaders });
+                    }
+                    
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_logs`, {
+                        method: "POST",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            material_id: body.material_id,
+                            user_id: user.id,
+                            action: body.action,
+                            details: body.details,
+                            created_at: new Date().toISOString()
+                        })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
+            // --- MATERIAL STOCK REQUESTS (Approvals) ---
+            if (url.pathname === "/admin/material/stock/requests") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?status=eq.pending&select=*,material_stock(designation,stock_reel,lieu_de_stockage),profiles(first_name,last_name)&order=created_at.desc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests`, {
+                        method: "POST",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            material_id: body.material_id,
+                            user_id: user.id,
+                            new_stock_reel: body.new_stock_reel,
+                            new_lieu_de_stockage: body.new_lieu_de_stockage,
+                            status: 'pending',
+                            created_at: new Date().toISOString()
+                        })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "PATCH") {
+                    const body = await request.json(); // { id, status }
+                    
+                    if (body.status === 'approved') {
+                        // 1. Get the request details
+                        const reqRes = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?id=eq.${body.id}&select=*`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        const reqData = await reqRes.json();
+                        if (reqData && reqData.length > 0) {
+                            const req = reqData[0];
+                            // 2. Update the material stock
+                            await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${req.material_id}`, {
+                                method: "PATCH",
+                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    stock_reel: req.new_stock_reel,
+                                    lieu_de_stockage: req.new_lieu_de_stockage
+                                })
+                            });
+                            // 3. Add a log
+                            await fetch(`${supabaseUrl}/rest/v1/material_stock_logs`, {
+                                method: "POST",
+                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    material_id: req.material_id,
+                                    user_id: user.id, // Admin who approved
+                                    action: 'Approbation',
+                                    details: `Demande approuvée : Stock -> ${req.new_stock_reel}, Lieu -> ${req.new_lieu_de_stockage}`,
+                                    created_at: new Date().toISOString()
+                                })
+                            });
+                        }
+                    }
+
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?id=eq.${body.id}`, {
+                        method: "PATCH",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ status: body.status })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
             }
 
             // --- ROUTE: NOTIFICATIONS SUBSCRIBE ---
@@ -2058,15 +2262,15 @@ export default {
                 // 2. Enregistrer le nouveau jeton
                 const res = await fetch(`${supabaseUrl}/rest/v1/user_push_subscriptions`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "resolution=merge-duplicates"
                     },
-                    body: JSON.stringify({ 
-                        user_id: user.id, 
-                        subscription: subscription.toJSON ? subscription.toJSON() : subscription 
+                    body: JSON.stringify({
+                        user_id: user.id,
+                        subscription: subscription.toJSON ? subscription.toJSON() : subscription
                     })
                 });
 
@@ -2104,7 +2308,7 @@ export default {
                     // Send to single or all
                     result = await sendPushNotification(env, userId === 'all' ? null : userId, message);
                 }
-                
+
                 return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
@@ -2171,7 +2375,7 @@ export default {
 
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                 const data = await res.json();
-                
+
                 return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
@@ -2201,9 +2405,9 @@ export default {
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/notification_schedules`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "resolution=merge-duplicates,return=representation"
                     },
@@ -2235,10 +2439,10 @@ export default {
 
             // --- ROUTE: ADMIN SYNC ALL USERS (Mock for now, returns all profiles) ---
             if (method === "POST" && url.pathname.endsWith("/admin/notifications/sync")) {
-                 // On renvoie juste le signal de succÃ¨s pour rafraÃ®chir l'interface
-                 return new Response(JSON.stringify({ success: true, message: "Synchronisation effectuÃ©e" }), {
-                     headers: { ...corsHeaders, "Content-Type": "application/json" }
-                 });
+                // On renvoie juste le signal de succÃ¨s pour rafraÃ®chir l'interface
+                return new Response(JSON.stringify({ success: true, message: "Synchronisation effectuÃ©e" }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
             }
 
             // --- ROUTE: FRITERIE ORDERS (User Mobile) ---
@@ -2285,42 +2489,42 @@ export default {
             }
 
             if (method === "GET" && url.pathname === "/friterie/all-orders") {
-                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
-                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
-                 const serviceKey = env.SUPABASE_SERVICE_KEY;
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                 // 1. Fetch Orders
-                 const ordersRes = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*`, {
+                // 1. Fetch Orders
+                const ordersRes = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                 });
-                 if (!ordersRes.ok) return new Response(await ordersRes.text(), { status: ordersRes.status, headers: corsHeaders });
-                 const orders = await ordersRes.json();
+                });
+                if (!ordersRes.ok) return new Response(await ordersRes.text(), { status: ordersRes.status, headers: corsHeaders });
+                const orders = await ordersRes.json();
 
-                 // 2. Fetch Profiles for names
-                 const profilesRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,first_name,last_name`, {
+                // 2. Fetch Profiles for names
+                const profilesRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,first_name,last_name`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                 });
-                 const profiles = profilesRes.ok ? await profilesRes.json() : [];
+                });
+                const profiles = profilesRes.ok ? await profilesRes.json() : [];
 
-                 // 3. Merge
-                 const enriched = orders.map(o => {
+                // 3. Merge
+                const enriched = orders.map(o => {
                     const p = profiles.find(p => p.id === o.user_id);
                     return { ...o, profiles: p || null };
-                 });
+                });
 
-                 return new Response(JSON.stringify(enriched), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                return new Response(JSON.stringify(enriched), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             if (method === "GET" && url.pathname === "/admin/friterie/orders") {
-                 const isUserAdmin = await isAdmin(user, env);
-                 if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
-                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
-                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                 const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*,profiles(first_name,last_name)`, {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*,profiles(first_name,last_name)`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                 });
-                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                 return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             if (method === "DELETE" && url.pathname === "/admin/friterie/orders") {
@@ -2332,8 +2536,8 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(JSON.stringify({ success: true, message: "Toutes les commandes ont été effacées." }), { 
-                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                return new Response(JSON.stringify({ success: true, message: "Toutes les commandes ont été effacées." }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
                 });
             }
 
@@ -2368,14 +2572,14 @@ export default {
                 });
                 const configData = await configRes.json();
                 const globalConfig = configData[0] || {};
-                
+
                 const now = new Date();
                 const day = now.getUTCDay(); // 0:Sun, 1:Mon, ..., 5:Fri, 6:Sat
                 const hour = (now.getUTCHours() + 2) % 24; // Paris Time (approx)
                 const min = now.getUTCMinutes();
 
                 // AUTOMATIONS
-                
+
                 // A. Rappels Hebdomadaires (Vendredi après-midi 14:00)
                 try {
                     if (day === 5 && hour === 14 && min === 0) {
@@ -2383,7 +2587,7 @@ export default {
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
                         const vehicles = await vRes.json();
-                        
+
                         if (Array.isArray(vehicles)) {
                             // 1. Rappel Kilométrage
                             if (globalConfig.auto_mileage !== false) {
@@ -2399,9 +2603,9 @@ export default {
                                     const lastCt = new Date(v.last_ct_date);
                                     const nextCt = new Date(lastCt);
                                     nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
-                                    
+
                                     const diffDays = Math.ceil((nextCt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                                    
+
                                     if (diffDays <= 60) {
                                         let msg = "";
                                         if (diffDays <= 0) {
@@ -2605,7 +2809,7 @@ async function performArchiving(env) {
     for (const year in tasksByYear) {
         const archiveKey = `archives/planning/Planning de l'annÃ©e ${year} CSV Format.csv`;
         let existingContent = "";
-        
+
         // Check if file exists to append
         const existingObj = await env.MY_BUCKET.get(archiveKey);
         if (existingObj) {
@@ -2682,7 +2886,7 @@ async function isAdmin(user, env) {
 async function sendPushNotification(env, userId, message, appUrl = null) {
     const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
     const serviceKey = env.SUPABASE_SERVICE_KEY;
-    
+
     let query = `${supabaseUrl}/rest/v1/user_push_subscriptions?select=subscription`;
     if (userId) {
         if (Array.isArray(userId) && userId.length > 0) {
@@ -2692,11 +2896,11 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
         }
     }
     query += `&order=created_at.desc`;
-    
+
     const res = await fetch(query, {
         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
     });
-    
+
     if (!res.ok) return { success: false, error: await res.text() };
     const rawSubs = await res.json();
     if (rawSubs.length === 0) return { success: true, count: 0, message: "Aucun abonné trouvé" };
@@ -2705,7 +2909,7 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
     const subs = rawSubs.map(s => {
         let subData = s.subscription;
         if (typeof subData === 'string' && subData.trim().startsWith('{')) {
-            try { subData = JSON.parse(subData); } catch(e) { }
+            try { subData = JSON.parse(subData); } catch (e) { }
         }
         return subData;
     }).filter(Boolean);
@@ -2742,10 +2946,10 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
             const token = s.token || (s.type === 'capacitor' ? s.token : null);
             if (!token || seenTokens.has(token)) continue;
             seenTokens.add(token);
-            
+
             if (token) {
                 if (!fcmAccessToken) continue;
-                
+
                 const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${JSON.parse(env.FIREBASE_SERVICE_ACCOUNT).project_id}/messages:send`, {
                     method: 'POST',
                     headers: {
@@ -2772,17 +2976,17 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
                     })
                 });
                 if (fcmRes.ok) count++;
-            } 
+            }
         } catch (err) {
             // Silently skip failed individual tokens
         }
     }
 
-    return { 
-        success: count > 0, 
-        count, 
-        total: subs.length, 
-        details: count > 0 ? "Notification(s) envoyée(s) avec succès." : "Aucun appareil réceptif trouvé." 
+    return {
+        success: count > 0,
+        count,
+        total: subs.length,
+        details: count > 0 ? "Notification(s) envoyée(s) avec succès." : "Aucun appareil réceptif trouvé."
     };
 }
 
@@ -2793,7 +2997,7 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
 async function getGCPAccessToken(serviceAccountJson) {
     if (!serviceAccountJson) throw new Error("FIREBASE_SERVICE_ACCOUNT missing");
     const sa = typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson;
-    
+
     const now = Math.floor(Date.now() / 1000);
     const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
     const claim = btoa(JSON.stringify({
@@ -2810,7 +3014,7 @@ async function getGCPAccessToken(serviceAccountJson) {
             .replace(/-----BEGIN PRIVATE KEY-----/g, "")
             .replace(/-----END PRIVATE KEY-----/g, "")
             .replace(/\s/g, ""); // Remove ALL spaces, tabs, newlines
-            
+
         const binary = atob(pemContents);
         const array = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) {
@@ -2883,10 +3087,10 @@ async function sendMaterialReminders(env) {
     for (const p of profiles) {
         const count = requests.length;
         const name = p.first_name || 'Admin';
-        const message = count === 1 
+        const message = count === 1
             ? `Bonjour ${name}, une demande de matériel est en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez cette demande de votre collaborateur.`
             : `Bonjour ${name}, ${count} demandes de matériel sont en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez ces demandes de vos collaborateurs.`;
-            
+
         const result = await sendPushNotification(env, [p.id], message);
         if (result && result.success) totalSent++;
     }
@@ -2898,7 +3102,7 @@ async function sendMaterialReminders(env) {
  * Send email via Resend API
  */
 async function sendResendEmail(env, to, subject, html) {
-    const apiKey = env.RESEND_API_KEY; 
+    const apiKey = env.RESEND_API_KEY;
     if (!apiKey) {
         console.error("RESEND_API_KEY missing in environment variables.");
         return { error: "API Key missing" };

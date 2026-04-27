@@ -305,7 +305,7 @@ export const api = {
             if (params.endDate) queryParams.push(`endDate=${encodeURIComponent(params.endDate)}`);
         }
         if (queryParams.length > 0) url += `?${queryParams.join('&')}`;
-        
+
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -425,7 +425,7 @@ export const api = {
         // If userId is provided, we force the user-specific route (only see your own)
         // Otherwise, if admin/visiteur, see all.
         const isAdminOrVisitor = role === 'admin' || role === 'visiteur';
-        const url = `${config.api.workerUrl}${ (isAdminOrVisitor && !userId) ? '/admin/material/requests' : '/material/requests'}`;
+        const url = `${config.api.workerUrl}${(isAdminOrVisitor && !userId) ? '/admin/material/requests' : '/material/requests'}`;
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -599,13 +599,13 @@ export const api = {
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
-    
+
     async uploadVehiclePhoto(vehicleId, file) {
         await checkVisitor();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('vehicleId', vehicleId);
-        
+
         const response = await fetch(`${config.api.workerUrl}/admin/vehicles/photo`, {
             method: 'POST',
             headers: await getAuthHeaders(),
@@ -730,7 +730,7 @@ export const api = {
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
-    
+
     // --- MACHINES & SCHEMATICS ---
     async getBuildings() {
         const response = await fetch(`${config.api.workerUrl}/admin/buildings`, {
@@ -744,7 +744,7 @@ export const api = {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/buildings`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -784,7 +784,7 @@ export const api = {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -816,7 +816,7 @@ export const api = {
     async getMachineLogs(machineDbId = null) {
         let url = `${config.api.workerUrl}/admin/machines/logs`;
         if (machineDbId) url += `?machine_db_id=${machineDbId}`;
-        
+
         const response = await fetch(url, {
             headers: await getAuthHeaders()
         });
@@ -828,7 +828,7 @@ export const api = {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines/logs`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -844,7 +844,7 @@ export const api = {
         const payload = userIds ? { userIds, message } : { userId, message };
         const response = await fetch(`${config.api.workerUrl}/admin/notifications/send`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -857,7 +857,7 @@ export const api = {
     async subscribePush(subscription) {
         const response = await fetch(`${config.api.workerUrl}/notifications/subscribe`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -879,13 +879,13 @@ export const api = {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines/maintenance`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ 
-                machine_id: machineId, 
-                details, 
+            body: JSON.stringify({
+                machine_id: machineId,
+                details,
                 next_maintenance_date: nextMaintenanceDate,
                 vgp_status: vgpStatus,
                 vgp_observations: vgpObservations,
@@ -908,7 +908,7 @@ export const api = {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machine-families`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -933,7 +933,7 @@ export const api = {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('machineId', machineId);
-        
+
         const response = await fetch(`${config.api.workerUrl}/admin/machines/photo`, {
             method: 'POST',
             headers: await getAuthHeaders(),
@@ -1026,6 +1026,115 @@ export const api = {
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests/remind`, {
             method: 'POST',
             headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // --- Material Stock Management ---
+    async getMaterialStock() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMaterialStock(id, updates) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, ...updates })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialStock(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async createMaterialStock(item) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(item)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialHistory(materialId) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs?material_id=${materialId}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async addMaterialLog(materialId, action, details) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ material_id: materialId, action, details })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialStockRequests() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/requests`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitMaterialStockRequest(materialId, newStock, newLocation) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ material_id: materialId, new_stock_reel: newStock, new_lieu_de_stockage: newLocation })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMaterialStockRequestStatus(requestId, status) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/requests`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id: requestId, status })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
