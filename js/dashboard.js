@@ -138,6 +138,22 @@ window.removeClosedDay = async function (index) {
 };
 
 async function initDashboard() {
+    // Global Styles (Animations)
+    if (!document.getElementById('pouchain-global-styles')) {
+        const style = document.createElement('style');
+        style.id = 'pouchain-global-styles';
+        style.innerHTML = `
+            @keyframes pulse-red {
+                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
+                70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
+                100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
+            }
+            .clignotant { animation: blink 1s infinite; }
+            @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        `;
+        document.head.appendChild(style);
+    }
+
     // 1. Check Auth
     const session = await auth.getSession();
     if (!session) {
@@ -1253,11 +1269,11 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📦 Demande de matériel</span>
-                    <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4);">0</span>
+                    <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminVehicles()" id="nav-vehicles" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>🚗 Gestion des véhicules</span>
-                    <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
+                    <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialTracking()" id="nav-material-stock" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📦 Statut du matériel ATS</span>
@@ -5078,9 +5094,6 @@ window.renderAdminMaterialRequests = async function () {
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;">
                         <span style="font-size: 16px;">⚙️</span> Catégories
-                    </button>
-                    <button class="btn-secondary" onclick="openAdminAlertConfigModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 16px;">🔔</span> Alertes
                     </button>
                     <button onclick="window.renderAdminMaterialRequests()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
