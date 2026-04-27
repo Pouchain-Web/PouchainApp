@@ -9228,7 +9228,7 @@ window.openMaterialRequestsModal = async function () {
     document.body.appendChild(modal);
 
     try {
-        const requests = await api.getMaterialRequests();
+        const requests = await api.getMaterialStockRequests();
         const container = document.getElementById('requests-list-container');
         
         if (requests.length === 0) {
