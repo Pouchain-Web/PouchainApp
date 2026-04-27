@@ -2628,7 +2628,7 @@ export default {
                 // C. Friterie Notification (Mercredi 11:00)
                 try {
                     if (day === 3 && hour === 11 && min === 0) {
-                        const subRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=user_id`, {
+                        const subRes = await fetch(`${supabaseUrl}/rest/v1/user_push_subscriptions?select=user_id`, {
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                         });
                         if (subRes.ok) {
@@ -2954,7 +2954,7 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
             if (token) {
                 if (!fcmAccessToken) continue;
 
-                const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${JSON.parse(env.FIREBASE_SERVICE_ACCOUNT).project_id}/messages:send`, {
+                const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${fcmAccessToken}`,
