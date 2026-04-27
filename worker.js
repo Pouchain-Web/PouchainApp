@@ -38,7 +38,66 @@ export default {
         const userRole = await getUserRole(user, env);
 
         // Check Auth : Allow public access ONLY for /get/ files and /update/check
-        const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check');
+        const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check') || url.pathname.startsWith('/material');
+
+        // --- ROUTE: MATERIAL QR DEEP LINK (Public) ---
+        if (method === "GET" && url.pathname === '/material') {
+            const ref = url.searchParams.get('ref');
+            if (!ref) return new Response('Missing ref parameter', { status: 400, headers: corsHeaders });
+            
+            const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pouchain App - Matériel ${ref}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: white; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .card { background: rgba(28,28,30,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 40px; text-align: center; max-width: 400px; width: 100%; backdrop-filter: blur(20px); }
+        .icon { font-size: 64px; margin-bottom: 20px; }
+        h1 { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+        .ref { font-family: monospace; font-size: 20px; color: #5856D6; background: rgba(88,86,214,0.1); padding: 8px 16px; border-radius: 12px; display: inline-block; margin: 16px 0; font-weight: 700; border: 1px solid rgba(88,86,214,0.2); }
+        p { color: #8E8E93; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+        .btn { display: block; width: 100%; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 700; border: none; cursor: pointer; text-decoration: none; margin-bottom: 12px; transition: 0.2s; }
+        .btn-primary { background: #5856D6; color: white; }
+        .btn-secondary { background: rgba(255,255,255,0.05); color: white; border: 1px solid rgba(255,255,255,0.1); }
+        .spinner { border: 3px solid rgba(255,255,255,0.1); border-top-color: #5856D6; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">📦</div>
+        <h1>Pouchain App</h1>
+        <div class="ref">${ref}</div>
+        <p>Ouverture de la fiche matériel...</p>
+        <div class="spinner" id="spinner"></div>
+        <a href="pouchainapp://material?ref=${ref}" class="btn btn-primary" id="open-btn" style="display:none;">Ouvrir dans l'application</a>
+        <p id="fallback" style="display:none; color: #FF9500; font-size: 12px;">Si l'application ne s'ouvre pas, installez Pouchain App depuis le Play Store.</p>
+    </div>
+    <script>
+        // Try to open the app via custom scheme
+        const ref = '${ref}';
+        const appUrl = 'pouchainapp://material?ref=' + ref;
+        
+        // Try intent for Android
+        const intentUrl = 'intent://material?ref=' + ref + '#Intent;scheme=pouchainapp;package=com.pouchain.app;end';
+        
+        // Try custom scheme first
+        window.location.href = appUrl;
+        
+        // After 2 seconds, show manual button
+        setTimeout(() => {
+            document.getElementById('spinner').style.display = 'none';
+            document.getElementById('open-btn').style.display = 'block';
+            document.getElementById('fallback').style.display = 'block';
+        }, 2000);
+    </script>
+</body>
+</html>`;
+            return new Response(html, { headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
+        }
 
         if (!isPublicPath) {
             if (!user) {
@@ -1256,6 +1315,19 @@ export default {
                             return new Response("Missing ID for update", { status: 400, headers: corsHeaders });
                         }
                     } else {
+                        // Auto-generate qr_ref for new materials
+                        const marketCode = '01'; // ATS
+                        const existingRes = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=like.PCH${marketCode}*&select=qr_ref&order=qr_ref.desc&limit=1`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        let nextNum = 1;
+                        if (existingRes.ok) {
+                            const existing = await existingRes.json();
+                            if (existing.length > 0 && existing[0].qr_ref) {
+                                nextNum = parseInt(existing[0].qr_ref.slice(-4)) + 1;
+                            }
+                        }
+                        data.qr_ref = `PCH${marketCode}${String(nextNum).padStart(4, '0')}`;
                         headers["Prefer"] += ",resolution=merge-duplicates";
                     }
 
@@ -1280,6 +1352,68 @@ export default {
                     if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                     return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
                 }
+            }
+
+            // --- ROUTE: BATCH GENERATE QR REFS ---
+            if (url.pathname.endsWith("/admin/material/stock/generate-refs") && method === "POST") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const marketCode = '01';
+
+                // Get all materials without qr_ref
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=is.null&select=id&order=designation.asc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                const items = await res.json();
+
+                // Find current max
+                const maxRes = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=like.PCH${marketCode}*&select=qr_ref&order=qr_ref.desc&limit=1`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                let nextNum = 1;
+                if (maxRes.ok) {
+                    const maxData = await maxRes.json();
+                    if (maxData.length > 0 && maxData[0].qr_ref) {
+                        nextNum = parseInt(maxData[0].qr_ref.slice(-4)) + 1;
+                    }
+                }
+
+                let count = 0;
+                for (const item of items) {
+                    const qrRef = `PCH${marketCode}${String(nextNum).padStart(4, '0')}`;
+                    await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${item.id}`, {
+                        method: "PATCH",
+                        headers: {
+                            "apikey": serviceKey,
+                            "Authorization": `Bearer ${serviceKey}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ qr_ref: qrRef })
+                    });
+                    nextNum++;
+                    count++;
+                }
+
+                return new Response(JSON.stringify({ success: true, count, message: `${count} références générées (PCH${marketCode}0001 à PCH${marketCode}${String(nextNum - 1).padStart(4, '0')})` }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            // --- ROUTE: MATERIAL LOOKUP BY QR REF ---
+            if (url.pathname.endsWith("/admin/material/stock/lookup") && method === "GET") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const ref = url.searchParams.get('ref');
+                if (!ref) return new Response("Missing ref", { status: 400, headers: corsHeaders });
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=eq.${ref}&select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                const data = await res.json();
+                if (data.length === 0) return new Response("Material not found", { status: 404, headers: corsHeaders });
+                return new Response(JSON.stringify(data[0]), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: MATERIAL CATEGORIES ---
@@ -2577,15 +2711,27 @@ export default {
                 const configData = await configRes.json();
                 const globalConfig = configData[0] || {};
 
-                // Accurate Paris Time calculation
-                const parisTimeStr = now.toLocaleString("en-US", { timeZone: "Europe/Paris" });
-                const parisDate = new Date(parisTimeStr);
+                // Ultra-robust Paris Time calculation
+                const parisParts = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: 'Europe/Paris',
+                    year: 'numeric', month: 'numeric', day: 'numeric',
+                    hour: 'numeric', minute: 'numeric', second: 'numeric',
+                    hour12: false
+                }).formatToParts(now);
+
+                const getP = (t) => parseInt(parisParts.find(p => p.type === t).value);
+                const hour = getP('hour');
+                const min = getP('minute');
+                const dayOfMonth = getP('day');
+                const month = getP('month');
+                const year = getP('year');
                 
-                const day = parisDate.getDay(); // 0 (Sun) to 6 (Sat)
-                const hour = parisDate.getHours();
-                const min = parisDate.getMinutes();
-                const dayOfMonth = parisDate.getDate();
-                const month = parisDate.getMonth() + 1; // 1-12
+                // For day of week, use a separate reliable formatter
+                const dayStr = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(now);
+                const daysMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+                const day = daysMap[dayStr];
+
+                const todayStr = `${year}-${String(month).padStart(2, '0')}-${String(dayOfMonth).padStart(2, '0')}`;
 
                 // AUTOMATIONS
 

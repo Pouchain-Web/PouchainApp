@@ -9,24 +9,12 @@ const getAuthHeaders = async () => {
     };
 };
 
-// Helper function to block visitors from modifying data
-const checkVisitor = async () => {
-    const role = await auth.getUserRole();
-    if (role === 'visiteur') {
-        throw new Error("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !");
-    }
-};
-
 export const api = {
-    // Add shared helper
-    getAuthHeaders,
-
     // List all files (moved below)
 
 
     // Upload a file (Admin only)
     async uploadFile(file, pathPrefix = '', onProgress) {
-        await checkVisitor();
         const authHeaders = await getAuthHeaders();
         return new Promise((resolve, reject) => {
             const formData = new FormData();
@@ -68,7 +56,6 @@ export const api = {
 
     // Delete a file
     async deleteFile(key) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/delete`, {
             method: 'DELETE',
             headers: {
@@ -87,7 +74,6 @@ export const api = {
 
     // Rename a file
     async renameFile(oldKey, newKey) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/files/rename`, {
             method: 'POST',
             headers: {
@@ -106,7 +92,6 @@ export const api = {
 
     // Rename a folder (and its content)
     async renameFolder(oldPrefix, newPrefix) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/folders/rename`, {
             method: 'POST',
             headers: {
@@ -124,10 +109,10 @@ export const api = {
     },
 
     // List all files
-    async listFiles(userId = null, includeHidden = false) {
-        let url = `${config.api.workerUrl}/list?includeHidden=${includeHidden}`;
+    async listFiles(userId = null) {
+        let url = `${config.api.workerUrl}/list`;
         if (userId) {
-            url += `&userId=${encodeURIComponent(userId)}`;
+            url += `?userId=${encodeURIComponent(userId)}`;
         }
 
         const response = await fetch(url, {
@@ -147,7 +132,6 @@ export const api = {
     },
 
     async setFileAccess(path, userIds) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/access/set`, {
             method: 'POST',
             headers: {
@@ -161,20 +145,15 @@ export const api = {
     },
 
     // --- User Management (Admin) ---
-    async listUsers(includeVisitors = false) {
+    async listUsers() {
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             headers: { ...(await getAuthHeaders()) }
         });
         if (!response.ok) throw new Error(await response.text());
-        const users = await response.json();
-        // Filtrer les visiteurs pour qu'ils n'apparaissent pas dans le planning ou les listes, 
-        // sauf si explicitement demandé (ex: gestion des utilisateurs)
-        if (includeVisitors) return users;
-        return users.filter(u => u.role !== 'visiteur');
+        return await response.json();
     },
 
     async createUser(email, password, role, firstName, lastName) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'POST',
             headers: {
@@ -188,7 +167,6 @@ export const api = {
     },
 
     async inviteUser(email, role, redirectTo, firstName, lastName) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/invite`, {
             method: 'POST',
             headers: {
@@ -202,7 +180,6 @@ export const api = {
     },
 
     async sendPasswordReset(email, redirectTo) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/reset`, {
             method: 'POST',
             headers: {
@@ -216,7 +193,6 @@ export const api = {
     },
 
     async changeUserPassword(id, password) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/password`, {
             method: 'PUT',
             headers: {
@@ -230,7 +206,6 @@ export const api = {
     },
 
     async deleteUser(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'DELETE',
             headers: {
@@ -244,7 +219,6 @@ export const api = {
     },
 
     async changeUserRole(id, role) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/role`, {
             method: 'PUT',
             headers: {
@@ -258,7 +232,6 @@ export const api = {
     },
 
     async updateUserProfile(id, firstName, lastName) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/profile`, {
             method: 'PUT',
             headers: {
@@ -272,7 +245,6 @@ export const api = {
     },
 
     async updateUserColor(id, color) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/color`, {
             method: 'PUT',
             headers: {
@@ -305,14 +277,13 @@ export const api = {
             if (params.endDate) queryParams.push(`endDate=${encodeURIComponent(params.endDate)}`);
         }
         if (queryParams.length > 0) url += `?${queryParams.join('&')}`;
-
+        
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
     async updateTask(id, data) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/tasks`, {
             method: 'PATCH',
             headers: {
@@ -326,7 +297,6 @@ export const api = {
     },
 
     async updateTaskAdmin(id, done) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
             method: 'PATCH',
             headers: {
@@ -352,7 +322,6 @@ export const api = {
     },
 
     async saveAdminTask(taskData) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
             method: 'POST',
             headers: {
@@ -366,7 +335,6 @@ export const api = {
     },
 
     async deleteAdminTask(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks`, {
             method: 'DELETE',
             headers: {
@@ -380,32 +348,9 @@ export const api = {
     },
 
     async archiveOldTasks() {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/tasks/archive`, {
             method: 'POST',
             headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async getPlanningClosedDays() {
-        const response = await fetch(`${config.api.workerUrl}/planning/closed-days`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async setPlanningClosedDays(days) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/planning/closed-days`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify(days)
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -423,16 +368,14 @@ export const api = {
     async getMaterialRequests(userId = null) {
         const role = await auth.getUserRole();
         // If userId is provided, we force the user-specific route (only see your own)
-        // Otherwise, if admin/visiteur, see all.
-        const isAdminOrVisitor = role === 'admin' || role === 'visiteur';
-        const url = `${config.api.workerUrl}${(isAdminOrVisitor && !userId) ? '/admin/material/requests' : '/material/requests'}`;
+        // Otherwise, if admin, see all.
+        const url = `${config.api.workerUrl}${ (role === 'admin' && !userId) ? '/admin/material/requests' : '/material/requests'}`;
         const response = await fetch(url, { headers: await getAuthHeaders() });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
     async createMaterialRequest(data) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/material/requests`, {
             method: 'POST',
             headers: {
@@ -446,7 +389,6 @@ export const api = {
     },
 
     async updateMaterialRequestStatus(id, status, adminName = null) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
             method: 'PATCH',
             headers: {
@@ -468,7 +410,6 @@ export const api = {
     },
 
     async addMaterialCategory(name) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
             method: 'POST',
             headers: {
@@ -482,7 +423,6 @@ export const api = {
     },
 
     async deleteMaterialCategory(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/categories`, {
             method: 'DELETE',
             headers: {
@@ -504,7 +444,6 @@ export const api = {
     },
 
     async saveMaterialConfig(alertUsers) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/config`, {
             method: 'POST',
             headers: {
@@ -518,7 +457,6 @@ export const api = {
     },
 
     async deleteArchivedMaterialRequest(id, key) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests/archived`, {
             method: "DELETE",
             headers: {
@@ -532,7 +470,6 @@ export const api = {
     },
 
     async deleteMaterialRequest(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
             method: 'DELETE',
             headers: {
@@ -546,7 +483,6 @@ export const api = {
     },
 
     async archiveMaterialRequests() {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests/archive`, {
             method: 'POST',
             headers: await getAuthHeaders()
@@ -573,7 +509,6 @@ export const api = {
     },
 
     async saveVehicle(vehicleData) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {
             method: 'POST',
             headers: {
@@ -587,7 +522,6 @@ export const api = {
     },
 
     async deleteVehicle(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/vehicles`, {
             method: 'DELETE',
             headers: {
@@ -599,13 +533,12 @@ export const api = {
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
-
+    
     async uploadVehiclePhoto(vehicleId, file) {
-        await checkVisitor();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('vehicleId', vehicleId);
-
+        
         const response = await fetch(`${config.api.workerUrl}/admin/vehicles/photo`, {
             method: 'POST',
             headers: await getAuthHeaders(),
@@ -632,7 +565,6 @@ export const api = {
     },
 
     async submitVehicleLog(logData) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/vehicle/log`, {
             method: 'POST',
             headers: {
@@ -646,7 +578,6 @@ export const api = {
     },
 
     async deleteVehicleLog(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/vehicle/log`, {
             method: 'DELETE',
             headers: {
@@ -668,7 +599,6 @@ export const api = {
     },
 
     async saveDkvCard(data) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/dkv-cards`, {
             method: 'POST',
             headers: {
@@ -682,7 +612,6 @@ export const api = {
     },
 
     async deleteDkvCard(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/dkv-cards`, {
             method: 'DELETE',
             headers: {
@@ -704,7 +633,6 @@ export const api = {
     },
 
     async saveTollCard(data) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/toll-cards`, {
             method: 'POST',
             headers: {
@@ -718,7 +646,6 @@ export const api = {
     },
 
     async deleteTollCard(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/toll-cards`, {
             method: 'DELETE',
             headers: {
@@ -730,7 +657,7 @@ export const api = {
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
-
+    
     // --- MACHINES & SCHEMATICS ---
     async getBuildings() {
         const response = await fetch(`${config.api.workerUrl}/admin/buildings`, {
@@ -741,10 +668,9 @@ export const api = {
     },
 
     async saveBuilding(buildingData) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/buildings`, {
             method: 'POST',
-            headers: {
+            headers: { 
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -755,7 +681,6 @@ export const api = {
     },
 
     async deleteBuilding(id) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/buildings?id=${id}`, {
             method: 'DELETE',
             headers: await getAuthHeaders()
@@ -781,10 +706,9 @@ export const api = {
     },
 
     async saveMachine(machineData) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines`, {
             method: 'POST',
-            headers: {
+            headers: { 
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -796,7 +720,6 @@ export const api = {
     },
 
     async deleteMachine(id) {
-        await checkVisitor();
         console.log("API: Deleting machine:", id);
         const response = await fetch(`${config.api.workerUrl}/admin/machines?id=${id}`, {
             method: 'DELETE',
@@ -816,7 +739,7 @@ export const api = {
     async getMachineLogs(machineDbId = null) {
         let url = `${config.api.workerUrl}/admin/machines/logs`;
         if (machineDbId) url += `?machine_db_id=${machineDbId}`;
-
+        
         const response = await fetch(url, {
             headers: await getAuthHeaders()
         });
@@ -825,10 +748,9 @@ export const api = {
     },
 
     async addMachineLog(machineDbId, actionType, description) {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines/logs`, {
             method: 'POST',
-            headers: {
+            headers: { 
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
@@ -839,31 +761,38 @@ export const api = {
     },
 
     // --- Push Notifications ---
-    async sendNotification(userId, message, userIds = null) {
-        await checkVisitor();
-        const payload = userIds ? { userIds, message } : { userId, message };
+    async sendNotification(userId, message) {
         const response = await fetch(`${config.api.workerUrl}/admin/notifications/send`, {
             method: 'POST',
-            headers: {
+            headers: { 
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ userId, message })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
     async subscribePush(subscription) {
+        // Essential: PushSubscription must be converted with toJSON()
+        const subscriptionPayload = subscription.toJSON ? subscription.toJSON() : JSON.parse(JSON.stringify(subscription));
+        console.log("[Push] Sending subscription to worker:", subscriptionPayload);
+
         const response = await fetch(`${config.api.workerUrl}/notifications/subscribe`, {
             method: 'POST',
-            headers: {
+            headers: { 
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ subscription })
+            body: JSON.stringify({ subscription: subscriptionPayload })
         });
-        if (!response.ok) throw new Error(await response.text());
+
+        if (!response.ok) {
+            const err = await response.text();
+            console.error("[Push] Worker selection error:", err);
+            throw new Error(err);
+        }
         return await response.json();
     },
 
@@ -876,21 +805,20 @@ export const api = {
     },
 
     async saveMachineMaintenance(machineId, details, nextMaintenanceDate, vgpStatus = null, vgpObservations = null, lastControlType = 'Maintenance') {
-        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/machines/maintenance`, {
             method: 'POST',
-            headers: {
+            headers: { 
                 ...(await getAuthHeaders()),
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                machine_id: machineId,
-                details,
+            body: JSON.stringify({ 
+                machine_id: machineId, 
+                details, 
                 next_maintenance_date: nextMaintenanceDate,
                 vgp_status: vgpStatus,
                 vgp_observations: vgpObservations,
                 last_control_type: lastControlType
-            })
+             })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -904,255 +832,15 @@ export const api = {
         return await response.json();
     },
 
-    async addMachineFamily(name) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/machine-families`, {
-            method: 'POST',
-            headers: {
-                ...(await getAuthHeaders()),
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ name })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async deleteMachineFamily(id) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/machine-families?id=${id}`, {
-            method: 'DELETE',
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
     async uploadMachinePhoto(machineId, file) {
-        await checkVisitor();
         const formData = new FormData();
         formData.append('file', file);
         formData.append('machineId', machineId);
-
+        
         const response = await fetch(`${config.api.workerUrl}/admin/machines/photo`, {
             method: 'POST',
             headers: await getAuthHeaders(),
             body: formData
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async updateMyVehicle(payload) {
-        await checkVisitor();
-        const session = await auth.getSession();
-        const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json",
-                'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify(payload)
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    // --- Notifications Admin ---
-    async getNotificationSubscribers() {
-        const response = await fetch(`${config.api.workerUrl}/admin/notifications/subscribers`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async saveNotificationConfig(configData) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify(configData)
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async getNotificationConfig() {
-        const response = await fetch(`${config.api.workerUrl}/admin/notifications/config`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async getNotificationSchedules() {
-        const response = await fetch(`${config.api.workerUrl}/admin/notifications/schedules`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async saveNotificationSchedule(scheduleData) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/notifications/schedules`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify(scheduleData)
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async deleteNotificationSchedule(id) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/notifications/schedules?id=${id}`, {
-            method: 'DELETE',
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async sendMaterialReminders() {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/requests/remind`, {
-            method: 'POST',
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    // --- Material Stock Management ---
-    async getMaterialStock() {
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async updateMaterialStock(id, updates) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify({ id, ...updates })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async deleteMaterialStock(id) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify({ id })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async createMaterialStock(item) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify(item)
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async getMaterialHistory(materialId) {
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs?material_id=${materialId}`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async addMaterialLog(materialId, action, details) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify({ material_id: materialId, action, details })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async getMaterialStockRequests() {
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/requests`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async submitMaterialStockRequest(materialId, newStock, newLocation) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/requests`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify({ material_id: materialId, new_stock_reel: newStock, new_lieu_de_stockage: newLocation })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async updateMaterialStockRequestStatus(requestId, status) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/requests`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(await getAuthHeaders())
-            },
-            body: JSON.stringify({ id: requestId, status })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async generateMaterialRefs() {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/generate-refs`, {
-            method: 'POST',
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async lookupMaterialByRef(ref) {
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/lookup?ref=${encodeURIComponent(ref)}`, {
-            headers: await getAuthHeaders()
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

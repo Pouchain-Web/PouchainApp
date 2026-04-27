@@ -1,19 +1,27 @@
-// Injection des styles pour les modales personnalisées
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes modalBounce {
-        0% { transform: scale(0.8); opacity: 0; }
-        100% { transform: scale(1); opacity: 1; }
-    }
-    .modal-box {
-        animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-`;
-document.head.appendChild(style);
 
 import { auth } from './auth.js';
 import { api } from './api.js';
 import config from './config.js';
+import { updater } from './updater.js';
+
+// --- MISE À JOUR IN-APP ---
+(async () => {
+    try {
+        console.log("[Dashboard] Initialisation de l'updater...");
+        const isUpdating = await updater.init();
+        if (isUpdating) {
+            console.log("[Dashboard] Blocage pour mise à jour.");
+            return;
+        }
+        console.log("[Dashboard] Pas de mise à jour, lancement du dashboard.");
+        initDashboard();
+    } catch (e) {
+        console.error("[Dashboard] ERREUR CRITIQUE UPDATER:", e);
+        alert("ERREUR CRITIQUE AU LANCEMENT: " + e.message);
+        // On lance quand même le dashboard en cas d'erreur de l'updater pour ne pas bloquer l'app
+        initDashboard();
+    }
+})();
 
 // Utilitaires de sécurité
 window.escapeHTML = function (str) {
@@ -26,134 +34,131 @@ window.escapeHTML = function (str) {
         .replace(/'/g, '&#039;');
 };
 
-// Helper to show brief toast notifications
-window.showToast = function (message) {
-    const toast = document.createElement('div');
-    toast.innerText = message;
-    toast.style.position = 'fixed';
-    toast.style.bottom = '30px';
-    toast.style.left = '50%';
-    toast.style.transform = 'translateX(-50%)';
-    toast.style.background = 'rgba(30, 30, 35, 0.9)';
-    toast.style.color = 'white';
-    toast.style.padding = '12px 24px';
-    toast.style.borderRadius = '50px';
-    toast.style.zIndex = '10000001';
-    toast.style.backdropFilter = 'blur(10px)';
-    toast.style.fontSize = '14px';
-    toast.style.fontWeight = '600';
-    toast.style.border = '1px solid rgba(255,255,255,0.1)';
-    toast.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
-    toast.style.animation = 'modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
-    document.body.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transition = 'opacity 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
-};
+// Controller Logic
+/**
+ * Conversion utility for VAPID Public Key
+ */
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
 
-window.getISOWeekNumber = function (dateStr) {
-    if (!dateStr) return '';
-    const date = new Date(dateStr + 'T12:00:00');
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-};
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
 
-window.isJoursFerieFrance = function (dateStr) {
-    const d = new Date(dateStr);
-    const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-    const md = String(m).padStart(2, '0') + "-" + String(day).padStart(2, '0');
-    if (["01-01", "05-01", "05-08", "07-14", "08-15", "11-01", "11-11", "12-25"].includes(md)) return true;
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
 
-    // Pâques
-    let a = y % 19, b = Math.floor(y / 100), c = y % 100, d1 = Math.floor(b / 4), e = b % 4;
-    let f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d1 - g + 15) % 30;
-    let i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
-    let m1 = Math.floor((a + 11 * h + 22 * l) / 451);
-    let n = Math.floor((h + l - 7 * m1 + 114) / 31) - 1, p = ((h + l - 7 * m1 + 114) % 31) + 1;
-    let paques = new Date(y, n, p);
-    let lPaq = new Date(paques); lPaq.setDate(paques.getDate() + 1);
-    let asc = new Date(paques); asc.setDate(paques.getDate() + 39);
-    let lPent = new Date(paques); lPent.setDate(paques.getDate() + 50);
+/**
+ * Initialize Push Notifications for Mobile (PWA & Native APK)
+ */
+async function initPushNotifications() {
+    // 1. Logic for NATIVE APK (Capacitor)
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+        console.log("Capacitor Native Platform detected. Using Native Push.");
+        try {
+            const { PushNotifications } = window.Capacitor.Plugins;
+            if (!PushNotifications) {
+                console.error("Capacitor PushNotifications plugin not found.");
+                return;
+            }
 
-    const isSame = (d1, d2) => d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
-    return isSame(d, lPaq) || isSame(d, asc) || isSame(d, lPent);
-};
+            let permStatus = await PushNotifications.checkPermissions();
+            if (permStatus.receive === 'prompt') {
+                permStatus = await PushNotifications.requestPermissions();
+            }
 
-window.isClosedDay = function (dateStr) {
-    if (!window.currentClosedDays) return false;
-    for (const item of window.currentClosedDays) {
-        if (typeof item === 'string') {
-            if (dateStr === item) return true;
-        } else if (item && item.start && item.end) {
-            if (dateStr >= item.start && dateStr <= item.end) return true;
+            if (permStatus.receive !== 'granted') {
+                console.warn('Native Push permission denied.');
+                return;
+            }
+
+            // Register with FCM
+            await PushNotifications.register();
+
+            // Create notification channel (Required for Android 8+)
+            try {
+                await PushNotifications.createChannel({
+                    id: 'pouchain_notifications',
+                    name: 'Pouchain App Notifications',
+                    description: 'Alertes et rappels de pointage KIZEO',
+                    importance: 5, // High importance
+                    visibility: 1,
+                    vibration: true
+                });
+                console.log("Push Notification Channel created.");
+            } catch (ce) {
+                console.error("Channel creation error:", ce);
+            }
+
+            // Listen for registration tokens
+            await PushNotifications.addListener('registration', async (token) => {
+                console.log('Native Push Registration success, token:', token.value);
+                const subObj = { token: token.value, type: 'capacitor' };
+                try {
+                    await api.subscribePush(subObj);
+                    console.log("Appareil enregistré dans la base de données.");
+                } catch (e) {
+                    console.error("Erreur enregistrement serveur:", e.message);
+                }
+            });
+
+            await PushNotifications.addListener('registrationError', (error) => {
+                console.error('Native Push Registration error:', error);
+            });
+
+            // Écouteur en temps réel (si l'app est ouverte)
+            await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+                console.log("Foreground notification received:", notification);
+            });
+
+            return; // Native logic handled
+        } catch (err) {
+            console.error("Native Push Init Error:", err);
+            // Fallback to web push if possible (though unlikely to work if native fails)
         }
     }
-    return false;
-};
 
-window.addClosedDay = async function () {
-    if (!window.currentClosedDays) window.currentClosedDays = [];
-    const today = new Date().toISOString().split('T')[0];
-    window.currentClosedDays.push({ start: today, end: today });
-    await api.setPlanningClosedDays(window.currentClosedDays);
-    if (window.renderAdminPlanning && window.currentPlanningMonday) {
-        window.renderAdminPlanning(window.currentPlanningMonday, !!document.getElementById('planning-v2-container'), true);
-    }
-};
-
-window.updateClosedDay = async function (index, field, value) {
-    if (!window.currentClosedDays || typeof window.currentClosedDays[index] === 'undefined') return;
-    let item = window.currentClosedDays[index];
-    if (typeof item === 'string') {
-        item = { start: item, end: item };
-        window.currentClosedDays[index] = item;
-    }
-    item[field] = value;
-
-    // Auto correct order
-    if (item.start && item.end && item.start > item.end) {
-        const temp = item.start;
-        item.start = item.end;
-        item.end = temp;
+    // 2. Logic for WEB / PWA (Standard Web Push)
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push mapping non supporté sur ce navigateur.');
+        return;
     }
 
-    await api.setPlanningClosedDays(window.currentClosedDays);
-    if (window.renderAdminPlanning && window.currentPlanningMonday) {
-        window.renderAdminPlanning(window.currentPlanningMonday, !!document.getElementById('planning-v2-container'), true);
-    }
-};
+    try {
+        const registration = await navigator.serviceWorker.getRegistration() || await navigator.serviceWorker.register('sw.js');
+        console.log('Service Worker ready:', registration);
 
-window.removeClosedDay = async function (index) {
-    if (!window.currentClosedDays) return;
-    window.currentClosedDays.splice(index, 1);
-    await api.setPlanningClosedDays(window.currentClosedDays);
-    if (window.renderAdminPlanning && window.currentPlanningMonday) {
-        window.renderAdminPlanning(window.currentPlanningMonday, !!document.getElementById('planning-v2-container'), true);
+        let permission = Notification.permission;
+        if (permission !== 'granted') {
+            const confirmed = confirm("🔔 Pour recevoir les rappels de pointage KIZEO et les messages des administrateurs, souhaitez-vous activer les notifications sur cet appareil ?");
+            if (!confirmed) return;
+            permission = await Notification.requestPermission();
+        }
+
+        if (permission !== 'granted') return;
+
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+            const subscribeOptions = {
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(config.vapidPublicKey)
+            };
+            subscription = await registration.pushManager.subscribe(subscribeOptions);
+        }
+
+        await api.subscribePush(subscription);
+        console.log('Web Push subscription verified on backend.');
+    } catch (error) {
+        console.error('Error during web push initialization:', error);
     }
-};
+}
 
 async function initDashboard() {
-    // Global Styles (Animations)
-    if (!document.getElementById('pouchain-global-styles')) {
-        const style = document.createElement('style');
-        style.id = 'pouchain-global-styles';
-        style.innerHTML = `
-            @keyframes pulse-red {
-                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
-                70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
-                100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
-            }
-            .clignotant { animation: blink 1s infinite; }
-            @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-        `;
-        document.head.appendChild(style);
-    }
-
     // 1. Check Auth
     const session = await auth.getSession();
     if (!session) {
@@ -161,70 +166,128 @@ async function initDashboard() {
         return;
     }
 
-    // --- Fullscreen Mode Check (Priority) ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const fsMode = urlParams.get('fullscreen');
-
     // 2. Determine View
     const role = await auth.getUserRole();
-    const isMobile = window.innerWidth <= 768;
+    const isMobile = window.innerWidth <= 768; // Simple check
 
     // Gestion du bouton retour physique Android (Capacitor)
-    if (window.Capacitor && window.Capacitor.Plugins) {
-        const { App, PushNotifications } = window.Capacitor.Plugins;
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+        window.Capacitor.Plugins.App.addListener('backButton', ({ canGoBack }) => {
+            console.log("Hardware back button pressed.");
 
-        if (App) {
-            App.addListener('backButton', ({ canGoBack }) => {
-                const isLandscape = document.querySelector('.landscape-mode');
-                if (isLandscape) {
-                    if (typeof window.renderMobileMaterialTracking === "function") {
-                        window.renderMobileMaterialTracking();
-                    }
-                } else if (canGoBack) {
-                    window.history.back();
-                } else {
-                    App.exitApp();
+            // 1. Fermer les modales ouvertes
+            const modal = document.querySelector('.modal-overlay');
+            if (modal) {
+                console.log("Closing modal via back button");
+                modal.remove();
+                return;
+            }
+
+            // 2. Gestion du mode paysage (plans)
+            const isLandscape = document.querySelector('.landscape-mode');
+            if (isLandscape) {
+                if (typeof window.renderMobileMap === "function") {
+                    window.renderMobileMap();
+                    return;
                 }
-            });
-        }
+            }
 
-        if (PushNotifications) {
-            PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-                console.log('Action de notification détectée:', notification);
-                // Sur Android, Capacitor ouvre l'app automatiquement si ce listener est présent
-            });
-        }
+            // 3. Gestion de la recherche
+            const searchInput = document.getElementById('search-input');
+            const searchView = document.getElementById('search-results-view');
+            if (searchInput && searchView && !searchView.classList.contains('hidden')) {
+                console.log("Clearing search via back button");
+                searchInput.value = '';
+                // Simule l'input pour remettre l'interface à zéro (catégories)
+                const event = new Event('input', { bubbles: true });
+                searchInput.dispatchEvent(event);
+                return;
+            }
+
+            // 4. Navigation logique (Bouton retour de l'interface)
+            const docList = document.getElementById('document-list');
+            if (docList && !docList.classList.contains('hidden')) {
+                const backBtn = document.getElementById('back-btn');
+                if (backBtn) {
+                    console.log("Simulating interface back button");
+                    backBtn.click();
+                    return;
+                }
+            }
+
+            // 5. Quitter uniquement si on est à la racine
+            if (canGoBack) {
+                window.history.back();
+            } else {
+                console.log("Exiting app...");
+                window.Capacitor.Plugins.App.exitApp();
+            }
+        });
     }
 
     // 3. Render View
-    if ((role === 'admin' || role === 'visiteur') && !isMobile) {
+    if (role === 'admin' && !isMobile) {
         await renderAdminView(session);
-
-        // Popup de bienvenue pour les visiteurs
-        if (role === 'visiteur' && !sessionStorage.getItem('visitor_welcomed')) {
-            window.showVisitorWelcomeModal();
-            sessionStorage.setItem('visitor_welcomed', 'true');
-        }
-
-        // Handle Fullscreen Intent after view is ready
-        if (fsMode) {
-            console.log("Auto-navigating to Planning for Fullscreen mode:", fsMode);
-            // Wait a small delay to ensure renderAdminView has finished its async setup
-            setTimeout(async () => {
-                await renderAdminPlanning();
-                showFullscreenOverlay(fsMode);
-            }, 500);
-        }
     } else {
         await renderMobileView();
     }
+
+    // 4. Initialisation des notifications Push
+    initPushNotifications();
 }
 
 // Global utility for opening files
 window.openFile = function (key) {
     if (!key) return;
-    const url = `${config.api.workerUrl}/get/${key}`;
-    window.open(url, '_blank');
+    
+    // Properly encode key segments (for spaces, #, %, etc.)
+    const encodedKey = key.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    const url = `${config.api.workerUrl}/get/${encodedKey}`;
+    
+    const ext = key.split('.').pop().toLowerCase();
+    const isViewable = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'mp4', 'mov'].includes(ext);
+
+    if (isViewable) {
+        window.viewMobileFile(key, url, ext);
+    } else {
+        window.open(url, '_blank');
+    }
+};
+
+window.viewMobileFile = function(key, url, ext) {
+    const filename = key.split('/').pop();
+    const modal = document.createElement('div');
+    modal.className = 'file-viewer-overlay modal-overlay';
+    modal.id = 'active-file-viewer';
+    modal.style.zIndex = '1000000';
+    
+    let renderHtml = '';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+        renderHtml = `<img src="${url}" alt="${filename}" style="width:100%; height:auto; max-height:100%; object-fit: contain;">`;
+    } else if (ext === 'pdf') {
+        // Fallback for Android: Use Google Docs Viewer to ensure direct viewing without download
+        const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+        renderHtml = `
+            <iframe src="${googleViewerUrl}" style="width:100%; height:100%; border:none; background:#fff;"></iframe>
+        `;
+    } else if (['mp4', 'mov'].includes(ext)) {
+        renderHtml = `<video src="${url}" controls autoplay style="width:100%; max-height:100%;"></video>`;
+    } else {
+        // For other files, try to open in a new window (which triggers the system browser)
+        window.open(url, '_blank');
+        return;
+    }
+
+    modal.innerHTML = `
+        <div class="viewer-header">
+            <span class="viewer-title">${filename}</span>
+            <button class="close-viewer-btn" onclick="this.closest('.file-viewer-overlay').remove()">×</button>
+        </div>
+        <div class="viewer-body" style="background:#000; overflow:hidden;">
+            ${renderHtml}
+        </div>
+    `;
+    document.body.appendChild(modal);
 };
 
 // --- Mobile View (User / Mobile) ---
@@ -251,6 +314,54 @@ async function renderMobileView() {
         link.rel = 'stylesheet';
         link.href = 'css/style.css';
         document.head.appendChild(link);
+    }
+
+    // Inject file viewer styles
+    if (!document.getElementById('file-viewer-styles')) {
+        const style = document.createElement('style');
+        style.id = 'file-viewer-styles';
+        style.innerHTML = `
+            .file-viewer-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: #000000;
+                z-index: 100050;
+                display: flex;
+                flex-direction: column;
+                animation: viewerIn 0.3s cubic-bezier(0.1, 0.7, 0.1, 1);
+            }
+            @keyframes viewerIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            .viewer-header {
+                height: 60px;
+                padding: 0 16px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                background: rgba(28, 28, 30, 0.85);
+                backdrop-filter: blur(10px);
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+                color: #fff;
+            }
+            .viewer-title { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 15px; }
+            .close-viewer-btn { background: #38383A; color: #fff; border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; }
+            .viewer-body {
+                flex: 1;
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+                position: relative;
+                background: #111;
+            }
+            .viewer-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
+            .viewer-body video { width: 100%; max-height: 100%; }
+            .viewer-body object { width: 100%; height: 100%; border: none; display: block; background: #fff; }
+        `;
+        document.head.appendChild(style);
     }
 
     // Local theme logic
@@ -351,6 +462,10 @@ async function renderMobileView() {
             window.renderMobileVehiclesList(mobileVehicleCache);
             return;
         }
+        if (mobileCurrentPath === 'parc_detail') {
+            window.renderMobileParc();
+            return;
+        }
         if (mobileCurrentPath && mobileCurrentPath.includes('/')) {
             // Go up one level
             const parts = mobileCurrentPath.split('/');
@@ -389,10 +504,10 @@ async function renderMobileView() {
                     .select('preferences')
                     .eq('id', session.user.id)
                     .single();
-
+                
                 let currentPreferences = (profile && profile.preferences) || {};
                 if (typeof currentPreferences === 'string') currentPreferences = JSON.parse(currentPreferences);
-
+                
                 // Set initial theme
                 const isDarkMode = currentPreferences.mobile_dark_mode === true;
                 applyMobileTheme(isDarkMode);
@@ -403,7 +518,7 @@ async function renderMobileView() {
                     themeBtn.onclick = async () => {
                         const isNewDark = document.documentElement.getAttribute('data-theme') !== 'dark';
                         applyMobileTheme(isNewDark);
-
+                        
                         // Re-render if in planning
                         if (mobileCurrentPath === 'planning') {
                             const dateInput = document.querySelector('input[type="date"]');
@@ -439,18 +554,17 @@ async function renderMobileView() {
             if (!assignedVehicle.next_maintenance_km && assignedVehicle.next_maintenance_km !== 0) missing.push("Prochain entretien (km)");
             if (!assignedVehicle.toll_card) missing.push("Badge Télépéage");
             if (!assignedVehicle.dkv_card) missing.push("Carte DKV");
-            if (!assignedVehicle.last_ct_date) missing.push("Contrôle Technique");
 
             if (missing.length > 0) {
                 const dk = document.documentElement.getAttribute('data-theme') === 'dark';
                 const bg = dk ? '#1C1C1E' : '#ffffff';
                 const textColor = dk ? '#ffffff' : '#1c1c1e';
                 const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
-
+                
                 const modal = document.createElement('div');
                 modal.className = 'modal-overlay';
                 modal.style.zIndex = "10000";
-
+                
                 modal.innerHTML = `
                     <div id="missing-info-alert" class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
                         <div style="font-size: 40px; margin-bottom: 16px;">⚠️</div>
@@ -459,6 +573,7 @@ async function renderMobileView() {
                             Votre véhicule (<strong>${window.escapeHTML(assignedVehicle.plate_number)}</strong>) requiert la mise à jour des informations suivantes :
                             <ul style="text-align: left; margin-top: 12px; color: ${textColor}; padding-left: 20px;">
                                 ${missing.map(m => `<li>${m}</li>`).join('')}
+                                ${!assignedVehicle.last_ct_date ? `<li>📅 Contrôle Technique</li>` : ''}
                             </ul>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -475,6 +590,10 @@ async function renderMobileView() {
                             <input type="date" id="mi-date" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" value="${assignedVehicle.next_maintenance_date || ''}">
                         </div>
                         <div style="margin-bottom: 16px;">
+                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Dernier Contrôle Technique</label>
+                            <input type="date" id="mi-ct" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" value="${assignedVehicle.last_ct_date || ''}">
+                        </div>
+                        <div style="margin-bottom: 16px;">
                             <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Prochain entretien (km)</label>
                             <input type="number" id="mi-km" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="Ex: 50000" value="${assignedVehicle.next_maintenance_km || ''}">
                         </div>
@@ -485,10 +604,6 @@ async function renderMobileView() {
                         <div style="margin-bottom: 24px;">
                             <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Carte DKV</label>
                             <input type="text" id="mi-dkv" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="N° de carte" value="${assignedVehicle.dkv_card || ''}">
-                        </div>
-                        <div style="margin-bottom: 24px;">
-                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Date du dernier Contrôle Technique</label>
-                            <input type="date" id="mi-ct" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" value="${assignedVehicle.last_ct_date || ''}">
                         </div>
                         
                         <div style="display: flex; gap: 12px;">
@@ -504,26 +619,44 @@ async function renderMobileView() {
                     document.getElementById('missing-info-form').classList.remove('hidden');
                 };
 
-                document.getElementById('submit-mi-btn').onclick = async () => {
-                    const btn = document.getElementById('submit-mi-btn');
-                    btn.disabled = true;
-                    btn.innerText = "En cours...";
+                const saveBtn = document.getElementById('mi-save');
+                saveBtn.onclick = async () => {
+                    const maintenanceDate = document.getElementById('mi-date').value;
+                    const ctDate = document.getElementById('mi-ct').value;
+                    const maintenanceKm = document.getElementById('mi-km').value;
+                    const toll = document.getElementById('mi-toll').value;
+                    const dkv = document.getElementById('mi-dkv').value;
+
+                    saveBtn.disabled = true;
+                    saveBtn.innerText = "Enregistrement...";
+
                     try {
                         const payload = {
                             id: assignedVehicle.id,
-                            next_maintenance_date: document.getElementById('mi-date').value || null,
-                            next_maintenance_km: document.getElementById('mi-km').value || null,
-                            toll_card: document.getElementById('mi-toll').value || null,
-                            dkv_card: document.getElementById('mi-dkv').value || null,
-                            last_ct_date: document.getElementById('mi-ct').value || null
+                            next_maintenance_date: maintenanceDate || null,
+                            last_ct_date: ctDate || null,
+                            next_maintenance_km: maintenanceKm ? parseInt(maintenanceKm) : null,
+                            toll_card: toll || null,
+                            dkv_card: dkv || null
                         };
-                        await api.updateMyVehicle(payload);
 
+                        const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(await auth.getAuthHeaders())
+                            },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) throw new Error(await response.text());
+                        
                         modal.remove();
+                        window.location.reload();
                     } catch (e) {
                         alert("Erreur: " + e.message);
-                        btn.disabled = false;
-                        btn.innerText = "Enregistrer";
+                        saveBtn.disabled = false;
+                        saveBtn.innerText = "Enregistrer";
                     }
                 };
             }
@@ -552,7 +685,7 @@ function handleMobileSearch(query) {
     // Hide others
     categoriesView.classList.add('hidden');
     docListView.classList.add('hidden');
-    searchView.classList.remove('hidden');
+        searchView.classList.remove('hidden');
 
     // Filter — exclude internal config files (.keep, .meta_color_*)
     const isInternalFile = (key) => {
@@ -595,7 +728,7 @@ function generateMobileCategories(files, myVehicle = null) {
         const parts = file.key.split('/');
         if (parts.length > 1) {
             const folder = parts[0];
-            if (folder.toLowerCase() === 'archive') return;
+            if (folder.toLowerCase() === 'archive') return; 
             if (!categories.has(folder)) {
                 categories.set(folder, { files: [], color: null, emoji: '📁', order: 999, row: 1 });
             }
@@ -613,7 +746,7 @@ function generateMobileCategories(files, myVehicle = null) {
                 catData.files.push(file);
             }
         } else {
-            if (file.key.toLowerCase().includes('archive')) return;
+            if (file.key.toLowerCase().includes('archive')) return; 
             uncategorized.push(file);
         }
     });
@@ -644,12 +777,6 @@ function generateMobileCategories(files, myVehicle = null) {
     if (uncategorized.length > 0) {
         const card = document.createElement('div');
         card.className = 'category-card';
-        card.innerHTML = `
-            <div class="category-icon" style="background-color: rgba(255, 255, 255, 0.2)">📄</div>
-            <div class="category-title">Autres</div>
-        `;
-        card.onclick = () => showMobileRootFiles(uncategorized);
-        grid.appendChild(card);
     }
 
     // Add Special App Cards
@@ -679,20 +806,412 @@ function generateMobileCategories(files, myVehicle = null) {
         autoCard.onclick = () => window.renderMobileVehiclesList(myVehicle);
         grid.prepend(autoCard);
     }
-
-    const matosStockCard = document.createElement('div');
-    matosStockCard.className = 'category-card';
-    matosStockCard.innerHTML = `
-        <div class="category-icon" style="background-color: #5856D6;">📦</div>
-        <div class="category-title" style="font-weight:bold;">Stock</div>
+    
+    const mapCard = document.createElement('div');
+    mapCard.className = 'category-card';
+    mapCard.innerHTML = `
+        <div class="category-icon" style="background-color: #5856D6;">🗺️</div>
+        <div class="category-title" style="font-weight:bold;">Carte</div>
     `;
-    matosStockCard.onclick = () => renderMobileMaterialTracking();
+    mapCard.onclick = () => renderMobileMap();
 
-    grid.prepend(matosStockCard);
+    const fritCard = document.createElement('div');
+    fritCard.className = 'category-card';
+    fritCard.innerHTML = `
+        <div class="category-icon" style="background-color: #FFD60A;">🍟</div>
+        <div class="category-title" style="font-weight:bold;">Friterie</div>
+    `;
+    fritCard.onclick = () => renderMobileFriterie();
+
+    const parcCard = document.createElement('div');
+    parcCard.className = 'category-card';
+    parcCard.innerHTML = `
+        <div class="category-icon" style="background-color: #AF52DE;">🚜</div>
+        <div class="category-title" style="font-weight:bold;">Parc / Maint.</div>
+    `;
+    parcCard.onclick = () => window.renderMobileParc();
+
+    grid.prepend(mapCard);
     if (typeof autoCard !== 'undefined') grid.prepend(autoCard);
+    grid.prepend(parcCard);
+    grid.prepend(fritCard);
     grid.prepend(matosCard);
     grid.prepend(planningCard);
 }
+
+
+window.renderMobileFriterie = async function() {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Friterie 🍟";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    mobileCurrentPath = "friterie";
+
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    container.innerHTML = `
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 100px;">
+            <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 20px; padding: 20px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                <div style="font-size: 40px; margin-bottom: 12px;">🇧🇪</div>
+                <h2 style="margin: 0; color: ${textColor}; font-size: 20px;">Friterie Pouchain</h2>
+                <p style="color: #8E8E93; font-size: 14px; margin: 8px 0 20px 0;">Faites votre commande hebdomadaire une belle frite belge !</p>
+                <button class="btn-primary" onclick="openNewFritOrderModal()" style="width: 100%; height: 54px; background: #FFD60A; color: #000; font-size: 16px; font-weight:800; border-radius: 15px; border:none; box-shadow: 0 4px 12px rgba(255, 214, 10, 0.3);">
+                    + Ajouter à ma commande
+                </button>
+                <button class="btn-secondary" onclick="renderColleaguesFritOrders()" style="width: 100%; height: 50px; background: rgba(142, 142, 147, 0.12); border: 1px solid ${subtleBorder}; color: ${textColor}; font-size: 14px; margin-top: 12px; border-radius: 12px; font-weight:600;">
+                    👁️ Voir la commande de tout le monde
+                </button>
+            </div>
+
+            <div id="active-frit-orders" style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="color: #8E8E93; font-size: 13px; font-weight: 600; text-transform: uppercase; padding-left: 8px;">Ma commande actuelle</div>
+                <div id="frit-order-list" style="color: #8E8E93; text-align: center; padding: 20px;">Chargement...</div>
+            </div>
+        </div>
+    `;
+
+    // Fetch and show current orders
+    try {
+        const response = await fetch(`${config.api.workerUrl}/friterie/order`, {
+            headers: { 'Authorization': `Bearer ${(await auth.getSession()).access_token}` }
+        });
+        const orders = response.ok ? await response.json() : [];
+        const orderList = document.getElementById('frit-order-list');
+        
+        if (!orders || orders.length === 0) {
+            orderList.innerHTML = `<div style="background: ${cardBg}; border-radius: 15px; padding: 30px; border: 1px dashed ${subtleBorder}; color: #8E8E93; font-style: italic;">Aucun article dans votre commande</div>`;
+        } else {
+            orderList.innerHTML = orders.map(o => `
+                <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 16px; padding: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: start; position: relative;">
+                    <div style="text-align: left;">
+                        <div style="color: ${textColor}; font-weight: 700; font-size: 15px;">${o.item_name}</div>
+                        <div style="color: #8E8E93; font-size: 12px; margin-top: 4px;">
+                            ${o.details ? `<span>${o.details}</span>` : ''}
+                            ${o.sauce ? `<span style="display:block; color: #FF9500; font-weight:600;">Sauce: ${o.sauce}</span>` : ''}
+                        </div>
+                    </div>
+                    <button onclick="deleteFritOrderItem(${o.id})" style="background: rgba(255, 59, 48, 0.1); color: #FF3B30; border: none; padding: 8px; border-radius: 10px;">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+    } catch (e) {
+        document.getElementById('frit-order-list').innerHTML = `Erreur: ${e.message}`;
+    }
+}
+
+window.renderColleaguesFritOrders = async function() {
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    container.innerHTML = `
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 100px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                <h3 style="margin: 0; color: ${textColor};">Commande de tout le monde</h3>
+                <button onclick="renderMobileFriterie()" style="background: rgba(142,142,147,0.2); border:none; padding: 8px 15px; border-radius: 10px; color: ${textColor}; font-size: 13px; font-weight:600;">Retour</button>
+            </div>
+            <div id="colleagues-order-list" style="text-align: center; color: #8E8E93; padding: 20px;">Chargement du récapitulatif...</div>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`${config.api.workerUrl}/friterie/all-orders`, {
+            headers: { 'Authorization': `Bearer ${(await auth.getSession()).access_token}` }
+        });
+        const orders = response.ok ? await response.json() : [];
+        const orderList = document.getElementById('colleagues-order-list');
+        
+        if (!orders || orders.length === 0) {
+            orderList.innerHTML = `<div style="background: ${cardBg}; border-radius: 15px; padding: 40px; border: 1px dashed ${subtleBorder}; color: #8E8E93; font-style: italic;">Personne n'a encore commandé pour le moment.</div>`;
+            return;
+        }
+
+        // Group by user
+        const grouped = {};
+        const session = await auth.getSession();
+        const currentUserId = session?.user?.id;
+
+        orders.forEach(o => {
+            let profile = o.profiles;
+            // Handle both object and array response from Supabase Join
+            if (Array.isArray(profile)) profile = profile[0];
+            
+            let userName = 'Inconnu';
+            if (profile && (profile.first_name || profile.last_name)) {
+                userName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+            } else if (o.user_id === currentUserId) {
+                userName = "Moi (Ma commande)";
+            } else {
+                userName = "Utilisateur #" + (o.user_id ? o.user_id.substring(0, 5) : '???');
+            }
+
+            if (!grouped[userName]) grouped[userName] = [];
+            grouped[userName].push(o);
+        });
+
+        let html = '';
+        // Put "Moi" at the top
+        const userNames = Object.keys(grouped).sort((a, b) => {
+            if (a === "Moi (Ma commande)") return -1;
+            if (b === "Moi (Ma commande)") return 1;
+            return a.localeCompare(b);
+        });
+        
+        userNames.forEach(name => {
+            const userOrders = grouped[name];
+            html += `
+                <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 18px; padding: 16px; margin-bottom: 15px; text-align: left; box-shadow: 0 4px 10px rgba(0,0,0,0.02);">
+                    <div style="color: ${textColor}; font-weight: 800; font-size: 16px; margin-bottom: 12px; border-bottom: 1px solid ${subtleBorder}; padding-bottom: 8px; display:flex; align-items:center; gap:8px;">
+                        <span style="background: #FFD60A; color: #000; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items:center; justify-content:center; font-size: 14px;">${name.charAt(0)}</span>
+                        ${name}
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        ${userOrders.map(o => `
+                            <div style="padding-left: 10px; border-left: 3px solid #FFD60A;">
+                                <div style="color: ${textColor}; font-size: 14px; font-weight: 600;">${o.item_name} ${o.details ? `<span style="font-weight:400; color:#8E8E93;">(${o.details})</span>` : ''}</div>
+                                ${o.sauce ? `<div style="color: #FF9500; font-size: 12px; font-weight: 600; margin-top: 2px;">Sauce: ${o.sauce}</div>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        });
+
+        orderList.innerHTML = html;
+        orderList.style.textAlign = 'initial';
+
+    } catch (e) {
+        document.getElementById('colleagues-order-list').innerHTML = `Erreur: ${e.message}`;
+    }
+}
+
+window.openNewFritOrderModal = function() {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#FFFFFF';
+    const textColor = dk ? '#FFFFFF' : '#1C1C1E';
+    const inputBg = dk ? '#2C2C2E' : '#F2F2F7';
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '10000';
+    
+    const sauces = [
+        "Mayonnaise", "Ketchup", "Moutarde", "Hannibal", "Burger", "Ailoli", 
+        "Brazil", "Barbecue belge", "Picalili", "Andalouse", "Américaine", 
+        "Hot mammouth", "Samurai"
+    ];
+
+    const burgers = [
+        "Le Bicky", "Le classic", "Le Ch'ti", "Le montagnard", "Le biquette", "Le Crunchy", "Le burger du moment"
+    ];
+
+    const viandes = [
+        "Fricadelle", "Boulette", "Poulycroc", "Mexicanos", "Cervelas", 
+        "Nugget (X4)", "Nugget (X6)", "Tender X3", "Cheese Cracks", 
+        "Brochette de poulet", "Steak"
+    ];
+
+    modal.innerHTML = `
+        <div class="modal-box" style="width: 90%; max-width: 450px; background: ${bg}; border-radius: 28px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); overflow-y: auto; max-height: 85vh;">
+            <h2 style="margin: 0 0 20px 0; font-size: 22px; color: ${textColor}; text-align: center;">Que voulez-vous ? 🍟</h2>
+            
+            <div id="frit-selection-area" style="display: flex; flex-direction: column; gap: 16px;">
+                <!-- Catégorie Principal -->
+                <div>
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Catégorie</label>
+                    <select id="fo-cat" style="width:100%; height:50px; border-radius:12px; background:${inputBg}; color:${textColor}; border:none; padding:0 15px; font-size:16px;" onchange="updateFritChoices()">
+                        <option value="burger">🍔 Burgers</option>
+                        <option value="viande">🍗 Viandes</option>
+                        <option value="frite">🍟 Frites</option>
+                        <option value="sauce">🥫 Sauces Seules</option>
+                    </select>
+                </div>
+
+                <!-- Sous-Choix (Burger ou Viande spécifique) -->
+                <div id="sub-item-container">
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Choix</label>
+                    <select id="fo-item" style="width:100%; height:50px; border-radius:12px; background:${inputBg}; color:${textColor}; border:none; padding:0 15px; font-size:16px;" onchange="updateFritSubOptions()">
+                        <!-- Dynamic -->
+                    </select>
+                </div>
+
+                <!-- Options Spécifiques (Mitraillette/Sandwich/Type) -->
+                <div id="options-container">
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Préparation</label>
+                    <div style="display:flex; gap:10px;" id="option-buttons-group">
+                        <!-- Buttons added here -->
+                    </div>
+                </div>
+
+                <!-- Sauce Selection -->
+                <div id="sauce-container">
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Sauce</label>
+                    <select id="fo-sauce" style="width:100%; height:50px; border-radius:12px; background:${inputBg}; color:${textColor}; border:none; padding:0 15px; font-size:16px;">
+                        <option value="">Pas de sauce</option>
+                        ${sauces.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 30px;">
+                <button class="btn-secondary" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="submit-fo-btn" class="btn-primary" style="flex:1; background: #FFD60A; color:#000; font-weight:800;">Ajouter</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    let selectedOption = null;
+
+    window.updateFritChoices = function() {
+        const cat = document.getElementById('fo-cat').value;
+        const subItem = document.getElementById('fo-item');
+        const optContainer = document.getElementById('options-container');
+        const sauceContainer = document.getElementById('sauce-container');
+        const btnGroup = document.getElementById('option-buttons-group');
+        
+        btnGroup.innerHTML = '';
+        selectedOption = null;
+
+        if (cat === 'burger') {
+            subItem.innerHTML = burgers.map(b => `<option value="${b}">${b}</option>`).join('');
+            optContainer.style.display = 'block';
+            sauceContainer.style.display = 'block';
+            addOptionButton("Burger", "Burger");
+            addOptionButton("Mitraillette", "Mitraillette");
+        } else if (cat === 'viande') {
+            subItem.innerHTML = viandes.map(v => `<option value="${v}">${v}</option>`).join('');
+            optContainer.style.display = 'block';
+            sauceContainer.style.display = 'block';
+            updateFritSubOptions(); // Check for steak
+        } else if (cat === 'frite') {
+            subItem.innerHTML = '<option value="Moyen">Moyen</option><option value="Grande">Grande</option>';
+            optContainer.style.display = 'none';
+            sauceContainer.style.display = 'block';
+        } else if (cat === 'sauce') {
+            subItem.innerHTML = sauces.map(s => `<option value="${s}">${s}</option>`).join('');
+            optContainer.style.display = 'none';
+            sauceContainer.style.display = 'none';
+        }
+    };
+
+    window.updateFritSubOptions = function() {
+        const cat = document.getElementById('fo-cat').value;
+        const item = document.getElementById('fo-item').value;
+        const btnGroup = document.getElementById('option-buttons-group');
+        const optContainer = document.getElementById('options-container');
+
+        if (cat === 'viande') {
+            btnGroup.innerHTML = '';
+            optContainer.style.display = 'block';
+            if (item !== 'Steak') {
+                addOptionButton("Seul", "Seul");
+            }
+            addOptionButton("Sandwich", "Sandwich");
+            addOptionButton("Mitraillette", "Mitraillette");
+        }
+    };
+
+    function addOptionButton(label, value) {
+        const btn = document.createElement('button');
+        btn.innerText = label;
+        btn.style.flex = "1";
+        btn.style.height = "44px";
+        btn.style.borderRadius = "12px";
+        btn.style.border = `1px solid ${dk ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`;
+        btn.style.background = dk ? 'rgba(255,255,255,0.05)' : '#fff';
+        btn.style.color = textColor;
+        btn.style.fontSize = "14px";
+        btn.onclick = () => {
+             Array.from(btn.parentNode.children).forEach(b => {
+                 b.style.background = dk ? 'rgba(255,255,255,0.05)' : '#fff';
+                 b.style.borderColor = dk ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+                 b.style.color = textColor;
+             });
+             btn.style.background = '#FFD60A';
+             btn.style.borderColor = '#FFD60A';
+             btn.style.color = '#000';
+             selectedOption = value;
+        };
+        document.getElementById('option-buttons-group').appendChild(btn);
+    }
+
+    // Init
+    updateFritChoices();
+
+    document.getElementById('submit-fo-btn').onclick = async () => {
+        const cat = document.getElementById('fo-cat').value;
+        const item = document.getElementById('fo-item').value;
+        const sauce = document.getElementById('fo-sauce').value;
+        const btn = document.getElementById('submit-fo-btn');
+
+        if ((cat === 'burger' || cat === 'viande') && !selectedOption) {
+            alert("Veuillez choisir un mode (Burger/Mitraillette/Seul/...)");
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = "Ajout...";
+
+        try {
+            const session = await auth.getSession();
+            const res = await fetch(`${config.api.workerUrl}/friterie/order`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({
+                    item_name: item,
+                    category: cat,
+                    details: selectedOption || '',
+                    sauce: sauce
+                })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            
+            modal.remove();
+            renderMobileFriterie(); // Refresh
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Ajouter";
+        }
+    };
+};
+
+window.deleteFritOrderItem = async function(id) {
+    if (!confirm("Supprimer cet article de votre commande ?")) return;
+    try {
+        const session = await auth.getSession();
+        const res = await fetch(`${config.api.workerUrl}/friterie/order`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        renderMobileFriterie(); // Refresh
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
 
 window.renderMobileMaterialRequests = async function () {
     document.getElementById('categories-view').classList.add('hidden');
@@ -713,7 +1232,7 @@ window.renderMobileMaterialRequests = async function () {
         const session = await auth.getSession();
         const requests = await api.getMaterialRequests(session.user.id);
         const categories = await api.getMaterialCategories();
-
+        
         const dk = document.documentElement.getAttribute('data-theme') === 'dark';
         const cardBg = dk ? '#1C1C1E' : '#fff';
         const textColor = dk ? '#FFFFFF' : '#1c1c1e';
@@ -738,14 +1257,14 @@ window.renderMobileMaterialRequests = async function () {
             };
 
             const sortedKeys = ['requested', 'ordered'];
-
+            
             sortedKeys.forEach(status => {
                 const groupRequests = requests.filter(r => r.status === status);
                 if (groupRequests.length > 0) {
                     html += `<h3 style="color: ${groups[status].color}; font-size: 14px; text-transform: uppercase; margin: 20px 0 10px 4px; display: flex; align-items: center; gap: 8px;">
                                 ${groups[status].icon} ${groups[status].label}
                             </h3>`;
-
+                    
                     groupRequests.forEach(req => {
                         html += `
                             <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
@@ -773,9 +1292,9 @@ window.renderMobileMaterialRequests = async function () {
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
             modal.style.zIndex = "10000";
-
+            
             let categoryOptions = categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-
+            
             modal.innerHTML = `
                 <div class="modal-box" style="padding: 24px; border-radius: 28px; width: 90%; max-width: 400px;">
                     <h2 style="margin-top: 0; margin-bottom: 20px; color: ${_textColor};">Nouvelle demande</h2>
@@ -847,7 +1366,7 @@ window.renderMobileMaterialRequests = async function () {
                         const safeFileName = selectedFile.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
                         const fileName = `${timestamp}_${safeFileName}`;
                         const renamedFile = new File([selectedFile], fileName, { type: selectedFile.type });
-
+                        
                         await api.uploadFile(renamedFile, 'material_requests/');
                         image_path = 'material_requests/' + fileName;
                     }
@@ -910,14 +1429,14 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
             const monday = new Date(d.setDate(diff));
             const sunday = new Date(monday);
             sunday.setDate(monday.getDate() + 6);
-
+            
             const startDate = monday.toISOString().split('T')[0];
             const endDate = sunday.toISOString().split('T')[0];
             weekRange = { startDate, endDate };
             tasks = await api.getTasks({ startDate, endDate });
         }
         const displayDate = new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-
+        
         // Dark mode detection for inline styles
         const dk = document.documentElement.getAttribute('data-theme') === 'dark';
         const bg = dk ? '#000000' : '#f8f9fa';
@@ -953,13 +1472,10 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
                     <div style="margin-bottom: 12px; background: ${cardBg}; padding: 10px; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,${dk ? '0.2' : '0.04'}); display: flex; align-items: center; gap: 8px;">
                         <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">◀</button>
                         <div style="flex:1; position: relative; text-align:center;">
-                            ${mode === 'day'
-                ? `<input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 15px; color: ${textColor}; padding: 0;" value="${dateStr}" onchange="renderMobilePlanning(this.value, 'day')">`
-                : `<div style="display:flex; flex-direction:column; align-items:center;">
-                                     <span style="font-weight: 800; font-size: 11px; text-transform: uppercase; color: var(--primary); margin-bottom: 2px;">Semaine ${window.getISOWeekNumber(weekRange.startDate)}</span>
-                                     <div style="font-weight:800; font-size:14px; color:${textColor};">${new Date(weekRange.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} - ${new Date(weekRange.endDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</div>
-                                   </div>`
-            }
+                            ${mode === 'day' 
+                                ? `<input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 15px; color: ${textColor}; padding: 0;" value="${dateStr}" onchange="renderMobilePlanning(this.value, 'day')">`
+                                : `<div style="font-weight:800; font-size:14px; color:${textColor};">${new Date(weekRange.startDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})} - ${new Date(weekRange.endDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})}</div>`
+                            }
                         </div>
                         <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">▶</button>
                     </div>
@@ -983,6 +1499,18 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
         } else {
             if (mode === 'day') {
                 html += `<div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid ${timelineBorder}; margin-left: 10px;">`;
+                // Tri automatique: 1. Non faites en haut, 2. Toute la journée en haut, 3. Chronologique
+                tasks.sort((a, b) => {
+                    const doneA = a.done === 'true' ? 1 : 0;
+                    const doneB = b.done === 'true' ? 1 : 0;
+                    if (doneA !== doneB) return doneA - doneB;
+                    
+                    const isAllDayA = (a.start_time.indexOf('00:00') === 0 && a.end_time.indexOf('00:00') === 0);
+                    const isAllDayB = (b.start_time.indexOf('00:00') === 0 && b.end_time.indexOf('00:00') === 0);
+                    if (isAllDayA !== isAllDayB) return isAllDayA ? -1 : 1;
+                    
+                    return a.start_time.localeCompare(b.start_time);
+                });
                 tasks.forEach(t => { html += renderMobileTaskCard(t, dateStr, mode, dk, cardBg, textColor, subtleBorder, timelineBorder, chipBg, doneCardBg, doneBorder, normalBorder, dotBorderColor); });
                 html += `</div>`;
             } else {
@@ -995,9 +1523,21 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
 
                 Object.keys(grouped).sort().forEach(date => {
                     const dayTasks = grouped[date];
+                    // Tri automatique: 1. Non faites en haut, 2. Toute la journée en haut, 3. Chronologique
+                    dayTasks.sort((a, b) => {
+                        const doneA = a.done === 'true' ? 1 : 0;
+                        const doneB = b.done === 'true' ? 1 : 0;
+                        if (doneA !== doneB) return doneA - doneB;
+                        
+                        const isAllDayA = (a.start_time.indexOf('00:00') === 0 && a.end_time.indexOf('00:00') === 0);
+                        const isAllDayB = (b.start_time.indexOf('00:00') === 0 && b.end_time.indexOf('00:00') === 0);
+                        if (isAllDayA !== isAllDayB) return isAllDayA ? -1 : 1;
+                        
+                        return a.start_time.localeCompare(b.start_time);
+                    });
                     const d = new Date(date + 'T12:00:00');
                     const dayLabel = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-
+                    
                     html += `<div style="margin-bottom: 32px;">
                                 <div style="font-weight: 800; font-size: 14px; text-transform: uppercase; color: ${dk ? '#8E8E93' : '#666'}; margin-bottom: 12px; padding-left: 4px; display: flex; align-items: center; gap: 8px;">
                                     <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></div>
@@ -1095,11 +1635,27 @@ function showMobileRootFiles(docs) {
     renderMobileList("Autres", [], docs);
 }
 
-function openMobileFolder(folderPath) {
+async function openMobileFolder(folderPath) {
     mobileCurrentPath = folderPath;
     const title = folderPath.split('/').pop();
 
-    // Filter files and subfolders
+    // 1. Immediate Render from Cache (Fast)
+    renderFromCache(folderPath, title);
+
+    // 2. Background Refresh from API (ensure latest data)
+    try {
+        const freshFiles = await api.listFiles();
+        mobileFilesCache = freshFiles;
+        // Re-render only if the user is still on this folder
+        if (mobileCurrentPath === folderPath) {
+            renderFromCache(folderPath, title);
+        }
+    } catch (e) {
+        console.warn("Background refresh failed:", e);
+    }
+}
+
+function renderFromCache(folderPath, title) {
     const currentPrefix = folderPath + '/';
     const subfolders = new Set();
     const files = [];
@@ -1190,7 +1746,7 @@ function renderMobileList(title, subfolders, files) {
 function renderMobileDocItem(doc, container) {
     const item = document.createElement('div');
     item.className = 'document-item';
-    item.onclick = () => window.open(`${config.api.workerUrl}/get/${doc.key}`, '_blank');
+    item.onclick = () => window.openFile(doc.key);
 
     const fullName = doc.key.split('/').pop();
     const extDot = fullName.includes('.') ? '.' + fullName.split('.').pop() : '';
@@ -1258,7 +1814,7 @@ async function renderAdminView(session) {
         <aside class="sidebar">
             <h2>Pouchain <span>Admin</span></h2>
             <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; margin-bottom: 24px;">
-                Bienvenue <br><span id="admin-welcome-name" style="color: white; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onclick="window.openPersonalSettings()" title="Cliquez pour vos paramètres personnels">${session.user.email}</span>
+                Bienvenue <br><span id="admin-welcome-name" style="color: white; font-weight: 600;">${session.user.email}</span>
             </div>
             <div style="margin-bottom: 24px;">
                 <input type="text" id="admin-global-search" class="form-input" placeholder="🔍 Rechercher un document..." style="width:100%; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);" oninput="handleAdminGlobalSearch(this.value)">
@@ -1269,18 +1825,13 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📦 Demande de matériel</span>
-                    <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                    <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4);">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminVehicles()" id="nav-vehicles" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>🚗 Gestion des véhicules</span>
-                    <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4); animation: pulse-red 2s infinite;">0</span>
+                    <span id="vehicle-badge" style="background: var(--warning, #FF9500); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 149, 0, 0.4);">0</span>
                 </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialTracking()" id="nav-material-stock" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>📦 Statut du matériel ATS</span>
-                    <span id="mat-stock-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
-                </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance">🛠️ Maintenance Matériel</a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMap()" id="nav-map">🗺️ Carte des Machines</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
@@ -1292,9 +1843,6 @@ async function renderAdminView(session) {
                     <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; overflow: hidden;">
                         <div id="cloud-storage-bar" style="height: 100%; width: 0%; background: var(--primary, #007AFF); transition: width 0.5s ease;"></div>
                     </div>
-                    <button class="btn-sm" onclick="openStorageAnalysisModal(event)" style="width:100%; margin-top: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 11px; height: 32px; border-radius: 8px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
-                        📊 Analyser le stockage
-                    </button>
                 </div>
                 <button id="logout-btn" class="logout-btn" style="width: 100%;">Déconnexion</button>
             </div>
@@ -1316,11 +1864,10 @@ async function renderAdminView(session) {
     try {
         const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
             .from('profiles')
-            .select('id, first_name, last_name, preferences')
+            .select('first_name, last_name, preferences')
             .eq('id', session.user.id)
             .single();
 
-        window.currentUserProfile = profile;
         if (profile) {
             if (profile.first_name && profile.last_name) {
                 document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
@@ -1356,97 +1903,7 @@ async function renderAdminView(session) {
     // Update material requests notification badge + auto refresh every 30s
     if (window.materialBadgeInterval) clearInterval(window.materialBadgeInterval);
     window.updateMaterialBadge();
-    window.updateMaterialStockBadge();
-    window.materialBadgeInterval = setInterval(() => {
-        window.updateMaterialBadge();
-        window.updateMaterialStockBadge();
-    }, 30000);
-}
-
-window.openPersonalSettings = function () {
-    const profile = window.currentUserProfile;
-    if (!profile) return alert("Chargement du profil en cours...");
-
-    const prefs = profile.preferences || {};
-    const currentBg = prefs.planning_bg || '#1C1C1E';
-    const currentText = prefs.planning_text || '#FFFFFF';
-
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.zIndex = '100000000';
-    modal.innerHTML = `
-        <div class="modal-box glass-panel" style="width: 480px; padding: 40px; animation: modalPop 0.3s ease-out; background: #1C1C1E; color: white; border-radius: 28px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1);">
-            <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; display: flex; align-items: center; gap: 12px;">
-                <span style="font-size: 24px;">⚙️</span> Paramètres Personnels
-            </h2>
-            
-            <div style="margin-bottom: 24px;">
-                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 12px; font-weight: 700; text-transform: uppercase;">Couleur de Fond</label>
-                <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 16px;">
-                    <input type="color" id="pref-planning-bg" value="${currentBg}" style="width: 50px; height: 50px; border: none; border-radius: 10px; cursor: pointer; background: transparent;">
-                    <div style="flex: 1; font-size: 14px;">Couleur principale du planning.</div>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 30px;">
-                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 12px; font-weight: 700; text-transform: uppercase;">Couleur du Texte</label>
-                <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 16px;">
-                    <input type="color" id="pref-planning-text" value="${currentText}" style="width: 50px; height: 50px; border: none; border-radius: 10px; cursor: pointer; background: transparent;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 14px; margin-bottom: 8px;">Choisissez la couleur du texte.</div>
-                        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: var(--primary);">
-                            <input type="checkbox" onchange="document.getElementById('pref-planning-text').value = this.checked ? '#000000' : '#FFFFFF'"> 
-                            Passer en Noir (Contraste inversé)
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                <button class="btn-secondary" style="border-radius: 12px; padding: 10px 20px;" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
-                <button id="save-settings-btn" class="btn-primary" style="padding: 10px 24px; background: #2da140; border-radius: 12px; font-weight: 700;">Enregistrer</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('save-settings-btn').onclick = async () => {
-        const newBg = document.getElementById('pref-planning-bg').value;
-        const newText = document.getElementById('pref-planning-text').value;
-        const btn = document.getElementById('save-settings-btn');
-        btn.disabled = true;
-        btn.innerText = "Sauvegarde...";
-
-        try {
-            const updatedPrefs = { ...prefs, planning_bg: newBg, planning_text: newText };
-            const { error } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
-                .from('profiles')
-                .update({ preferences: updatedPrefs })
-                .eq('id', profile.id);
-
-            if (error) throw error;
-
-            window.currentUserProfile.preferences = updatedPrefs;
-
-            // Immediate CSS override
-            let style = document.getElementById('user-planning-custom-bg');
-            if (!style) {
-                style = document.createElement('style');
-                style.id = 'user-planning-custom-bg';
-                document.head.appendChild(style);
-            }
-            style.innerHTML = `
-                .planning-inline { background: ${newBg} !important; color: ${newText} !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
-                .planning-inline header h1, .planning-inline header span { color: inherit !important; }
-            `;
-
-            modal.remove();
-        } catch (e) {
-            alert("Erreur lors de la sauvegarde : " + e.message);
-            btn.disabled = false;
-            btn.innerText = "Enregistrer";
-        }
-    };
+    window.materialBadgeInterval = setInterval(() => window.updateMaterialBadge(), 30000);
 }
 
 // Global scope for admin functions
@@ -1531,7 +1988,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     }
 
     if (window.planningRefreshInterval) clearInterval(window.planningRefreshInterval);
-
+    
     // Auto-refresh logic
     window.lastAutoSortTime = window.lastAutoSortTime || Date.now();
     window.planningRefreshInterval = setInterval(async () => {
@@ -1552,8 +2009,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             if (now - window.lastAutoSortTime > 60000) {
                 window.lastAutoSortTime = now;
                 console.log("Auto-tri du planning en arrière-plan...");
-                const isV2Active = !!document.getElementById('planning-v2-container');
-                await window.autoSortPlanningUsers(mondayToUse, isV2Active, true); // isSilent = true
+                await window.autoSortPlanningUsers(mondayToUse, true); // true = silent (no full reload)
                 if (!isAnyFS) {
                     renderAdminPlanning(mondayToUse, false, true);
                 }
@@ -1569,7 +2025,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     if (navItem) navItem.classList.add('active');
     const existingContainer = document.getElementById('planning-v2-container') || document.getElementById('integrated-planning-container');
     const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-v2-container');
-
+    
     if (!existingContainer && !isRefresh) {
         content.innerHTML = `<div style="display:flex; justify-content:center; padding: 40px;"><div class="loader" style="border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div></div>`;
     }
@@ -1596,10 +2052,6 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     const endStr = `${currentSunday.getFullYear()}-${pad(currentSunday.getMonth() + 1)}-${pad(currentSunday.getDate())}`;
 
     try {
-        let closedDays = [];
-        try { closedDays = await api.getPlanningClosedDays(); } catch (e) { }
-        window.currentClosedDays = closedDays;
-
         const users = await api.listUsers();
         let tasks = [];
         try {
@@ -1609,7 +2061,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         }
 
         const tasksByUserDate = {};
-
+        
         // --- Ghost Users Logic ---
         // If archived tasks exist for users no longer in the DB, we add them dynamically
         const currentIds = new Set(users.map(u => u.id));
@@ -1652,26 +2104,20 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             const style = document.createElement('style');
             style.id = 'planning-styles';
             style.innerHTML = `
-                .planning-inline { 
-                    background: ${window.currentUserProfile?.preferences?.planning_bg || '#1C1C1E'} !important;
-                    color: ${window.currentUserProfile?.preferences?.planning_text || '#FFFFFF'} !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
-                }
+                .planning-inline { background: rgba(20,20,20,0.75) !important; color: white !important; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
                 .planning-inline header { background: transparent !important; margin-bottom: 12px !important; padding: 16px 20px !important; border-bottom: none !important; }
-                .planning-inline header h1 { color: white !important; }
-                .planning-inline header span { color: inherit !important; opacity: 0.9; }
-                .planning-inline .p-grid-bg { background: rgba(255,255,255,0.03) !important; border: 1px solid rgba(255,255,255,0.05) !important; border-radius: 8px; }
+                .planning-inline header h1, .planning-inline header span { color: white !important; }
+                .planning-inline .p-grid-bg { background: rgba(0,0,0,0.35) !important; border: 1px solid var(--border) !important; border-radius: 8px; }
                 .planning-inline .p-head { background: #2a2a2a !important; color: white !important; border-top:none; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-user { background: #202020 !important; color: white !important; border-bottom: 1px solid var(--border) !important; }
                 .planning-inline .p-cell { border-color: rgba(255,255,255,0.05) !important; border-right: 1px solid rgba(255,255,255,0.05) !important; }
                 .planning-inline .p-task { border-left: 3px solid var(--primary) !important; border: 1px solid rgba(255,255,255,0.1) !important; background: rgba(255,255,255,0.05); display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 4px !important; position: relative !important; overflow: hidden !important; cursor: pointer !important; transition: background 0.2s ease; z-index: 1; min-height: 24px; padding: 4px 6px !important; }
                 .planning-inline .p-task:hover { background: rgba(255,255,255,0.1) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-                .planning-inline .p-task-title { color: inherit !important; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; font-size: 11px; font-weight: 800; }
+                .planning-inline .p-task-title { color: white !important; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; font-size: 11px; font-weight: 800; }
                 .p-task-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; align-items: center; }
                 .p-task:hover .p-task-actions { opacity: 1; pointer-events: auto; }
-                .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: inherit !important; opacity: 0.6; border: 1px dashed rgba(255,255,255,0.2) !important; }
-                .planning-inline .p-add-btn:hover { background: rgba(255,255,255,0.1) !important; opacity: 1; }
+                .planning-inline .p-add-btn { background: rgba(255,255,255,0.05) !important; color: rgba(255,255,255,0.5) !important; border: 1px dashed rgba(255,255,255,0.2) !important; }
+                .planning-inline .p-add-btn:hover { background: rgba(255,255,255,0.1) !important; color: white !important; }
                 
                 .p-reorder-btn { background: rgba(255,255,255,0.08); border: none; color: rgba(255,255,255,0.5); font-size: 9px; line-height: 1; padding: 2px 5px; cursor: pointer; border-radius: 3px; transition: 0.15s; }
                 .p-reorder-btn:hover { background: rgba(255,255,255,0.2); color: white; }
@@ -1743,16 +2189,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                 }
                 .planning-fullscreen .p-task:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important; }
                 .planning-fullscreen .p-task-title { color: #212529 !important; font-size: 15px !important; font-weight: 700 !important; line-height: 1.3 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .planning-fullscreen .p-task-title, #p-v2-main .p-task-title { 
-                    white-space: normal !important; 
-                    display: -webkit-box !important; 
-                    -webkit-line-clamp: 2 !important; 
-                    -webkit-box-orient: vertical !important; 
-                    overflow: hidden !important; 
-                    text-overflow: ellipsis !important;
-                    word-break: break-word !important;
-                    line-height: 1.1 !important;
-                }
+                .planning-fullscreen .p-task:hover .p-task-title { white-space: normal; overflow: visible; text-overflow: unset; }
                 .planning-fullscreen .p-task-time { font-size: 13px !important; font-weight: 800 !important; margin-bottom: 4px !important; color: #495057 !important; }
                 .planning-fullscreen .p-add-btn { display: none !important; }
                 .planning-fullscreen .p-task button { display: none !important; }
@@ -1826,68 +2263,24 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         // Save current order (including any new users)
         localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
 
-        let headerHTML = "";
-        if (isCurrentlyFullscreen) {
-            headerHTML = `
-                <header style="z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; background: rgba(0,0,0,0.2); margin-bottom: 10px;">
-                    <h1 style="margin: 0; display:flex; align-items:center; gap: 15px; font-size: 20px; color: white !important;">
+        let headerHTML = `
+                <header style="z-index: 100; display: flex; align-items: center; justify-content: space-between;">
+                    <h1 style="margin: 0; display:flex; align-items:center; gap: 15px; font-size: 20px;">
                         📅 Planning Semaine
                     </h1>
-                    <div style="display:flex; gap: 20px; align-items:center;">
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">◀</button>
-                        <div style="display: flex; align-items: center; gap: 25px; color: white;">
-                            <div style="font-weight: 700; font-size: 18px; letter-spacing: 0.5px;">Du ${displayStart} au ${displayEnd}</div>
-                            <div style="font-weight: 900; font-size: 28px; color: var(--primary); background: rgba(255,255,255,0.05); padding: 5px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">S${window.getISOWeekNumber(startStr)}</div>
-                        </div>
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">▶</button>
+                    <div style="display:flex; gap: 12px; align-items:center;">
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)">◀</button>
+                        <span style="font-weight:600; font-size: 14px;">Du ${displayStart} au ${displayEnd}</span>
+                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)">▶</button>
                     </div>
                     <div class="p-header-controls" style="display:flex; gap: 12px;">
-                        <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Export</button>
-                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ TV</button>
-                        <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ V2</button>
-                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Tâche</button>
+                        <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Exporter les données</button>
+                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ Plein Écran</button>
+                        <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ Plein Écran N°2</button>
+                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Nouvelle Tâche</button>
                     </div>
                 </header>
-            `;
-        } else {
-            headerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #007AFF, #00C7BE); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(0, 122, 255, 0.2);">
-                        <span style="font-size: 28px;">📅</span>
-                    </div>
-                    <div>
-                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Planning Hebdomadaire</h1>
-                        <div style="margin: 4px 0 0 0; font-size: 14px; color: white; font-weight: 600;">
-                            Du ${displayStart} au ${displayEnd}
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin-left: auto; margin-right: 30px; display: flex; align-items: center;">
-                    <div style="font-weight: 900; font-size: 52px; color: #5AC8FA; letter-spacing: -2px; line-height: 1; position: relative; text-shadow: 0 0 20px rgba(90, 200, 250, 0.3);">
-                        S${window.getISOWeekNumber(startStr)}
-                        <div style="position: absolute; bottom: -8px; right: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #5AC8FA; font-weight: 800; opacity: 0.6;">Semaine</div>
-                    </div>
-                </div>
-
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <div style="display:flex; gap: 8px; align-items:center; background: rgba(255,255,255,0.05); padding: 5px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)" style="background: none; border: none; color: white; padding: 8px 12px; cursor: pointer; border-radius: 8px;">◀</button>
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)" style="background: none; border: none; color: white; padding: 8px 12px; cursor: pointer; border-radius: 8px;">▶</button>
-                    </div>
-                    
-                    <div class="p-header-controls" style="display:flex; gap: 10px;">
-                        <button class="btn-secondary" onclick="openPlanningExportModal()" style="border-radius: 12px; height: 44px; padding: 0 15px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; font-size: 13px; font-weight: 600; cursor: pointer;">📤 Export</button>
-                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" style="border-radius: 12px; height: 44px; padding: 0 15px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; font-size: 13px; font-weight: 600; cursor: pointer;">⛶ TV</button>
-                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')" style="border-radius: 12px; height: 44px; padding: 0 20px; background: #007AFF; font-weight: 700; border: none; color: white; cursor: pointer; display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 18px;">+</span> Tâche
-                        </button>
-                    </div>
-                </div>
-            </div>
-            `;
-        }
+        `;
 
         // Ensure we define startStr globally for toggleRefresh
         window.currentPlanningMonday = startStr;
@@ -1899,16 +2292,10 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                             Collaborateur
                         </div>
                         ${weekDays.map(d => {
-            let style = 'background: inherit;';
-            if (window.isClosedDay(d)) {
-                style = 'background-color: #ff3b30 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
-            } else if (d === new Date().toISOString().split('T')[0]) {
-                style = 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
-            } else if (window.isJoursFerieFrance(d)) {
-                style = 'background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 10px, rgba(0,0,0,0.05) 10px, rgba(0,0,0,0.05) 20px) !important; color: inherit;';
-            }
-            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${style}">${formatShortDate(d)}</div>`;
-        }).join('')}
+                            const isToday = d === new Date().toISOString().split('T')[0];
+                            const todayStyle = isToday ? 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);' : 'background: inherit;';
+                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
+                        }).join('')}
         `;
 
         let rowsHTML = '';
@@ -1927,36 +2314,24 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             rowsHTML += '</div>';
 
             weekDays.forEach(d => {
-                let cellStyle = '';
-                if (window.isClosedDay(d)) {
-                    cellStyle = 'background: rgba(255, 59, 48, 0.15) !important;';
-                } else if (d === new Date().toISOString().split('T')[0]) {
-                    cellStyle = 'background: rgba(45, 161, 64, 0.15) !important;';
-                } else if (window.isJoursFerieFrance(d)) {
-                    cellStyle = 'background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(120,120,120,0.1) 10px, rgba(120,120,120,0.1) 20px) !important;';
-                }
+                const isToday = d === new Date().toISOString().split('T')[0];
+                const todayStyle = isToday ? 'background: rgba(45, 161, 64, 0.15) !important;' : '';
                 const rawTasks = (tasksByUserDate[u.id] && tasksByUserDate[u.id][d]) ? tasksByUserDate[u.id][d] : [];
-                // Tri automatique: 1. Non faites en haut, 2. Toute la journée en haut, 3. Chronologique
+                // Tri: Tâches non faites en haut, faites en bas
                 const dayTasks = [...rawTasks].sort((a, b) => {
                     const doneA = a.done === 'true' ? 1 : 0;
                     const doneB = b.done === 'true' ? 1 : 0;
-                    if (doneA !== doneB) return doneA - doneB;
-
-                    const isAllDayA = (a.start_time.indexOf('00:00') === 0 && a.end_time.indexOf('00:00') === 0);
-                    const isAllDayB = (b.start_time.indexOf('00:00') === 0 && b.end_time.indexOf('00:00') === 0);
-                    if (isAllDayA !== isAllDayB) return isAllDayA ? -1 : 1;
-
-                    return a.start_time.localeCompare(b.start_time);
+                    return doneA - doneB;
                 });
 
-                rowsHTML += `<div class="p-cell" style="padding: 4px; border-bottom: 1px solid; min-height: 50px; display: flex; flex-direction: column; gap: 4px; position:relative; ${cellStyle}">`;
+                rowsHTML += `<div class="p-cell" style="padding: 4px; border-bottom: 1px solid; min-height: 50px; display: flex; flex-direction: column; gap: 4px; position:relative; ${todayStyle}">`;
 
                 dayTasks.forEach(t => {
                     const parsedTitle = t.title.split(':::DESC:::')[0];
                     const taskDesc = t.title.includes(':::DESC:::') ? t.title.split(':::DESC:::')[1] : '';
                     const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
                     const isDone = t.done === 'true' || t.done === true;
-
+                    
                     // Store task data for click handler
                     const taskDataEscaped = JSON.stringify(t).replace(/"/g, '&quot;');
 
@@ -1965,14 +2340,14 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                         timeHtml = `<div class="p-task-time" style="font-size: 10px; font-weight:bold; margin-bottom: 2px;">${t.start_time.substring(0, 5)} - ${t.end_time.substring(0, 5)}</div>`;
                     }
                     rowsHTML += `
-                        <div class="p-task" data-task-id="${t.id}" data-task-done="${isDone}" onclick="window.openEditTaskModal(${taskDataEscaped}, '${startStr}', event)" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; border-left: 4px solid ${userColor} !important; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
+                        <div class="p-task" data-task-id="${t.id}" data-task-done="${isDone}" onclick="window.openEditTaskModal(${taskDataEscaped}, '${startStr}', event)" style="background: ${userColor}30 !important; padding: 4px 6px; border-radius: 4px; border-left: 4px solid ${userColor} !important; color: ${userColor}; ${isDone ? 'opacity: 0.4; filter: grayscale(0.8);' : ''}">
                             <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
                                 ${timeHtml}
                                 <div class="p-task-title" style="font-size: 11px; font-weight: 800; line-height: 1.2; ${isDone ? 'text-decoration: line-through;' : ''}" title="${window.escapeHTML(parsedTitle)}">${window.escapeHTML(parsedTitle)}</div>
                             </div>
                             <div class="p-task-actions">
-                                <button class="btn-sm" style="background: transparent; border:none; color: ${isDone ? '#34C759' : '#fff'}; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="event.stopPropagation(); window.toggleAdminTaskStatus('${t.id}', ${isDone}, '${startStr}', event)" title="${isDone ? 'Marquer comme en cours' : 'Valider la tâche'}">${isDone ? '✅' : '✔️'}</button>
-                                <button class="btn-sm" style="background: transparent; border:none; color: #ff6b6b; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="event.stopPropagation(); window.deleteAdminTask('${t.id}', '${startStr}')" title="Supprimer">×</button>
+                                <button class="btn-sm" style="background: transparent; border:none; color: ${isDone ? '#34C759' : '#fff'}; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="window.toggleAdminTaskStatus('${t.id}', ${isDone}, '${startStr}', event)" title="${isDone ? 'Marquer comme en cours' : 'Valider la tâche'}">${isDone ? '✅' : '✔️'}</button>
+                                <button class="btn-sm" style="background: transparent; border:none; color: #ff6b6b; padding: 2px; font-size: 14px; cursor: pointer; line-height:1;" onclick="window.deleteAdminTask('${t.id}', '${startStr}')" title="Supprimer">×</button>
                             </div>
                         </div>
                     `;
@@ -1987,7 +2362,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     </div>
                 </div>
         `;
-
+        
         const finalContent = headerHTML + gridHTML + rowsHTML;
 
         // --- Fullscreen V2 (Planning 75% + Slideshow 25%) injection point ---
@@ -2001,7 +2376,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                         ${finalContent}
                     </div>
                 `;
-                return;
+                return; 
             }
         }
 
@@ -2010,7 +2385,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         try {
             const saved = localStorage.getItem('planning_fs_config');
             if (saved) fsConfig = JSON.parse(saved);
-        } catch (e) { }
+        } catch (e) {}
 
         const slideshowConfigHTML = `
             <div id="integrated-fs-config" style="display: flex; align-items: center; gap: 40px; width: 100%;">
@@ -2031,35 +2406,16 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
                 <div id="fs-files-mini-grid" style="flex: 1; display: flex; gap: 10px; overflow-x: auto; padding: 5px; scrollbar-width: thin;">
                     ${fsConfig.files.map((f, i) => {
-            const isPdf = f.toLowerCase().endsWith('.pdf');
-            const url = `${config.api.workerUrl}/get/${f}`;
-            return `
+                            const isPdf = f.toLowerCase().endsWith('.pdf');
+                            const url = `${config.api.workerUrl}/get/${f}`;
+                        return `
                             <div style="position: relative; height: 60px; aspect-ratio: 16/10; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
                                 ${isPdf ? `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; background: #1a1a1a; font-size: 14px;">📕</div>` : `<img src="${url}" loading="lazy" style="width:100%; height:100%; object-fit: cover;">`}
                                 <button onclick="removeFSFile(${i})" style="position:absolute; top:2px; right:2px; background: rgba(220,38,38,0.9); border:none; color:white; width:18px; height:18px; border-radius:4px; cursor:pointer; font-size:9px;">✕</button>
                             </div>
                         `;
-        }).join('')}
+                    }).join('')}
                     ${fsConfig.files.length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-left: auto; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
-                    <label style="font-weight: 800; color: #ff3b30; font-size: 12px; text-transform: uppercase;">🔒 Jours Fermés (Général)</label>
-                    <div style="display: flex; flex-direction: column; gap: 4px; max-height: 80px; overflow-y: auto; width: 100%; padding-right: 5px; scrollbar-width: thin;" id="closed-days-list">
-                        ${(window.currentClosedDays || []).map((interval, i) => {
-            const start = interval.start || interval;
-            const end = interval.end || interval;
-            return `
-                            <div style="display:flex; align-items:center; gap: 8px;">
-                                <input type="date" class="form-input" style="height: 24px; font-size: 11px; padding: 0 4px;" value="${start}" onchange="window.updateClosedDay(${i}, 'start', this.value)">
-                                <span style="color:#fff; font-size:10px;">au</span>
-                                <input type="date" class="form-input" style="height: 24px; font-size: 11px; padding: 0 4px;" value="${end}" onchange="window.updateClosedDay(${i}, 'end', this.value)">
-                                <button onclick="window.removeClosedDay(${i})" style="background: rgba(255, 59, 48, 0.2); border: 1px solid rgba(255,59,48,0.5); color: #fff; padding: 2px 6px; border-radius: 4px; cursor:pointer; font-size:10px; flex-shrink:0;">✕</button>
-                            </div>`;
-        }).join('')}
-                    </div>
-                    ${(window.currentClosedDays || []).length === 0 ? `<span style="color: #666; font-size: 10px; font-style: italic;">Aucun intervalle configuré</span>` : ''}
-                    <button class="btn-sm btn-primary" style="font-size: 10px; padding: 4px 10px; margin-top: 2px;" onclick="window.addClosedDay()">+ Ajouter Intervalle</button>
                 </div>
             </div>
         `;
@@ -2067,16 +2423,8 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         if (existingContainer) {
             existingContainer.setAttribute('data-monday', startStr);
             const mainArea = document.getElementById('planning-main-desktop');
-            const footerArea = document.getElementById('planning-footer-config');
             if (mainArea) {
                 mainArea.innerHTML = finalContent;
-                if (footerArea) {
-                    footerArea.innerHTML = `
-                             <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
-                                 ${slideshowConfigHTML}
-                             </div>
-                    `;
-                }
             } else {
                 // Fallback for V2 or if structure changed
                 existingContainer.innerHTML = `
@@ -2094,12 +2442,12 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             }
         } else {
             content.innerHTML = `
-                <div id="integrated-planning-container" class="planning-inline" data-monday="${startStr}" style="height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+                <div id="integrated-planning-container" class="planning-inline" data-monday="${startStr}" style="height: calc(100vh - 80px); width: 100%; display: flex; flex-direction: column; overflow: hidden; border-radius: 8px;">
                     <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
                         <div id="planning-main-desktop" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                             ${finalContent}
                         </div>
-                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0; margin: 0 -30px -30px -30px;">
+                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0;">
                             <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
                                 ${slideshowConfigHTML}
                             </div>
@@ -2114,17 +2462,17 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     }
 };
 
-window.openPlanningExportModal = async function () {
+window.openPlanningExportModal = async function() {
     try {
         const users = await api.listUsers();
-        users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100008';
-
+        
         const today = new Date().toISOString().split('T')[0];
-
+        
         modal.innerHTML = `
             <div class="modal-box glass-panel" style="width: 550px; padding: 40px; animation: modalPop 0.3s ease-out;">
                 <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white; display: flex; align-items: center; gap: 12px;">
@@ -2172,7 +2520,7 @@ window.openPlanningExportModal = async function () {
             const cbs = document.querySelectorAll('.export-user-cb');
             const btn = document.getElementById('toggle-all-btn');
             const anyChecked = Array.from(cbs).some(cb => cb.checked);
-
+            
             cbs.forEach(cb => cb.checked = !anyChecked);
             btn.innerText = !anyChecked ? "Tout déselectionner" : "Tout sélectionner";
         };
@@ -2192,7 +2540,7 @@ window.openPlanningExportModal = async function () {
             try {
                 const tasks = await api.getAdminTasks(start, end);
                 const filteredTasks = tasks.filter(t => selectedUserIds.includes(t.user_id));
-
+                
                 // Create CSV
                 const headers = ["Date", "Employé", "Début", "Fin", "Tâche", "Statut"];
                 const userMap = {};
@@ -2221,7 +2569,7 @@ window.openPlanningExportModal = async function () {
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-
+                
                 modal.remove();
             } catch (e) {
                 alert("Erreur lors de l'export: " + e.message);
@@ -2235,7 +2583,7 @@ window.openPlanningExportModal = async function () {
     }
 };
 
-window.showConfirmModal = function (title, message, callback) {
+window.showConfirmModal = function(title, message, callback) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '100007';
@@ -2250,7 +2598,7 @@ window.showConfirmModal = function (title, message, callback) {
         </div>
     `;
     document.body.appendChild(overlay);
-
+    
     document.getElementById('confirm-cancel').onclick = () => overlay.remove();
     document.getElementById('confirm-ok').onclick = () => {
         overlay.remove();
@@ -2258,7 +2606,7 @@ window.showConfirmModal = function (title, message, callback) {
     };
 };
 
-window.showInfoModal = function (title, message) {
+window.showInfoModal = function(title, message) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '100006';
@@ -2285,7 +2633,7 @@ window.reorderPlanningUser = function (fromIndex, toIndex, weekStartStr) {
     renderAdminPlanning(weekStartStr);
 };
 
-window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false, isSilent = false) {
+window.autoSortPlanningUsers = async function (weekStartStr) {
     try {
         const users = await api.listUsers();
         // Compute week range
@@ -2300,56 +2648,57 @@ window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false, isSil
         try { tasks = await api.getAdminTasks(startStr, endStr); } catch (e) { }
 
         // Count tasks per user
+        const taskCount = {};
         const userTasks = {};
         users.forEach(u => {
+            taskCount[u.id] = 0;
             userTasks[u.id] = [];
         });
-        tasks.forEach(t => {
-            if (!userTasks[t.user_id]) userTasks[t.user_id] = [];
+        tasks.forEach(t => { 
+            taskCount[t.user_id] = (taskCount[t.user_id] || 0) + 1; 
+            if(!userTasks[t.user_id]) userTasks[t.user_id] = [];
             userTasks[t.user_id].push(t);
         });
-
-        // Helper to check if user has AT LEAST ONE task of type AT, AM, CP or RECUP
-        const hasInactifTask = (uid) => {
+        
+        // Helper to check if tasks are only AT or RECUP
+        const isOnlyInactif = (uid) => {
             const uT = userTasks[uid] || [];
-            return uT.some(t => {
-                const title = (t.title || "").toUpperCase().split(':::DESC:::')[0].trim();
-                return ["AT", "AM", "CP", "RECUP"].some(code =>
-                    title === code || title.startsWith(code + " ") || title.startsWith(code + "-") || title.startsWith(code + " -")
-                );
+            if (uT.length === 0) return 0; // 0 tasks is handled separately
+            return uT.every(t => {
+                const title = (t.title || "").toUpperCase();
+                return title.includes("AT") || title.includes("RECUP");
             });
         };
 
         // Sort strategy scores
-        // Score 0: Has ONLY active tasks
+        // Score 0: Has active tasks (not only AT/RECUP)
         // Score 1: Zero tasks
-        // Score 2: Has AT LEAST ONE inactive task (AM/CP/AT...)
+        // Score 2: Has only AT/RECUP (inactive)
         users.sort((a, b) => {
             const aT = userTasks[a.id] || [];
             const bT = userTasks[b.id] || [];
-
-            const aInactif = hasInactifTask(a.id);
-            const bInactif = hasInactifTask(b.id);
-
+            
+            const aInactif = isOnlyInactif(a.id);
+            const bInactif = isOnlyInactif(b.id);
+            
             let aScore = 0;
-            if (aInactif) aScore = 2; // Inactif takes priority for the bottom
-            else if (aT.length === 0) aScore = 1;
-
+            if (aT.length === 0) aScore = 1;
+            else if (aInactif) aScore = 2;
+            
             let bScore = 0;
-            if (bInactif) bScore = 2;
-            else if (bT.length === 0) bScore = 1;
-
+            if (bT.length === 0) bScore = 1;
+            else if (bInactif) bScore = 2;
+            
             if (aScore !== bScore) return aScore - bScore;
-
+            
             // If same score, sort by count DESC
             return bT.length - aT.length;
         });
 
         localStorage.setItem('planning_user_order', JSON.stringify(users.map(u => u.id)));
-        renderAdminPlanning(weekStartStr, isV2);
+        renderAdminPlanning(weekStartStr);
     } catch (e) {
-        console.error("Erreur tri automatique:", e);
-        if (!isSilent) alert("Erreur tri automatique: " + e.message);
+        alert("Erreur tri automatique: " + e.message);
     }
 };
 
@@ -2368,13 +2717,6 @@ window.changePlanningWeek = function (currentMondayStr, offsetDays) {
 };
 
 window.togglePlanningFullscreen = function () {
-    // In the main window, open a NEW window. In the FS window, just toggle.
-    const urlParams = new URLSearchParams(window.location.search);
-    if (!urlParams.get('fullscreen')) {
-        window.open('dashboard.html?fullscreen=1', '_blank', 'noopener,noreferrer');
-        return;
-    }
-
     const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
     if (!el) return;
@@ -2391,64 +2733,21 @@ window.togglePlanningFullscreen = function () {
     }
 };
 
-window.showFullscreenOverlay = function (mode) {
-    const overlay = document.createElement('div');
-    overlay.id = 'fs-interaction-overlay';
-    overlay.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999999; background:#000; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family: sans-serif;";
-    overlay.innerHTML = `
-        <img src="logo-pouchain.svg" style="width: 200px; margin-bottom: 40px;">
-        <h1 style="font-size: 32px; margin-bottom: 20px;">Mode Plein Écran ${mode === '2' ? 'N°2' : ''}</h1>
-        <p style="font-size: 18px; color: #888; margin-bottom: 50px;">Pour activer l'affichage correct du planning :</p>
-        <div style="padding: 20px 40px; border: 2px solid #2da140; border-radius: 12px; background: rgba(45, 161, 64, 0.1); animation: pulse 2s infinite;">
-            <p style="font-size: 24px; font-weight: bold; margin: 0; color: #2da140;">Appuyez sur ENTRÉE</p>
-        </div>
-        <style>
-            @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
-        </style>
-    `;
-    document.body.appendChild(overlay);
-
-    const handleKey = (e) => {
-        if (e.key === 'Enter') {
-            document.removeEventListener('keydown', handleKey);
-            overlay.remove();
-            if (mode === '2') {
-                window.togglePlanningFullscreenV2();
-            } else {
-                window.togglePlanningFullscreen();
-            }
-        }
-    };
-    document.addEventListener('keydown', handleKey);
-};
-
 // Listen for fullscreen exit to restore padding safely
 document.addEventListener('fullscreenchange', () => {
     const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
-    const urlParams = new URLSearchParams(window.location.search);
-
     if (el && !document.fullscreenElement) {
         el.classList.remove('planning-fullscreen');
         el.classList.add('planning-inline');
         if (scrollArea) scrollArea.style.padding = '0 20px 20px 20px'; // restore
-
-        // If we in a dedicated FS window and we exit FS, maybe we should close or show the button?
-        // For now we just stay.
     }
 });
 
 // --- Fullscreen V2 Logic (Split Screen) ---
-window.togglePlanningFullscreenV2 = function () {
-    // In the main window, open a NEW window. In the FS window, just toggle.
-    const urlParams = new URLSearchParams(window.location.search);
-    if (!urlParams.get('fullscreen')) {
-        window.open('dashboard.html?fullscreen=2', '_blank', 'noopener,noreferrer');
-        return;
-    }
-
+window.togglePlanningFullscreenV2 = function() {
     let v2 = document.getElementById('planning-v2-container');
-
+    
     // If opening
     if (!v2) {
         v2 = document.createElement('div');
@@ -2465,7 +2764,7 @@ window.togglePlanningFullscreenV2 = function () {
         document.body.appendChild(v2);
         v2.classList.add('active');
         v2.requestFullscreen().catch(e => console.warn("FS failed", e));
-
+        
         startSlideshow();
         renderAdminPlanning(window.currentPlanningMonday, true); // Render grid into p-v2-main
     } else {
@@ -2473,9 +2772,9 @@ window.togglePlanningFullscreenV2 = function () {
         v2.classList.remove('active');
         stopSlideshow();
         if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => { });
+            document.exitFullscreen().catch(() => {});
         }
-
+        
         setTimeout(() => {
             if (v2 && v2.parentNode) v2.parentNode.removeChild(v2);
             renderAdminPlanning(window.currentPlanningMonday);
@@ -2486,14 +2785,14 @@ window.togglePlanningFullscreenV2 = function () {
 let slideInterval = null;
 function startSlideshow() {
     if (slideInterval) clearInterval(slideInterval);
-
+    
     const configStr = localStorage.getItem('planning_fs_config');
     let fsConfig = { timer: 10, files: [] };
     try {
         if (configStr) fsConfig = JSON.parse(saved);
-    } catch (e) {
+    } catch(e) {
         // Fallback to reading the one we just saved if local storage parse fails
-        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch (e2) { }
+        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch(e2) {}
     }
 
     const img = document.getElementById('p-v2-slideshow');
@@ -2555,7 +2854,7 @@ function stopSlideshow() {
     slideInterval = null;
 }
 
-window.handleFSDirectUpload = async function (input) {
+window.handleFSDirectUpload = async function(input) {
     if (!input.files || input.files.length === 0) return;
 
     const btn = document.querySelector('button[onclick*="fs-upload-input"]');
@@ -2565,7 +2864,7 @@ window.handleFSDirectUpload = async function (input) {
 
     try {
         const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
-
+        
         for (const file of input.files) {
             // The API returns the full key (path + filename)
             const res = await api.uploadFile(file, 'fullscreen_slides/');
@@ -2576,13 +2875,13 @@ window.handleFSDirectUpload = async function (input) {
 
         localStorage.setItem('planning_fs_config', JSON.stringify(config));
         showSuccessModal(`${input.files.length} fichier(s) ajouté(s) au diaporama.`);
-
+        
         // Sync live V2
         if (document.getElementById('planning-v2-container')) {
             stopSlideshow();
             startSlideshow();
         }
-
+        
         renderAdminPlanning(window.currentPlanningMonday);
     } catch (e) {
         alert("Erreur lors du téléchargement : " + e.message);
@@ -2593,7 +2892,7 @@ window.handleFSDirectUpload = async function (input) {
     }
 };
 
-window.openFSDocPicker = async function () {
+window.openFSDocPicker = async function() {
     const allFiles = await api.listFiles();
     const images = allFiles.filter(f => {
         const ext = f.key.split('.').pop().toLowerCase();
@@ -2646,55 +2945,55 @@ window.openFSDocPicker = async function () {
     };
 };
 
-window.addSelectedFSDocs = function () {
+window.addSelectedFSDocs = function() {
     const selected = Array.from(document.querySelectorAll('.fs-pick-cb:checked')).map(cb => cb.value);
     const configStr = localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}';
     const fsConfig = JSON.parse(configStr);
-
+    
     fsConfig.files = [...new Set([...fsConfig.files, ...selected])];
     localStorage.setItem('planning_fs_config', JSON.stringify(fsConfig));
-
+    
     const overlay = document.querySelector('.modal-overlay');
     if (overlay) overlay.remove();
-
+    
     showSuccessModal(`${selected.length} document(s) ajouté(s).`);
-
+    
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-
+    
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
 
-window.removeFSFile = function (index) {
+window.removeFSFile = function(index) {
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.files.splice(index, 1);
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-
+    
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-
+    
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
-window.saveFSConfig = function (silent = false) {
+window.saveFSConfig = function(silent = false) {
     const timer = parseInt(document.getElementById('fs-timer').value) || 10;
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.timer = timer;
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-
+    
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-
+    
     if (!silent) showSuccessModal("Configuration enregistrée !");
 };
 
@@ -2702,8 +3001,7 @@ window.deleteAdminTask = async function (taskId, currentWeekStartStr) {
     if (confirm("Voulez-vous vraiment supprimer cette tâche ?")) {
         try {
             await api.deleteAdminTask(taskId);
-            const isV2 = !!document.getElementById('planning-v2-container');
-            window.autoSortPlanningUsers(currentWeekStartStr, isV2);
+            renderAdminPlanning(currentWeekStartStr);
         } catch (e) {
             alert("Erreur de suppression: " + e.message);
         }
@@ -2714,7 +3012,7 @@ window.toggleAdminTaskStatus = async function (taskId, currentStatusLegacy, curr
     // Optimistic UI Update
     const btn = event ? event.target.closest('button') : null;
     const taskEl = event ? event.target.closest('.p-task') : null;
-
+    
     // Check current state from DOM if available, otherwise use legacy param
     const currentStatus = taskEl ? (taskEl.getAttribute('data-task-done') === 'true') : !!currentStatusLegacy;
     const nextStatus = !currentStatus;
@@ -2745,7 +3043,7 @@ window.toggleAdminTaskStatus = async function (taskId, currentStatusLegacy, curr
 
     try {
         await api.updateTaskAdmin(taskId, nextStatus);
-
+        
         // Refresh only in fullscreen mode
         const isFS = !!document.fullscreenElement;
         if (isFS) renderAdminPlanning(currentWeekStartStr);
@@ -2771,8 +3069,8 @@ window.openNewTaskModal = async function (defaultDateStr, prefillUserId = '', cu
                 <form id="new-task-form" onsubmit="event.preventDefault(); submitNewTask('${refWeek}')">
                     <div style="display: flex; gap: 16px;">
                         <div class="form-group" style="flex:1;">
-                            <label>Date de début <span id="week-num-display" style="margin-left: 10px; font-weight: 800; color: #2da140; font-size: 12px; text-transform: uppercase;">Semaine ${window.getISOWeekNumber(defaultDateStr)}</span></label>
-                            <input type="date" class="form-input" id="task-date" required value="${defaultDateStr}" onchange="document.getElementById('task-date-end').value = this.value; document.getElementById('week-num-display').innerText = 'Semaine ' + window.getISOWeekNumber(this.value)">
+                            <label>Date de début</label>
+                            <input type="date" class="form-input" id="task-date" required value="${defaultDateStr}" onchange="document.getElementById('task-date-end').value = this.value">
                         </div>
                         <div class="form-group" style="flex:1;">
                             <label>Date de fin</label>
@@ -2863,9 +3161,7 @@ window.submitNewTask = async function (refWeekStr) {
     try {
         await Promise.all(promises);
         closeModal('new-task-modal');
-        // Determine if we are in Fullscreen V2 to pass it to the sort
-        const isV2 = !!document.getElementById('planning-v2-container');
-        window.autoSortPlanningUsers(refWeekStr, isV2);
+        renderAdminPlanning(refWeekStr);
     } catch (e) {
         alert("Erreur lors de l'ajout: " + e.message);
     }
@@ -2883,7 +3179,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
 
     try {
         const users = await api.listUsers();
-
+        
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.id = 'edit-task-modal';
@@ -2892,8 +3188,8 @@ window.openEditTaskModal = async function (task, refWeek, event) {
                 <div class="modal-header">Modifier la Tâche</div>
                 <form id="edit-task-form" onsubmit="event.preventDefault(); submitEditTask('${task.id}', '${refWeek}')">
                     <div class="form-group">
-                        <label>Date <span id="edit-week-num-display" style="margin-left: 10px; font-weight: 800; color: #2da140; font-size: 12px; text-transform: uppercase;">Semaine ${window.getISOWeekNumber(task.date)}</span></label>
-                        <input type="date" class="form-input" id="edit-task-date" required value="${task.date}" onchange="document.getElementById('edit-week-num-display').innerText = 'Semaine ' + window.getISOWeekNumber(this.value)">
+                        <label>Date</label>
+                        <input type="date" class="form-input" id="edit-task-date" required value="${task.date}">
                     </div>
                     <div class="form-group">
                         <label>Salarié Assigné</label>
@@ -2938,7 +3234,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
             const newDesc = document.getElementById('edit-task-desc').value;
             const newDate = document.getElementById('edit-task-date').value;
             const hasTime = document.getElementById('edit-task-has-time').checked;
-
+            
             let startTime = "00:00:00";
             let endTime = "00:00:00";
             if (hasTime) {
@@ -2958,8 +3254,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
                     end_time: endTime
                 });
                 closeModal('edit-task-modal');
-                const isV2 = !!document.getElementById('planning-v2-container');
-                window.autoSortPlanningUsers(refWeekStr, isV2);
+                renderAdminPlanning(refWeekStr);
             } catch (e) {
                 alert("Erreur lors de la modification: " + e.message);
             }
@@ -2983,31 +3278,15 @@ window.renderAdminUsers = async function () {
     content.innerHTML = '<div style="text-align:center; margin-top:50px;">Chargement des utilisateurs...</div>';
 
     try {
-        const users = await api.listUsers(true);
+        const users = await api.listUsers();
 
         content.innerHTML = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
-            <!-- Header Section -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #6366f1, #4f46e5); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(99, 102, 241, 0.2);">
-                        <span style="font-size: 28px;">👥</span>
-                    </div>
-                    <div>
-                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Gestion des Utilisateurs</h1>
-                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Administration des comptes et accès</p>
-                    </div>
+            <header>
+                <h1>Utilisateurs</h1>
+                <div class="actions">
+                    <button class="btn-primary" onclick="openNewUserModal()">+ Nouvel Utilisateur</button>
                 </div>
-
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <button class="btn-primary" onclick="openNewUserModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #6366f1; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 18px;">+</span> Nouvel Utilisateur
-                    </button>
-                    <button onclick="window.renderAdminUsers()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                    </button>
-                </div>
-            </div>
+            </header>
 
                 <div class="table-container">
                     <table>
@@ -3037,7 +3316,7 @@ window.renderAdminUsers = async function () {
                                 <td>${safeEmail}</td>
                                 <td>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
-                    ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : (u.role === 'visiteur' ? '#8E8E93' : 'var(--badge-user-bg)')}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'white'}">${u.role}</span>`
+                    ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : 'var(--badge-user-bg)'}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'var(--badge-user-text)'}">${u.role}</span>`
                     : `<select class="form-input" style="padding: 4px 8px; font-size: 13px; width: auto;" onchange="changeUserRole('${u.id}', this.value)">
                                             <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
                                             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
@@ -3059,8 +3338,7 @@ window.renderAdminUsers = async function () {
                         </tbody>
                     </table>
                 </div>
-            </div>
-        `;
+            `;
     } catch (e) {
         content.innerHTML = `<div style="color:red">Erreur chargement utilisateurs: ${e.message}</div>`;
     }
@@ -3173,47 +3451,19 @@ window.createNewUser = async function () {
 };
 
 
-window.showCustomModal = function (title, message, icon = '⚠️', color = 'var(--primary-color)') {
+window.showSuccessModal = function (message) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.id = 'custom-modal-' + Date.now();
-    overlay.style.zIndex = '1000000';
+    overlay.id = 'success-modal';
     overlay.innerHTML = `
-        <div class="modal-box" style="text-align: center; max-width: 450px;">
-            <div style="font-size: 64px; margin-bottom: 20px;">${icon}</div>
-            <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 24px; font-weight: 800;">${title}</h3>
-            <div style="margin-bottom: 30px; color: var(--text-secondary); line-height: 1.6; font-size: 17px;">${message}</div>
-            <button class="btn-primary" style="width: 100%; justify-content: center; height: 50px; border-radius: 25px; font-size: 18px; background-color: ${color};" onclick="this.closest('.modal-overlay').remove()">Compris</button>
+        <div class="modal-box" style="text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
+            <h3 style="margin-top: 0; margin-bottom: 16px; font-size: 20px;">Succès</h3>
+            <p style="margin-bottom: 24px; color: var(--text-secondary);">${message}</p>
+            <button class="btn-primary" style="width: 100%; justify-content: center;" onclick="closeModal('success-modal')">OK</button>
         </div>
     `;
     document.body.appendChild(overlay);
-};
-
-window.showSuccessModal = function (message) {
-    window.showCustomModal("Succès", message, '✅', 'var(--primary-color)');
-};
-
-window.showVisitorWelcomeModal = function () {
-    window.showCustomModal(
-        "Bienvenue (Mode Démo)",
-        "Vous êtes connecté en tant que <b>Visiteur</b>.<br><br>Vous pouvez explorer toute l'interface admin, consulter les plannings, les documents et les configurations.<br><br>Cependant, <b>aucune modification de données</b> n'est autorisée avec ce compte.",
-        "👋",
-        '#007AFF'
-    );
-};
-
-// Redéfinition globale de alert() pour utiliser nos modales élégantes
-const _originalAlert = window.alert;
-window.alert = function (message) {
-    if (!message) return;
-    const msgStr = String(message);
-    if (msgStr.includes("Désolé")) {
-        window.showCustomModal("Accès Limité", msgStr, '🔒', '#8E8E93');
-    } else if (msgStr.includes("Succès") || msgStr.includes("réussi") || msgStr.includes("envoyée") || msgStr.includes("ajoutée")) {
-        window.showCustomModal("Succès", msgStr, '✅', 'var(--primary-color)');
-    } else {
-        window.showCustomModal("Information", msgStr, 'ℹ️', '#007AFF');
-    }
 };
 
 window.openAdminChangePasswordModal = function (id, firstName, lastName, email) {
@@ -3449,7 +3699,7 @@ async function refreshAdminData() {
             api.listFiles(),
             api.getVehicles()
         ]);
-
+        
         adminFilesCache = files;
         if (window.updateVehicleSidebarBadge) window.updateVehicleSidebarBadge(vehicles);
 
@@ -5004,7 +5254,7 @@ window.renderAdminMaterialRequests = async function () {
         // Process archives: Fetch content of each CSV and parse it
         let historyConfirmed = [];
         let historyRefused = [];
-
+        
         try {
             console.log("Chargement de l'historique R2...", archivedFiles);
             const archiveContents = await Promise.all(
@@ -5013,13 +5263,13 @@ window.renderAdminMaterialRequests = async function () {
                         const r = await fetch(`${config.api.workerUrl}/get/${f.key}?t=${Date.now()}`);
                         if (!r.ok) return null;
                         return await r.text();
-                    } catch (e) {
+                    } catch(e) { 
                         console.error(`Echec fetch archive ${f.key}:`, e);
-                        return null;
+                        return null; 
                     }
                 })
             );
-
+            
             archiveContents.forEach(csv => {
                 if (!csv) return;
                 const lines = csv.split('\n').filter(l => l.trim());
@@ -5061,11 +5311,11 @@ window.renderAdminMaterialRequests = async function () {
                     else if (status === 'refused') historyRefused.push(item);
                 });
             });
-
+            
             // Sort history by date desc
-            historyConfirmed.sort((a, b) => new Date(b.date) - new Date(a.date));
-            historyRefused.sort((a, b) => new Date(b.date) - new Date(a.date));
-
+            historyConfirmed.sort((a,b) => new Date(b.date) - new Date(a.date));
+            historyRefused.sort((a,b) => new Date(b.date) - new Date(a.date));
+            
         } catch (err) {
             console.error("Erreur générale archives:", err);
         }
@@ -5078,30 +5328,13 @@ window.renderAdminMaterialRequests = async function () {
         };
 
         let html = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
-            <!-- Header Section -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #FF9500, #FF3B30); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(255, 149, 0, 0.2);">
-                        <span style="font-size: 28px;">📦</span>
-                    </div>
-                    <div>
-                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Demande de Matériel</h1>
-                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Gestion des demandes collaborateurs</p>
-                    </div>
+            <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+                <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">Demande de matériel</h1>
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()">⚙️ Catégories</button>
+                    <button class="btn-secondary" onclick="openAdminAlertConfigModal()">🔔 Config Alertes</button>
                 </div>
-
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <button class="btn-secondary" onclick="openAdminCategoryMgmtModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 16px;">⚙️</span> Catégories
-                    </button>
-                    <button onclick="window.renderAdminMaterialRequests()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                    </button>
-                </div>
-            </div>
-            
-            <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
+            </header>
 
             <div class="material-admin-container" style="display: grid; gap: 40px; padding-bottom: 60px;">
         `;
@@ -5149,7 +5382,7 @@ window.renderAdminMaterialRequests = async function () {
                 catRequests.forEach(req => {
                     const userName = [req.profiles?.first_name, req.profiles?.last_name].filter(Boolean).join(' ') || 'Inconnu';
                     const statusInfo = groups[req.status] || { label: req.status, color: '#fff' };
-
+                    
                     html += `
                         <tr>
                             <td><div style="font-weight: 600;">${userName}</div></td>
@@ -5246,8 +5479,8 @@ window.renderAdminMaterialRequests = async function () {
                 ${renderHistoryTable(historyRefused, 'Demandes Refusées', '#FF3B30')}
             </section>
         `;
-
-        html += `</div></div></div>`; // Close scroll area, material-admin-container, and outer container
+        
+        html += `</div>`; // Close material-admin-container
 
         content.innerHTML = html;
 
@@ -5266,7 +5499,7 @@ window.renderAdminMaterialRequests = async function () {
             try {
                 const profile = await auth.getCurrentProfile();
                 const adminName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : 'Admin';
-
+                
                 // Now we just update status, deletion happens during archiving
                 await api.updateMaterialRequestStatus(id, status, adminName);
                 renderAdminMaterialRequests();
@@ -5328,16 +5561,16 @@ window.renderAdminMaterialRequests = async function () {
         window.openAdminAlertConfigModal = () => {
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
-
+            
             const currentAlertUsers = new Set(configData.alert_users || []);
-
+            
             modal.innerHTML = `
                 <div class="modal-box glass-panel" style="width: 550px; padding: 40px;">
                     <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white;">Configuration des alertes Planning</h2>
                     <p style="color: #aaa; font-size: 14px; margin-bottom: 24px;">Sélectionnez les personnes qui recevront une tâche "Check besoin de matériel" sur leur planning dès qu'une demande est faite.</p>
                     
                     <div style="max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 20px; padding: 16px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.05);">
-                        ${allUsers.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || '')).map(u => `
+                        ${allUsers.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || '')).map(u => `
                             <label style="display: flex; align-items: center; gap: 16px; padding: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; border-radius: 12px; margin-bottom: 4px;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
                                 <input type="checkbox" class="alert-user-cb" value="${u.id}" ${currentAlertUsers.has(u.id) ? 'checked' : ''} style="width: 20px; height: 20px; accent-color: var(--primary);">
                                 <div style="display:flex; flex-direction:column;">
@@ -5356,34 +5589,10 @@ window.renderAdminMaterialRequests = async function () {
             `;
             document.body.appendChild(modal);
 
-            window.triggerMaterialReminder = async () => {
-                const btn = document.getElementById('btn-test-reminders');
-                if (btn) {
-                    btn.disabled = true;
-                    btn.innerText = "⌛ Test en cours...";
-                }
-
-                try {
-                    const result = await api.sendMaterialReminders();
-                    if (result.success) {
-                        alert(`✅ Test réussi !\nDemandes trouvées : ${result.count}\nAdmins notifiés : ${result.notified}`);
-                    } else {
-                        alert(`⚠️ ${result.message || 'Aucune notification envoyée.'}`);
-                    }
-                } catch (e) {
-                    alert("❌ Erreur lors du test : " + e.message);
-                } finally {
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.innerText = "🔔 Tester les rappels (+7j)";
-                    }
-                }
-            };
-
             window.saveAlertConfig = async () => {
                 const cbs = document.querySelectorAll('.alert-user-cb:checked');
                 const selectedIds = Array.from(cbs).map(cb => cb.value);
-
+                
                 try {
                     await api.saveMaterialConfig(selectedIds);
                     modal.remove();
@@ -5400,41 +5609,21 @@ window.renderAdminMaterialRequests = async function () {
 };
 
 // --- VEHICLE MANAGEMENT (Admin) ---
-window.renderAdminVehicles = async function () {
+window.renderAdminVehicles = async function() {
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('nav-vehicles').classList.add('active');
 
     const content = document.getElementById('admin-content');
     content.innerHTML = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
-            <!-- Header Section -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #007AFF, #0056b3); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(0, 122, 255, 0.2);">
-                        <span style="font-size: 28px;">🚐</span>
-                    </div>
-                    <div>
-                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Flotte Automobile</h1>
-                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Gestion des véhicules et abonnements</p>
-                    </div>
-                </div>
-
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <button class="btn-primary" onclick="openAddVehicleModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 18px;">+</span> Ajouter véhicule
-                    </button>
-                    <button class="btn-secondary" onclick="openDkvManagementModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: #34C759; font-weight: 700; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 16px;">💳</span> DKV
-                    </button>
-                    <button class="btn-secondary" onclick="openTollManagementModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: #007AFF; font-weight: 700; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 16px;">🛣️</span> Badges
-                    </button>
-                    <button onclick="window.renderAdminVehicles()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                    </button>
-                </div>
+        <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: white;">🚐 Flotte Automobile</h1>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-primary" onclick="openAddVehicleModal()">➕ Ajouter un véhicule</button>
+                <button class="btn-secondary" style="border-color: #34C759; color: #34C759;" onclick="openDkvManagementModal()">💳 Gestion DKV</button>
+                <button class="btn-secondary" style="border-color: #007AFF; color: #007AFF;" onclick="openTollManagementModal()">🛣️ Badges</button>
             </div>
+        </header>
         <div id="admin-vehicle-list-wrapper">
             <div class="loader-spinner" style="margin: 50px auto;"></div>
         </div>
@@ -5464,22 +5653,22 @@ window.renderAdminVehicles = async function () {
         `;
 
         if (vehicles.length === 0) {
-            html += `<tr><td colspan="6" style="text-align:center; padding: 40px; color: #888;">Aucun véhicule enregistré</td></tr>`;
+            html += `<tr><td colspan="7" style="text-align:center; padding: 40px; color: #888;">Aucun véhicule enregistré</td></tr>`;
         } else {
             vehicles.forEach(v => {
                 const userName = v.profiles ? `${v.profiles.first_name} ${v.profiles.last_name}`.trim() : '<span style="color:#666">Non affecté</span>';
-
+                
                 // Alert logic
                 let maintenanceAlert = false;
                 let maintenanceCritical = false;
                 let maintenanceLabel = "OK";
-
+                
                 if (v.next_maintenance_km) {
                     const diff = v.next_maintenance_km - v.last_mileage;
                     if (diff <= 0) { maintenanceCritical = true; maintenanceLabel = "Dépassé (km)"; }
                     else if (diff <= 2000) { maintenanceAlert = true; maintenanceLabel = "Bientôt (km)"; }
                 }
-
+                
                 if (v.next_maintenance_date && !maintenanceCritical) {
                     const today = new Date();
                     const target = new Date(v.next_maintenance_date);
@@ -5488,37 +5677,29 @@ window.renderAdminVehicles = async function () {
                     else if (diffDays <= 30) { maintenanceAlert = true; maintenanceLabel = "Bientôt (date)"; }
                 }
 
-                const maintenanceStyle = maintenanceCritical ? 'background: #FF3B30; color: white;' : (maintenanceAlert ? 'background: #FF9500; color: white;' : 'background: rgba(52, 199, 89, 0.1); color: #34C759;');
-                const maintenanceIcon = maintenanceCritical ? '🔴' : (maintenanceAlert ? '⚠️' : '✅');
-
-                // CT logic
+                // CT Alert Logic
                 let ctAlert = false;
                 let ctCritical = false;
-                let ctLabel = "OK";
-                const today = new Date();
+                let ctLabel = "À jour";
+                let ctIcon = '✅';
 
                 if (v.last_ct_date) {
-                    const ctDate = new Date(v.last_ct_date);
-                    const nextCt = new Date(ctDate);
-                    nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
-                    const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
+                    const today = new Date();
+                    const lastCt = new Date(v.last_ct_date);
+                    const interval = v.ct_interval_months || 12;
+                    const target = new Date(lastCt.setMonth(lastCt.getMonth() + interval));
+                    const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
 
-                    if (diffDays <= 0) {
-                        ctCritical = true;
-                        ctLabel = "À faire !";
-                    } else if (diffDays <= 60) {
-                        ctAlert = true;
-                        ctLabel = `Dans ${diffDays} j.`;
-                    } else {
-                        ctLabel = nextCt.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
-                    }
+                    if (diffDays <= 0) { ctCritical = true; ctLabel = "Expiré"; ctIcon = '🔴'; }
+                    else if (diffDays <= 60) { ctAlert = true; ctLabel = "Bientôt"; ctIcon = '⚠️'; }
                 } else {
-                    ctAlert = true;
-                    ctLabel = "Non renseigné";
+                    ctAlert = true; ctLabel = "Non renseigné"; ctIcon = '❓';
                 }
 
-                const ctStyle = ctCritical ? 'background: #FF3B30; color: white;' : (ctAlert ? 'background: #FF9500; color: white;' : 'background: rgba(0, 122, 255, 0.1); color: #007AFF;');
-                const ctIcon = ctCritical ? '🔴' : (ctAlert ? '⚠️' : '🛡️');
+                const ctStyle = ctCritical ? 'background: #FF3B30; color: white;' : (ctAlert ? 'background: #FF9500; color: white;' : 'background: rgba(52, 199, 89, 0.1); color: #34C759;');
+
+                const maintenanceStyle = maintenanceCritical ? 'background: #FF3B30; color: white;' : (maintenanceAlert ? 'background: #FF9500; color: white;' : 'background: rgba(52, 199, 89, 0.1); color: #34C759;');
+                const maintenanceIcon = maintenanceCritical ? '🔴' : (maintenanceAlert ? '⚠️' : '✅');
 
                 html += `
                     <tr class="vehicle-row" style="cursor: pointer;" onclick="if(!event.target.closest('button')) openVehicleDetailModal('${v.id}')">
@@ -5582,7 +5763,7 @@ window.renderAdminVehicles = async function () {
     }
 };
 
-window.openDkvManagementModal = async function () {
+window.openDkvManagementModal = async function() {
     const renderDkvList = async (container) => {
         try {
             const cards = await api.getDkvCards();
@@ -5636,26 +5817,26 @@ window.openDkvManagementModal = async function () {
     window.handleAddDkvCard = async () => {
         const cardNumber = document.getElementById('new-dkv-number').value.trim();
         const description = document.getElementById('new-dkv-desc').value.trim();
-        if (!cardNumber) return alert("N° de carte obligatoire");
-
+        if(!cardNumber) return alert("N° de carte obligatoire");
+        
         try {
             await api.saveDkvCard({ card_number: cardNumber, description });
             document.getElementById('new-dkv-number').value = '';
             document.getElementById('new-dkv-desc').value = '';
             renderDkvList(listContainer);
-        } catch (e) { alert(e.message); }
+        } catch(e) { alert(e.message); }
     };
 
     window.handleDeleteDkvCard = async (id) => {
-        if (!confirm("Supprimer cette carte ?")) return;
+        if(!confirm("Supprimer cette carte ?")) return;
         try {
             await api.deleteDkvCard(id);
             renderDkvList(listContainer);
-        } catch (e) { alert(e.message); }
+        } catch(e) { alert(e.message); }
     };
 };
 
-window.openTollManagementModal = async function () {
+window.openTollManagementModal = async function() {
     const renderTollList = async (container) => {
         try {
             const cards = await api.getTollCards();
@@ -5709,34 +5890,34 @@ window.openTollManagementModal = async function () {
     window.handleAddTollCard = async () => {
         const cardNumber = document.getElementById('new-toll-number').value.trim();
         const description = document.getElementById('new-toll-desc').value.trim();
-        if (!cardNumber) return alert("N° de badge obligatoire");
-
+        if(!cardNumber) return alert("N° de badge obligatoire");
+        
         try {
             await api.saveTollCard({ card_number: cardNumber, description });
             document.getElementById('new-toll-number').value = '';
             document.getElementById('new-toll-desc').value = '';
             renderTollList(listContainer);
-        } catch (e) { alert(e.message); }
+        } catch(e) { alert(e.message); }
     };
 
     window.handleDeleteTollCard = async (id) => {
-        if (!confirm("Supprimer ce badge ?")) return;
+        if(!confirm("Supprimer ce badge ?")) return;
         try {
             await api.deleteTollCard(id);
             renderTollList(listContainer);
-        } catch (e) { alert(e.message); }
+        } catch(e) { alert(e.message); }
     };
 };
 
-window.openAddVehicleModal = async function (vehicleId = null) {
+window.openAddVehicleModal = async function(vehicleId = null) {
     try {
         const [users, dkvCards, tollCards] = await Promise.all([
             api.listUsers(),
             api.getDkvCards(),
             api.getTollCards()
         ]);
-        users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
-
+        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
+        
         let existing = null;
         if (vehicleId) {
             const vehicles = await api.getVehicles();
@@ -5746,7 +5927,7 @@ window.openAddVehicleModal = async function (vehicleId = null) {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100009';
-
+        
         modal.innerHTML = `
             <div class="modal-box glass-panel" style="width: 500px; padding: 32px; animation: modalPop 0.3s ease-out;">
                 <h2 style="margin-top: 0; margin-bottom: 24px;">${existing ? 'Modifier le véhicule' : 'Ajouter un véhicule'}</h2>
@@ -5794,7 +5975,7 @@ window.openAddVehicleModal = async function (vehicleId = null) {
                 </div>
 
                 <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Planification Entretien</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
                     <div>
                         <label class="form-label">Prochain entretien (km)</label>
                         <input type="number" id="v-m-km" class="form-input" value="${existing?.next_maintenance_km || ''}" placeholder="Ex: 50000">
@@ -5808,12 +5989,12 @@ window.openAddVehicleModal = async function (vehicleId = null) {
                 <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Contrôle Technique</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
                     <div>
-                        <label class="form-label">Dernier CT (date)</label>
+                        <label class="form-label">Dernier CT</label>
                         <input type="date" id="v-ct-date" class="form-input" value="${existing?.last_ct_date || ''}">
                     </div>
                     <div>
-                        <label class="form-label">Fréquence (mois)</label>
-                        <input type="number" id="v-ct-interval" class="form-input" value="${existing?.ct_interval_months || 12}" placeholder="Ex: 12">
+                        <label class="form-label">Intervalle (mois)</label>
+                        <input type="number" id="v-ct-interval" class="form-input" value="${existing?.ct_interval_months || 12}" placeholder="Par défaut: 12">
                     </div>
                 </div>
 
@@ -5857,7 +6038,7 @@ window.openAddVehicleModal = async function (vehicleId = null) {
 
             try {
                 const savedVehicle = await api.saveVehicle(data);
-
+                
                 // Photo upload
                 const photoInput = document.getElementById('v-photo');
                 if (photoInput.files.length > 0) {
@@ -5878,7 +6059,7 @@ window.openAddVehicleModal = async function (vehicleId = null) {
     }
 };
 
-window.deleteAdminVehicle = async function (id) {
+window.deleteAdminVehicle = async function(id) {
     if (!confirm("Voulez-vous vraiment supprimer ce véhicule ?")) return;
     try {
         await api.deleteVehicle(id);
@@ -5888,8 +6069,8 @@ window.deleteAdminVehicle = async function (id) {
     }
 };
 
-// Global badge update for admin sidebar (Material Orders)
-window.updateMaterialBadge = async function () {
+// Global badge update for admin sidebar
+window.updateMaterialBadge = async function() {
     try {
         const requests = await api.getMaterialRequests();
         const pendingCount = requests.filter(r => r.status === 'requested').length;
@@ -5907,43 +6088,8 @@ window.updateMaterialBadge = async function () {
     }
 };
 
-// Global badge update for admin sidebar (Material Stock Modifications)
-window.updateMaterialStockBadge = async function () {
-    try {
-        const requests = await api.getMaterialStockRequests();
-        const pendingCount = requests.filter(r => r.status === 'pending').length;
-        
-        // Sidebar badge
-        const sidebarBadge = document.getElementById('mat-stock-request-badge');
-        if (sidebarBadge) {
-            if (pendingCount > 0) {
-                sidebarBadge.textContent = pendingCount;
-                sidebarBadge.style.display = 'flex';
-            } else {
-                sidebarBadge.style.display = 'none';
-            }
-        }
-
-        // Internal button badge (if view is open)
-        const innerBadge = document.getElementById('requests-badge');
-        const innerBtn = document.getElementById('material-requests-btn');
-        if (innerBadge) {
-            if (pendingCount > 0) {
-                innerBadge.textContent = pendingCount;
-                innerBadge.style.display = 'block';
-                if (innerBtn) innerBtn.classList.add('clignotant');
-            } else {
-                innerBadge.style.display = 'none';
-                if (innerBtn) innerBtn.classList.remove('clignotant');
-            }
-        }
-    } catch (e) {
-        console.warn("Could not update material stock badge", e);
-    }
-};
-
 // --- MOBILE VEHICLES LIST ---
-window.renderMobileVehiclesList = async function (myVehicleData) {
+window.renderMobileVehiclesList = async function(myVehicleData) {
     document.getElementById('categories-view').classList.add('hidden');
     document.getElementById('search-results-view').classList.add('hidden');
     const searchContainer = document.querySelector('.mobile-search-container');
@@ -6002,7 +6148,7 @@ window.renderMobileVehiclesList = async function (myVehicleData) {
 };
 
 // --- MOBILE VEHICLE APP ---
-window.renderMobileVehicleApp = async function (vehicle) {
+window.renderMobileVehicleApp = async function(vehicle) {
     document.getElementById('categories-view').classList.add('hidden');
     document.getElementById('search-results-view').classList.add('hidden');
     const searchContainer = document.querySelector('.mobile-search-container');
@@ -6040,6 +6186,28 @@ window.renderMobileVehicleApp = async function (vehicle) {
                     </div>
                 </div>
 
+                <!-- Contrôle Technique Card -->
+                <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">Contrôle Technique</div>
+                        <div style="font-size: 18px; font-weight: 800; color: ${textColor};">
+                            ${(() => {
+                                if (!vehicle.last_ct_date) return '<span style="color:#FF9500;">Non renseigné</span>';
+                                const today = new Date();
+                                const lastCt = new Date(vehicle.last_ct_date);
+                                const interval = vehicle.ct_interval_months || 12;
+                                const nextCt = new Date(lastCt.setMonth(lastCt.getMonth() + interval));
+                                const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
+                                
+                                if (diffDays <= 0) return `<span style="color:#FF3B30;">Expiré depuis ${Math.abs(diffDays)}j</span>`;
+                                if (diffDays <= 60) return `<span style="color:#FF9500;">Expire dans ${diffDays}j</span>`;
+                                return `<span style="color:#34C759;">Valide (${nextCt.toLocaleDateString('fr-FR')})</span>`;
+                            })()}
+                        </div>
+                    </div>
+                    <button class="btn-primary" onclick="window.updateMobileCT('${vehicle.id}', '${vehicle.last_ct_date || ''}')" style="padding: 10px 20px; border-radius: 12px; background: #007AFF;">Modifier</button>
+                </div>
+
                 <!-- Mileage Card -->
                 <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -6050,18 +6218,6 @@ window.renderMobileVehicleApp = async function (vehicle) {
                         <button class="btn-primary" onclick="window.updateMobileMileage('${vehicle.id}', ${vehicle.last_mileage || 0})" style="padding: 10px 20px; border-radius: 12px; background: #34C759;">Mettre à jour</button>
                     </div>
                     <div style="font-size: 12px; color: #8E8E93;">Dernier relevé : ${vehicle.updated_at ? new Date(vehicle.updated_at).toLocaleDateString('fr-FR') : '--'}</div>
-                </div>
-
-                <!-- CT Card -->
-                <div id="mobile-ct-card" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: space-between;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 600;">Contrôle Technique</div>
-                        <div id="mobile-ct-status" style="font-size: 17px; font-weight: 700; color: ${textColor}; margin-top: 4px;">--</div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                         <button class="btn-primary" onclick="window.updateMobileCT('${vehicle.id}')" style="padding: 8px 16px; border-radius: 10px; background: #5856D6; font-size: 13px;">Mettre à jour</button>
-                         <div id="mobile-ct-badge" style="width: 12px; height: 12px; border-radius: 50%; background: #8E8E93;"></div>
-                    </div>
                 </div>
 
                 <!-- Quick Actions -->
@@ -6092,7 +6248,7 @@ window.renderMobileVehicleApp = async function (vehicle) {
                             <div style="font-weight: 600; color: ${textColor}; font-size: 14px;">
                                 ${log.type === 'mileage' ? `Mise à jour : ${parseInt(log.value).toLocaleString()} km` : (log.type === 'fuel' ? `Plein : ${log.value} €` : log.description)}
                             </div>
-                            <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>
+                            <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</div>
                         </div>
                     </div>
                 `;
@@ -6102,40 +6258,12 @@ window.renderMobileVehicleApp = async function (vehicle) {
         html += `</div>`;
         container.innerHTML = html;
 
-        // CT Live Status Update
-        const ctStatusEl = document.getElementById('mobile-ct-status');
-        const ctBadgeEl = document.getElementById('mobile-ct-badge');
-        if (vehicle.last_ct_date && ctStatusEl && ctBadgeEl) {
-            const lastCt = new Date(vehicle.last_ct_date);
-            const nextCt = new Date(lastCt);
-            nextCt.setMonth(nextCt.getMonth() + (vehicle.ct_interval_months || 12));
-            const today = new Date();
-            const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
-
-            if (diffDays <= 0) {
-                ctStatusEl.innerText = "À faire immédiatement !";
-                ctStatusEl.style.color = "#FF3B30";
-                ctBadgeEl.style.background = "#FF3B30";
-            } else if (diffDays <= 60) {
-                ctStatusEl.innerText = `Échéance le ${nextCt.toLocaleDateString('fr-FR')} (dans ${diffDays} j.)`;
-                ctStatusEl.style.color = "#FF9500";
-                ctBadgeEl.style.background = "#FF9500";
-            } else {
-                ctStatusEl.innerText = `Valable jusqu'au ${nextCt.toLocaleDateString('fr-FR')}`;
-                ctBadgeEl.style.background = "#34C759";
-            }
-        } else if (!vehicle.last_ct_date && ctStatusEl && ctBadgeEl) {
-            ctStatusEl.innerText = "Date non renseignée";
-            ctStatusEl.style.color = "#FF9500";
-            ctBadgeEl.style.background = "#FF9500";
-        }
-
     } catch (e) {
         container.innerHTML = `<div style="color:red; text-align:center; padding:40px;">Erreur: ${e.message}</div>`;
     }
 };
 
-window.mobileAlert = function (title, message) {
+window.mobileAlert = function(title, message) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -6153,7 +6281,7 @@ window.mobileAlert = function (title, message) {
     document.body.appendChild(modal);
 };
 
-window.updateMobileMileage = function (vehicleId, current) {
+window.updateMobileMileage = function(vehicleId, current) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -6199,7 +6327,7 @@ window.updateMobileMileage = function (vehicleId, current) {
             await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: val.toString() });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-
+            
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -6215,7 +6343,79 @@ window.updateMobileMileage = function (vehicleId, current) {
     };
 };
 
-window.reportMobileVehicleIssue = function (vehicleId) {
+window.updateMobileCT = function(vehicleId, current) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h2 style="margin-top: 0; margin-bottom: 20px; color: ${textColor}; font-size: 20px;">Contrôle Technique</h2>
+            
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 8px;">Date du dernier contrôle</label>
+                <input type="date" id="new-ct-input" style="width: 100%; padding: 16px; border: none; border-radius: 16px; background: ${inputBg}; color: ${textColor}; font-size: 18px;" value="${current || ''}">
+                <p style="font-size: 11px; color: #8E8E93; margin-top: 8px;">Cette date sera utilisée pour calculer le prochain rappel.</p>
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="save-ct-btn" class="btn-primary" style="flex: 1; background: #007AFF;">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('save-ct-btn').onclick = async () => {
+        const val = document.getElementById('new-ct-input').value;
+        if (!val) {
+            window.mobileAlert("Date manquante", "Veuillez sélectionner une date.");
+            return;
+        }
+
+        const btn = document.getElementById('save-ct-btn');
+        btn.disabled = true;
+        btn.innerText = "Envoi...";
+
+        try {
+            await fetch(`${config.api.workerUrl}/my-vehicle`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(await auth.getAuthHeaders())
+                },
+                body: JSON.stringify({ id: vehicleId, last_ct_date: val })
+            });
+
+            await api.submitVehicleLog({ 
+                vehicle_id: vehicleId, 
+                type: 'inspection', 
+                description: `Contrôle technique effectué le ${new Date(val).toLocaleDateString('fr-FR')}` 
+            });
+
+            const updatedData = await api.getMyVehicle();
+            mobileVehicleCache = updatedData;
+            
+            let targetVehicle = null;
+            if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
+            else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
+
+            modal.remove();
+            if (targetVehicle) window.renderMobileVehicleApp(targetVehicle);
+            else window.renderMobileVehiclesList(updatedData);
+        } catch (e) {
+            window.mobileAlert("Erreur", e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
+};
+
+window.reportMobileVehicleIssue = function(vehicleId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -6258,7 +6458,7 @@ window.reportMobileVehicleIssue = function (vehicleId) {
             await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'issue', description: desc });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-
+            
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -6274,7 +6474,7 @@ window.reportMobileVehicleIssue = function (vehicleId) {
     };
 };
 
-window.logMobileFuel = async function (vehicleId, dkvCard) {
+window.logMobileFuel = async function(vehicleId, dkvCard) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -6282,7 +6482,7 @@ window.logMobileFuel = async function (vehicleId, dkvCard) {
 
     // Fetch DKV cards for selection if it's a common vehicle OR if we want to allow picking
     let allCards = [];
-    try { allCards = await api.getDkvCards(); } catch (e) { }
+    try { allCards = await api.getDkvCards(); } catch(e) {}
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -6344,16 +6544,16 @@ window.logMobileFuel = async function (vehicleId, dkvCard) {
         const description = `Plein : ${volume} L pour ${amount} € à ${km} km (Carte : ${usedDkv})`;
 
         try {
-            await api.submitVehicleLog({
-                vehicle_id: vehicleId,
-                type: 'fuel',
-                value: amount,
+            await api.submitVehicleLog({ 
+                vehicle_id: vehicleId, 
+                type: 'fuel', 
+                value: amount, 
                 description: description,
                 current_mileage: km
             });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-
+            
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -6369,10 +6569,10 @@ window.logMobileFuel = async function (vehicleId, dkvCard) {
     };
 };
 
-window.updateVehicleSidebarBadge = function (vehicles) {
+window.updateVehicleSidebarBadge = function(vehicles) {
     let alertCount = 0;
     const today = new Date();
-
+    
     vehicles.forEach(v => {
         let isAlert = false;
         if (v.next_maintenance_km && (v.next_maintenance_km - v.last_mileage <= 2000)) isAlert = true;
@@ -6382,14 +6582,15 @@ window.updateVehicleSidebarBadge = function (vehicles) {
             if (diffDays <= 30) isAlert = true;
         }
 
-        // CT Alert
-        if (!v.last_ct_date) {
-            isAlert = true;
-        } else {
-            const nextCt = new Date(v.last_ct_date);
-            nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
-            const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
+        // CT alert
+        if (v.last_ct_date) {
+            const lastCt = new Date(v.last_ct_date);
+            const interval = v.ct_interval_months || 12;
+            const target = new Date(lastCt.setMonth(lastCt.getMonth() + interval));
+            const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
             if (diffDays <= 60) isAlert = true;
+        } else {
+            isAlert = true; // CT missing is an alert
         }
 
         if (isAlert) alertCount++;
@@ -6406,7 +6607,7 @@ window.updateVehicleSidebarBadge = function (vehicles) {
     }
 };
 
-window.openVehicleDetailModal = async function (vehicleId) {
+window.openVehicleDetailModal = async function(vehicleId) {
     try {
         const [vehicles, logs] = await Promise.all([
             api.getVehicles(),
@@ -6422,9 +6623,9 @@ window.openVehicleDetailModal = async function (vehicleId) {
         modal.id = 'vehicle-detail-modal';
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100010';
-
+        
         modal.innerHTML = `
-            <div class="modal-box" style="width: 1150px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #ffffff; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+            <div class="modal-box" style="width: 900px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #ffffff; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
                 <!-- Header -->
                 <div style="padding: 32px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
                     <div>
@@ -6434,11 +6635,9 @@ window.openVehicleDetailModal = async function (vehicleId) {
                             <span style="background: #000; color: #fff; padding: 4px 12px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 18px; margin-left: 12px; vertical-align: middle;">${v.plate_number}</span>
                         </h2>
                     </div>
-                    <div style="display:flex; gap:10px; flex-wrap: wrap;">
-                        <button class="btn-primary" onclick="updateAdminVehicleMileage('${v.id}', ${v.last_mileage || 0})" style="padding: 10px 18px; border-radius: 12px; background: #5AC8FA; color: #fff; border: none; font-weight: 700; display: flex; align-items: center; gap: 8px;">📍 Mise à jour KM</button>
-                        <button class="btn-primary" onclick="logAdminVehicleFuel('${v.id}', '${v.dkv_card || ''}')" style="padding: 10px 18px; border-radius: 12px; background: #FF9500; color: #fff; border: none; font-weight: 700; display: flex; align-items: center; gap: 8px;">⛽ Saisie Essence</button>
-                        <button class="btn-primary" onclick="openAddVehicleEventModal('${v.id}')" style="padding: 10px 18px; border-radius: 12px; background: #2da140; color: #fff; border: none; font-weight: 700;">➕ Ajouter événement</button>
-                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 18px; border-radius: 12px; background: #eee; color: #333; border: none; font-weight: 700;">Fermer</button>
+                    <div style="display:flex; gap:12px;">
+                        <button class="btn-primary" onclick="openAddVehicleEventModal('${v.id}')" style="padding: 10px 20px; border-radius: 12px; background: #2da140; color: #fff; border: none; font-weight: 700;">➕ Ajouter événement</button>
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 20px; border-radius: 12px; background: #eee; color: #333; border: none; font-weight: 700;">Fermer</button>
                     </div>
                 </div>
 
@@ -6462,8 +6661,28 @@ window.openVehicleDetailModal = async function (vehicleId) {
                             </div>
                         </div>
 
+                        <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Contrôle Technique</h3>
+                        <div style="padding: 20px; border-radius: 20px; background: #f8f9fa; border: 1px solid #f1f3f5;">
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Dernière inspection</div>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #1a1a1c; font-weight: 700;">${v.last_ct_date ? new Date(v.last_ct_date).toLocaleDateString('fr-FR') : '<span style="color:#ccc; font-weight:400;">Non renseigné</span>'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Prochain passage estimé</div>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #34C759; font-weight: 700;">
+                                    ${(() => {
+                                        if (!v.last_ct_date) return '--';
+                                        const date = new Date(v.last_ct_date);
+                                        date.setMonth(date.getMonth() + (v.ct_interval_months || 12));
+                                        return date.toLocaleDateString('fr-FR');
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+
                         <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Entretien Prévu</h3>
-                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 16px; background: #fff; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 32px; background: #fff; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
                             <div style="margin-bottom: 16px;">
                                 <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Échéance Kilométrique</div>
                                 <div style="font-size: 20px; font-weight: 900; color: #34C759;">${v.next_maintenance_km ? v.next_maintenance_km.toLocaleString() + ' km' : '--'}</div>
@@ -6471,25 +6690,6 @@ window.openVehicleDetailModal = async function (vehicleId) {
                             <div>
                                 <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Échéance Date</div>
                                 <div style="font-size: 20px; font-weight: 900; color: #FF9500;">${v.next_maintenance_date ? new Date(v.next_maintenance_date).toLocaleDateString() : '--'}</div>
-                            </div>
-                        </div>
-
-                        <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Contrôle Technique</h3>
-                        <div style="padding: 20px; border-radius: 20px; margin-bottom: 32px; background: #fff; border: 1px solid #eee; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
-                            <div style="margin-bottom: 16px;">
-                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Dernier CT</div>
-                                <div style="font-size: 18px; font-weight: 800; color: #1a1a1c;">${v.last_ct_date ? new Date(v.last_ct_date).toLocaleDateString() : 'N/A'}</div>
-                            </div>
-                            <div>
-                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Prochain CT (est.)</div>
-                                <div style="font-size: 18px; font-weight: 800; color: #5856D6;">
-                                    ${(() => {
-                if (!v.last_ct_date) return '--';
-                const next = new Date(v.last_ct_date);
-                next.setMonth(next.getMonth() + (v.ct_interval_months || 12));
-                return next.toLocaleDateString();
-            })()}
-                                </div>
                             </div>
                         </div>
 
@@ -6560,8 +6760,8 @@ window.openVehicleDetailModal = async function (vehicleId) {
         document.body.appendChild(modal);
 
         // --- Data Processing ---
-        const fuelLogs = logs.filter(l => l.type === 'fuel').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const fuelLogs = logs.filter(l => l.type === 'fuel').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+        const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
 
         let totalEuro = 0, totalLiters = 0, avgCons = 0;
         const fuelDataPoints = fuelLogs.map(l => {
@@ -6596,7 +6796,7 @@ window.openVehicleDetailModal = async function (vehicleId) {
                 vMil.style.display = 'none'; vFue.style.display = 'flex';
                 tFue.style.background = '#fff'; tFue.style.color = '#007AFF'; tFue.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
                 tMil.style.background = 'transparent'; tMil.style.color = '#888'; tMil.style.boxShadow = 'none';
-
+                
                 // Init Fuel Stats if in fuel view
                 document.getElementById('fuel-stats-grid-tabs').innerHTML = `
                     <div style="background: rgba(52, 199, 89, 0.05); padding: 12px; border-radius: 16px; border: 1px solid rgba(52,199,89,0.1); text-align: center;">
@@ -6656,7 +6856,7 @@ window.openVehicleDetailModal = async function (vehicleId) {
 
 // Start
 // Event Modal for Vehicle
-window.openAddVehicleEventModal = function (vehicleId) {
+window.openAddVehicleEventModal = function(vehicleId) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.zIndex = '100020';
@@ -6691,19 +6891,19 @@ window.openAddVehicleEventModal = function (vehicleId) {
         const dateStr = modal.querySelector('#event-date').value;
         const desc = modal.querySelector('#event-desc').value;
         const fileInput = modal.querySelector('#event-file');
-
+        
         if (!desc) return alert("Veuillez saisir une description");
-
+        
         saveBtn.disabled = true;
         saveBtn.innerText = "Téléchargement en cours...";
-
+        
         try {
             let filePath = null;
             if (fileInput.files.length > 0) {
                 const uploadRes = await api.uploadFile(fileInput.files[0], 'fleet/events/');
                 filePath = uploadRes.key;
             }
-
+            
             saveBtn.innerText = "Enregistrement...";
             await api.submitVehicleLog({
                 vehicle_id: vehicleId,
@@ -6712,10 +6912,10 @@ window.openAddVehicleEventModal = function (vehicleId) {
                 event_date: dateStr ? (new Date(dateStr + 'T12:00:00')).toISOString() : new Date().toISOString(),
                 image_path: filePath
             });
-
+            
             modal.remove();
             await window.openVehicleDetailModal(vehicleId);
-        } catch (e) {
+        } catch(e) {
             console.error(e);
             alert("Erreur: " + e.message);
             saveBtn.disabled = false;
@@ -6724,693 +6924,11 @@ window.openAddVehicleEventModal = function (vehicleId) {
     };
 };
 
-window.handleDeleteVehicleLog = async function (id, vehicleId) {
+window.handleDeleteVehicleLog = async function(id, vehicleId) {
     try {
         await api.deleteVehicleLog(id);
         await window.openVehicleDetailModal(vehicleId);
-    } catch (e) {
-        alert("Erreur: " + e.message);
-    }
-};
-
-window.updateAdminVehicleMileage = function (vehicleId, current) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.zIndex = "100050";
-    modal.innerHTML = `
-        <div class="modal-box" style="padding: 30px; border-radius: 24px; background: #fff; width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
-            <h2 style="margin-top: 0; margin-bottom: 20px; color: #1c1c1e; font-size: 20px;">Mise à jour du compteur (Admin)</h2>
-            <div style="margin-bottom: 24px;">
-                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 8px; font-weight: 700; text-transform: uppercase;">Nouveau kilométrage</label>
-                <input type="number" id="admin-mileage-input" style="width: 100%; padding: 15px; border: 1px solid #ddd; border-radius: 12px; font-size: 18px; font-weight: 800;" value="${current || 0}">
-                <p style="font-size: 11px; color: #8E8E93; margin-top: 8px;">Dernier relevé enregistré : <b>${current || 0} km</b></p>
-            </div>
-            <div style="display: flex; gap: 12px;">
-                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                <button id="admin-save-mileage-btn" class="btn-primary" style="flex: 1; background: #5AC8FA;">Enregistrer</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-
-    const input = document.getElementById('admin-mileage-input');
-    input.focus();
-    input.select();
-
-    document.getElementById('admin-save-mileage-btn').onclick = async () => {
-        const val = parseInt(input.value);
-        if (isNaN(val)) return alert("Veuillez entrer un nombre valide.");
-
-        const btn = document.getElementById('admin-save-mileage-btn');
-        btn.disabled = true;
-        btn.innerText = "Enregistrement...";
-
-        try {
-            await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: val.toString() });
-            modal.remove();
-            await window.openVehicleDetailModal(vehicleId);
-        } catch (e) {
-            alert("Erreur: " + e.message);
-            btn.disabled = false;
-            btn.innerText = "Enregistrer";
-        }
-    };
-};
-
-window.logAdminVehicleFuel = async function (vehicleId, dkvCard) {
-    let allCards = [];
-    try { allCards = await api.getDkvCards(); } catch (e) { }
-
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.zIndex = "100050";
-    modal.innerHTML = `
-        <div class="modal-box" style="padding: 30px; border-radius: 24px; background: #fff; width: 450px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
-            <h2 style="margin-top: 0; margin-bottom: 20px; color: #1c1c1e; font-size: 20px;">Saisie d'un plein (Admin)</h2>
-            
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Carte DKV utilisée</label>
-                <select id="admin-fuel-dkv" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 15px; font-weight: 700;">
-                    ${dkvCard ? `<option value="${dkvCard}">Carte du véhicule (${dkvCard})</option>` : ''}
-                    <option value="">-- Autre carte --</option>
-                    ${allCards.map(c => `<option value="${c.card_number}" ${dkvCard === c.card_number ? 'disabled' : ''}>${c.card_number} (${c.description || 'DKV'})</option>`).join('')}
-                </select>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                <div>
-                    <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Volume (L)</label>
-                    <input type="number" id="admin-fuel-volume" step="0.01" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 16px; font-weight: 700;" placeholder="ex: 45.5">
-                </div>
-                <div>
-                    <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Montant (€)</label>
-                    <input type="number" id="admin-fuel-amount" step="0.01" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 16px; font-weight: 700;" placeholder="ex: 85.20">
-                </div>
-            </div>
-
-            <div style="margin-bottom: 24px;">
-                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight:700; text-transform:uppercase;">Compteur à la saisie</label>
-                <input type="number" id="admin-fuel-km" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 12px; font-size: 16px; font-weight: 700;" placeholder="Kilométrage actuel">
-            </div>
-            
-            <div style="display: flex; gap: 12px;">
-                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                <button id="admin-save-fuel-btn" class="btn-primary" style="flex: 1; background: #FF9500;">Valider Plein</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('admin-fuel-volume').focus();
-
-    document.getElementById('admin-save-fuel-btn').onclick = async () => {
-        const volume = document.getElementById('admin-fuel-volume').value;
-        const amount = document.getElementById('admin-fuel-amount').value;
-        const km = document.getElementById('admin-fuel-km').value;
-        const usedDkv = document.getElementById('admin-fuel-dkv').value;
-
-        if (!volume || !amount || !km || !usedDkv) return alert("Veuillez remplir tous les champs.");
-
-        const btn = document.getElementById('admin-save-fuel-btn');
-        btn.disabled = true;
-        btn.innerText = "Envoi...";
-
-        const description = `Plein : ${volume} L pour ${amount} € à ${km} km (Carte : ${usedDkv})`;
-
-        try {
-            await api.submitVehicleLog({
-                vehicle_id: vehicleId,
-                type: 'fuel',
-                value: amount,
-                description: description,
-                current_mileage: km
-            });
-            modal.remove();
-            await window.openVehicleDetailModal(vehicleId);
-        } catch (e) {
-            alert("Erreur: " + e.message);
-            btn.disabled = false;
-            btn.innerText = "Valider Plein";
-        }
-    };
-};
-
-// --- GESTION DU PARC : MAINTENANCE MATERIEL ---
-window.renderAdminMaintenance = async function () {
-    const content = document.getElementById('admin-content');
-    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
-    const navItem = document.getElementById('nav-maintenance');
-    if (navItem) navItem.classList.add('active');
-
-    content.innerHTML = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
-            <!-- Header Section -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #007AFF, #0056b3); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(0, 122, 255, 0.2);">
-                        <span style="font-size: 28px;">🛠️</span>
-                    </div>
-                    <div>
-                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Maintenance Matériel</h1>
-                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Suivi des entretiens et réparations</p>
-                    </div>
-                </div>
-
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <button class="btn-primary" onclick="window.openMachineEditModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 18px;">+</span> Ajouter Matériel
-                    </button>
-                    <button class="btn-secondary" onclick="window.openManageFamiliesModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; color: white; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 16px;">📁</span> Familles
-                    </button>
-                    <button onclick="window.renderAdminMaintenance()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Filters Bar -->
-            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 24px; padding: 0 10px;">
-                <div style="position: relative; flex: 1;">
-                    <input type="text" id="maintenance-search" placeholder="Rechercher par identifiant, type, nom..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 20px 0 45px; font-size: 14px; outline: none;">
-                    <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
-                </div>
-
-                <div style="position: relative; min-width: 250px;">
-                    <select id="maintenance-family-filter" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
-                        <option value="" style="background: #1c1c1e;">🛠️ Toutes les familles</option>
-                    </select>
-                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
-                </div>
-            </div>
-            <style>
-                .maint-search-input:focus { background: rgba(255,255,255,0.08) !important; border-color: rgba(255,255,255,0.3) !important; width: 380px !important; }
-                .btn-maintenance-sub:hover { background: rgba(255,255,255,0.1) !important; transform: translateY(-1px); }
-            </style>
-
-            <div style="flex: 1; overflow-y: auto; padding: 40px;">
-                <div class="glass-panel" style="overflow: hidden; border-radius: 20px;">
-                    <table class="admin-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 60px;">Photo</th>
-                                <th>ID (MI)</th>
-                                <th>Nom / Marque</th>
-                                <th>Famille</th>
-                                <th>N° de Série</th>
-                                <th>Attribution</th>
-                                <th>Statut VGP</th>
-                                <th>Validité Maint.</th>
-                                <th style="text-align: right;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="maintenance-table-body">
-                            <tr><td colspan="9" style="text-align: center; padding: 40px;">Chargement du matériel...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    `;
-
-    try {
-        const [machines, families] = await Promise.all([
-            api.getMachines(),
-            api.getMachineFamilies()
-        ]);
-
-        const tbody = document.getElementById('maintenance-table-body');
-        const familyFilter = document.getElementById('maintenance-family-filter');
-
-        // Populate family filter
-        families.forEach(f => {
-            const opt = document.createElement('option');
-            opt.value = f.name;
-            opt.innerText = f.name;
-            familyFilter.appendChild(opt);
-        });
-
-        const renderTable = () => {
-            const searchText = document.getElementById('maintenance-search').value.toLowerCase();
-            const selectedFamily = familyFilter.value;
-
-            const list = machines.filter(m => {
-                const matchesSearch = m.machine_id.toLowerCase().includes(searchText) ||
-                    (m.name && m.name.toLowerCase().includes(searchText)) ||
-                    (m.serial_number && m.serial_number.toLowerCase().includes(searchText)) ||
-                    (m.assigned_to && m.assigned_to.toLowerCase().includes(searchText));
-                const matchesFamily = !selectedFamily || m.family === selectedFamily;
-                return matchesSearch && matchesFamily;
-            });
-
-            if (list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 40px; color: #8E8E93;">Aucun matériel trouvé</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = list.map(m => {
-                const nextDate = m.next_maintenance_date ? new Date(m.next_maintenance_date) : null;
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-
-                let validityHtml = '--';
-                if (nextDate) {
-                    let color = '#2da140';
-                    if (nextDate < today) color = '#FF3B30';
-                    else if (nextDate < new Date(today.getTime() + 15 * 24 * 60 * 60 * 1000)) color = '#FF9500';
-                    validityHtml = `<div style="color: ${color}; font-weight: 700;">${nextDate.toLocaleDateString('fr-FR')}</div>`;
-                }
-
-                // VGP Status Badge
-                let vgpStatusHtml = '<span style="color: #8E8E93;">--</span>';
-                if (m.vgp_status === 'OK') vgpStatusHtml = '<span class="badge badge-success">VGP OK</span>';
-                else if (m.vgp_status === 'KO') vgpStatusHtml = '<span class="badge badge-danger">VGP KO</span>';
-
-                const photoUrl = `${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}`;
-
-                return `
-                    <tr onclick="window.openMachineDetailModal('${m.id}')" style="cursor: pointer; opacity: ${m.status_active === false ? '0.5' : '1'};">
-                        <td>
-                            <div style="width: 48px; height: 48px; background: rgba(255,255,255,0.05); border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.1);">
-                                <img src="${photoUrl}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.2'; this.style.filter='invert(1)';" style="width: 100%; height: 100%; object-fit: cover;">
-                            </div>
-                        </td>
-                        <td><div style="font-weight: 700; color: white;">${window.escapeHTML(m.machine_id)}</div></td>
-                        <td>
-                            <div style="font-weight: 600; color: rgba(255,255,255,0.9);">${window.escapeHTML(m.name || '--')}</div>
-                            <div style="font-size: 11px; color: #8E8E93;">${window.escapeHTML(m.brand || '--')}</div>
-                        </td>
-                        <td><span class="badge" style="background: rgba(255,255,255,0.05); color: #8E8E93;">${window.escapeHTML(m.family || '--')}</span></td>
-                        <td><code style="font-size: 11px;">${window.escapeHTML(m.serial_number || '--')}</code></td>
-                        <td><div style="font-size: 13px;">👤 ${window.escapeHTML(m.assigned_to || '--')}</div></td>
-                        <td>${vgpStatusHtml}</td>
-                        <td>${validityHtml}</td>
-                        <td style="text-align: right;">
-                            <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                                <button onclick="event.stopPropagation(); window.openMachineEditModal('${m.id}')" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 50px; background: rgba(255, 149, 0, 0.15); border: 1px solid rgba(255, 149, 0, 0.3); color: #FF9500; font-size: 12px; font-weight: 800; cursor: pointer; transition: all 0.2s; white-space: nowrap;">
-                                    <span style="font-size: 14px;">✏️</span> Modifier
-                                </button>
-                                <button onclick="event.stopPropagation(); window.deleteAdminMachine('${m.id}')" title="Supprimer" style="width: 36px; height: 36px; border-radius: 50px; background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); color: #FF3B30; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        };
-
-        renderTable();
-
-        document.getElementById('maintenance-search').oninput = renderTable;
-        familyFilter.onchange = renderTable;
-
-    } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 40px; color: #FF3B30;">Erreur: ${e.message}</td></tr>`;
-    }
-};
-
-window.openMachineDetailModal = async function (id) {
-    try {
-        const machines = await api.getMachines();
-        const m = machines.find(item => item.id === id);
-        if (!m) return;
-
-        const history = await api.getMachineMaintenanceHistory(m.id);
-
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.style.zIndex = '1000000';
-        modal.innerHTML = `
-            <div class="modal-box glass-panel" style="width: 900px; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #1C1C1E; border-radius: 24px;">
-                <div style="padding: 30px; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: flex-start; gap: 30px;">
-                    <div style="width: 140px; height: 140px; background: rgba(0,0,0,0.3); border-radius: 20px; overflow: hidden; border: 2px solid rgba(255,255,255,0.1); flex-shrink: 0;">
-                        <img src="${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.2'; this.style.filter='invert(1)';" style="width: 100%; height: 100%; object-fit: cover;">
-                    </div>
-                    <div style="flex: 1;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                            <div>
-                                <h2 style="margin: 0; font-size: 28px; font-weight: 800; color: white;">${window.escapeHTML(m.name || m.description || m.machine_id)}</h2>
-                                <p style="margin: 4px 0 0; color: #8E8E93; font-size: 16px;"><strong>ID :</strong> ${window.escapeHTML(m.machine_id)} | ${window.escapeHTML(m.description || '')}</p>
-                            </div>
-                            <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; cursor: pointer; opacity: 0.5; font-size: 24px;">&times;</button>
-                        </div>
-                        <div style="display: flex; gap: 24px;">
-                            <div style="background: rgba(255,255,255,0.05); padding: 12px 20px; border-radius: 12px;">
-                                <div style="font-size: 11px; text-transform: uppercase; color: #8E8E93; letter-spacing: 0.5px; margin-bottom: 4px;">Marque</div>
-                                <div style="font-weight: 600; font-size: 15px;">${window.escapeHTML(m.brand || '--')}</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.05); padding: 12px 20px; border-radius: 12px;">
-                                <div style="font-size: 11px; text-transform: uppercase; color: #8E8E93; letter-spacing: 0.5px; margin-bottom: 4px;">Emplacement</div>
-                                <div style="font-weight: 600; font-size: 15px;">${window.escapeHTML(m.location || '--')}</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.05); padding: 12px 20px; border-radius: 12px;">
-                                <div style="font-size: 11px; text-transform: uppercase; color: #8E8E93; letter-spacing: 0.5px; margin-bottom: 4px;">Prochaine Maintenance</div>
-                                <div style="font-weight: 600; font-size: 15px; color: ${m.next_maintenance_date ? '#FF9500' : 'inherit'}">${m.next_maintenance_date ? new Date(m.next_maintenance_date).toLocaleDateString('fr-FR') : '--'}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="flex: 1; display: grid; grid-template-columns: 1fr 380px; overflow: hidden;">
-                    <div style="padding: 30px; border-right: 1px solid rgba(255,255,255,0.1); overflow-y: auto;">
-                        <h3 style="margin-top: 0; font-size: 18px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px;">📋 Historique de Maintenance</h3>
-                        ${history.length === 0 ? `
-                            <div style="text-align: center; color: #8E8E93; padding: 60px 20px;">
-                                <div style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;">🔧</div>
-                                <p>Aucun historique enregistré pour ce matériel.</p>
-                            </div>
-                        ` : history.map(h => `
-                            <div style="background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.05);">
-                                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center;">
-                                    <div style="font-weight: 700; font-size: 15px;">${new Date(h.date).toLocaleDateString('fr-FR')}</div>
-                                    <div style="font-size: 12px; color: #8E8E93; background: rgba(45, 161, 64, 0.1); color: #2da140; padding: 4px 10px; border-radius: 10px;">Effectué par ${h.profiles ? (h.profiles.first_name + ' ' + h.profiles.last_name) : 'Admin'}</div>
-                                </div>
-                                <div style="font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.9);">${window.escapeHTML(h.details || 'Maintenance de contrôle.')}</div>
-                                ${h.next_maintenance_date ? `<div style="margin-top: 12px; font-size: 12px; color: #8E8E93;">🗓️ Date de validité fixée au : <strong>${new Date(h.next_maintenance_date).toLocaleDateString('fr-FR')}</strong></div>` : ''}
-                            </div>
-                        `).join('')}
-                    </div>
-
-                    <div style="padding: 30px; background: rgba(0,0,0,0.1);">
-                        <h3 style="margin-top: 0; font-size: 18px; margin-bottom: 24px;">🔧 Enregistrer une Maintenance</h3>
-                        
-                        <div style="margin-bottom: 20px;">
-                            <label class="form-label">Type d'intervention</label>
-                            <select id="maint-type" class="form-input">
-                                <option value="Maintenance" ${m.last_control_type === 'Maintenance' ? 'selected' : ''}>Contrôle / Entretien</option>
-                                <option value="VGP" ${m.last_control_type === 'VGP' ? 'selected' : ''}>VGP (Vérification Générale Périodique)</option>
-                                <option value="Remise en service" ${m.last_control_type === 'Remise en service' ? 'selected' : ''}>Remise en service</option>
-                            </select>
-                        </div>
-
-                        <div id="vgp-specifics" style="display: ${m.last_control_type === 'VGP' ? 'block' : 'none'}; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                            <label class="form-label">État de conformité VGP</label>
-                            <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-                                <button class="btn-secondary vgp-choice ${m.vgp_status === 'OK' ? 'active' : ''}" data-val="OK" style="flex: 1; ${m.vgp_status === 'OK' ? 'background: #2da140; color: white;' : ''}">✅ Conforme</button>
-                                <button class="btn-secondary vgp-choice ${m.vgp_status === 'KO' ? 'active' : ''}" data-val="KO" style="flex: 1; ${m.vgp_status === 'KO' ? 'background: #FF3B30; color: white;' : ''}">❌ Non-conforme</button>
-                            </div>
-                            <label class="form-label">Observations Techniques</label>
-                            <input type="text" id="vgp-obs" class="form-input" placeholder="Détails de non-conformité..." value="${m.vgp_observations || ''}">
-                        </div>
-
-                        <div style="margin-bottom: 20px;">
-                            <label class="form-label">Détails de l'intervention</label>
-                            <textarea id="maint-details" class="form-input" style="height: 80px; resize: none;" placeholder="Ex: Remplacement des filtres..."></textarea>
-                        </div>
-
-                        <div style="margin-bottom: 24px;">
-                            <label class="form-label">Durée de validité (Prochaine maintenance)</label>
-                            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
-                                <input type="range" id="maint-slider" min="1" max="24" value="${m.periodicity || 12}" style="flex: 1; accent-color: var(--primary);">
-                                <span id="maint-months-text" style="font-weight: 700; width: 80px; text-align: right; color: var(--primary);">${m.periodicity || 12} mois</span>
-                            </div>
-                            <div id="maint-next-preview" style="font-size: 12px; color: #8E8E93; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
-                                Date estimée : <strong>Calcul...</strong>
-                            </div>
-                        </div>
-                        <button id="save-maint-btn" class="btn-primary" style="width: 100%; height: 50px; font-weight: 700;">Valider Intervention</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-
-        const slider = document.getElementById('maint-slider');
-        const sliderText = document.getElementById('maint-months-text');
-        const previewText = document.getElementById('maint-next-preview');
-
-        const updatePreview = () => {
-            const months = parseInt(slider.value);
-            sliderText.innerText = `${months} mois`;
-            const date = new Date();
-            date.setMonth(date.getMonth() + months);
-            previewText.innerHTML = `Date estimée : <strong>${date.toLocaleDateString('fr-FR')}</strong>`;
-            return date.toISOString().split('T')[0];
-        };
-
-        slider.oninput = updatePreview;
-        updatePreview();
-
-        document.getElementById('maint-type').onchange = (e) => {
-            document.getElementById('vgp-specifics').style.display = e.target.value === 'VGP' ? 'block' : 'none';
-        };
-
-        const vgpChoices = document.querySelectorAll('.vgp-choice');
-        vgpChoices.forEach(btn => {
-            btn.onclick = () => {
-                vgpChoices.forEach(b => b.classList.remove('active'));
-                vgpChoices.forEach(b => {
-                    b.style.background = 'rgba(255,255,255,0.03)';
-                    b.style.color = '#fff';
-                });
-                btn.classList.add('active');
-                if (btn.dataset.val === 'OK') { btn.style.background = '#2da140'; btn.style.color = 'white'; }
-                else { btn.style.background = '#FF3B30'; btn.style.color = 'white'; }
-            };
-        });
-
-        document.getElementById('save-maint-btn').onclick = async () => {
-            const details = document.getElementById('maint-details').value.trim();
-            const type = document.getElementById('maint-type').value;
-            const nextDate = updatePreview();
-
-            let vgpStatus = null;
-            let vgpObservations = null;
-            if (type === 'VGP') {
-                const activeChoice = document.querySelector('.vgp-choice.active');
-                vgpStatus = activeChoice ? activeChoice.dataset.val : null;
-                vgpObservations = document.getElementById('vgp-obs').value.trim();
-                if (!vgpStatus) return alert("Veuillez sélectionner le statut de conformité VGP.");
-            }
-
-            if (!confirm(`Confirmez-vous l'enregistrement de cette intervention (${type}) ?`)) return;
-
-            const btn = document.getElementById('save-maint-btn');
-            btn.disabled = true;
-            btn.innerText = "Validation...";
-
-            try {
-                await api.saveMachineMaintenance(m.id, details, nextDate, vgpStatus, vgpObservations, type);
-                modal.remove();
-                window.renderAdminMaintenance();
-            } catch (e) {
-                alert("Erreur: " + e.message);
-                btn.disabled = false;
-                btn.innerText = "Valider Intervention";
-            }
-        };
-
-    } catch (e) {
-        alert("Erreur: " + e.message);
-    }
-};
-
-window.openManageFamiliesModal = async function () {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.zIndex = '2000000';
-    modal.innerHTML = `
-        <div class="modal-box glass-panel" style="width: 400px; padding: 30px; background: #1C1C1E; border-radius: 24px;">
-            <h2 style="margin-top: 0; margin-bottom: 20px;">📁 Gérer les Familles</h2>
-            <div style="margin-bottom: 20px; display: flex; gap: 10px;">
-                <input type="text" id="new-family-name" class="form-input" placeholder="Nom de la famille (ex: Pelle)">
-                <button id="add-family-btn" class="btn-primary">Ajouter</button>
-            </div>
-            <div id="families-list" style="max-height: 300px; overflow-y: auto; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
-                Chargement...
-            </div>
-            <div style="margin-top: 25px; text-align: right;">
-                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-
-    const refreshFamilies = async () => {
-        const listDiv = document.getElementById('families-list');
-        try {
-            const families = await api.getMachineFamilies();
-            if (families.length === 0) {
-                listDiv.innerHTML = '<p style="color: #8E8E93; text-align: center;">Aucune famille définie.</p>';
-                return;
-            }
-            listDiv.innerHTML = families.map(f => `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <span>${window.escapeHTML(f.name)}</span>
-                    <button class="btn-sm" onclick="window.deleteFamily('${f.id}')" style="background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.2); color: #FF3B30;">&times;</button>
-                </div>
-            `).join('');
-        } catch (e) { listDiv.innerHTML = 'Erreur: ' + e.message; }
-    };
-
-    window.deleteFamily = async (id) => {
-        if (!confirm("Supprimer cette famille ?")) return;
-        try { await api.deleteMachineFamily(id); refreshFamilies(); } catch (e) { alert(e.message); }
-    };
-
-    document.getElementById('add-family-btn').onclick = async () => {
-        const name = document.getElementById('new-family-name').value.trim();
-        if (!name) return;
-        try {
-            await api.addMachineFamily(name);
-            document.getElementById('new-family-name').value = '';
-            refreshFamilies();
-        } catch (e) { alert(e.message); }
-    };
-
-    refreshFamilies();
-};
-
-window.openMachineEditModal = async function (id = null) {
-    let m = null;
-    let families = [];
-    try {
-        const [machines, fams] = await Promise.all([
-            api.getMachines(),
-            api.getMachineFamilies()
-        ]);
-        families = fams;
-        if (id) m = machines.find(x => x.id === id);
-    } catch (e) { console.error(e); }
-
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.zIndex = '1000001';
-    modal.innerHTML = `
-        <div class="modal-box glass-panel" style="width: 700px; padding: 0; background: #1C1C1E; border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; max-height: 90vh;">
-            <div style="padding: 24px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="margin: 0; font-weight: 800;">${m ? '✏️ Modifier' : '🚜 Nouveau'} Matériel</h2>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 13px; color: #8E8E93;">Actif ?</span>
-                    <label class="switch">
-                        <input type="checkbox" id="m-active" ${m?.status_active !== false ? 'checked' : ''}>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-            </div>
-
-            <div style="flex: 1; overflow-y: auto; padding: 30px;">
-                <!-- SECTION: IDENTIFICATION -->
-                <h3 style="font-size: 14px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px;">🆔 Identification</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
-                    <div>
-                        <label class="form-label">Identifiant (MI)</label>
-                        <input type="text" id="m-id" class="form-input" value="${m?.machine_id || ''}" placeholder="Ex: MI_001">
-                    </div>
-                    <div>
-                        <label class="form-label">Nom du matériel</label>
-                        <input type="text" id="m-name" class="form-input" value="${m?.name || ''}" placeholder="Ex: Mini-pelle 3T">
-                    </div>
-                    <div>
-                        <label class="form-label">Famille</label>
-                        <select id="m-family" class="form-input">
-                            <option value="">-- Sélectionner --</option>
-                            ${families.map(f => `<option value="${f.name}" ${m?.family === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="form-label">Numéro de Série</label>
-                        <input type="text" id="m-serial" class="form-input" value="${m?.serial_number || m?.description || ''}" placeholder="Numéro constructeur">
-                    </div>
-                </div>
-
-                <!-- SECTION: ATTRIBUTION & ÉTAT -->
-                <h3 style="font-size: 14px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; margin: 30px 0 20px;">👤 Attribution</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
-                    <div>
-                        <label class="form-label">Attribué à (Salarié / Chantier)</label>
-                        <input type="text" id="m-assigned" class="form-input" value="${m?.assigned_to || m?.location || ''}" placeholder="Nom du responsable">
-                    </div>
-                    <div>
-                        <label class="form-label">Marque / Description</label>
-                        <input type="text" id="m-brand" class="form-input" value="${m?.brand || ''}" placeholder="Ex: Kubota, JCB...">
-                    </div>
-                </div>
-
-                <!-- SECTION: CALENDRIER & VGP -->
-                <h3 style="font-size: 14px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; margin: 30px 0 20px;">📅 Suivi Technique</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
-                    <div>
-                        <label class="form-label">Date Mise en Service</label>
-                        <input type="date" id="m-commissioning" class="form-input" value="${m?.commissioning_date || ''}">
-                    </div>
-                    <div>
-                        <label class="form-label">Périodicité Maintenance (mois)</label>
-                        <input type="number" id="m-periodicity" class="form-input" value="${m?.periodicity || 12}" min="1" max="60">
-                    </div>
-                    <div>
-                        <label class="form-label">Date Expiration VGP / Contrôle</label>
-                        <input type="date" id="m-expiration" class="form-input" value="${m?.expiration_date || ''}">
-                    </div>
-                    <div style="display: flex; flex-direction: column; justify-content: flex-end;">
-                        <button class="btn-secondary" onclick="document.getElementById('m-photo-input').click()" style="height: 50px;">📷 Changer la Photo</button>
-                        <input type="file" id="m-photo-input" accept="image/png, image/jpeg" style="display: none;" onchange="alert('Photo prête pour envoi')">
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 24px;">
-                    <label class="form-label">Commentaires / Notes SQE</label>
-                    <textarea id="m-comments" class="form-input" style="height: 100px; resize: none;" placeholder="Notes libres...">${m?.comments || ''}</textarea>
-                </div>
-            </div>
-
-            <div style="padding: 24px 30px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 12px; justify-content: flex-end;">
-                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                <button id="save-machine-btn" class="btn-primary" style="padding: 10px 30px; font-weight: 700;">Enregistrer les modifications</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('save-machine-btn').onclick = async () => {
-        const btn = document.getElementById('save-machine-btn');
-        btn.disabled = true;
-        btn.innerText = "Traitement...";
-
-        const data = {
-            id: id,
-            machine_id: document.getElementById('m-id').value.trim(),
-            name: document.getElementById('m-name').value.trim(),
-            family: document.getElementById('m-family').value,
-            serial_number: document.getElementById('m-serial').value.trim(),
-            brand: document.getElementById('m-brand').value.trim(),
-            assigned_to: document.getElementById('m-assigned').value.trim(),
-            periodicity: parseInt(document.getElementById('m-periodicity').value) || 12,
-            status_active: document.getElementById('m-active').checked,
-            commissioning_date: document.getElementById('m-commissioning').value || null,
-            expiration_date: document.getElementById('m-expiration').value || null,
-            comments: document.getElementById('m-comments').value.trim(),
-            // Legacy mapping for compatibility
-            description: document.getElementById('m-serial').value.trim(),
-            type: document.getElementById('m-family').value
-        };
-
-        if (!data.machine_id) return (alert("Identifiant requis"), btn.disabled = false, btn.innerText = "Enregistrer");
-
-        try {
-            const saved = await api.saveMachine(data);
-            const photoInput = document.getElementById('m-photo-input');
-            if (photoInput.files.length > 0) {
-                btn.innerText = "Upload photo...";
-                await api.uploadMachinePhoto(saved.id || id, photoInput.files[0]);
-            }
-            modal.remove();
-            window.renderAdminMaintenance();
-        } catch (e) {
-            alert("Erreur: " + e.message);
-            btn.disabled = false;
-            btn.innerText = "Enregistrer";
-        }
-    };
-};
-
-window.deleteAdminMachine = async function (id) {
-    if (!confirm("Voulez-vous vraiment supprimer ce matériel ? Cette action est irréversible et supprimera également l'historique de maintenance associé.")) return;
-    try {
-        await api.deleteMachine(id);
-        window.renderAdminMaintenance();
-    } catch (e) {
+    } catch(e) {
         alert("Erreur: " + e.message);
     }
 };
@@ -7420,620 +6938,110 @@ window.deleteAdminMachine = async function (id) {
 window.currentBuilding = null;
 window.machineIcons = [];
 
-window.renderAdminMaterialTracking = async function () {
+window.renderAdminMap = async function() {
     const content = document.getElementById('admin-content');
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
-    const navItem = document.getElementById('nav-material-stock');
+    const navItem = document.getElementById('nav-map');
     if (navItem) navItem.classList.add('active');
 
-    content.innerHTML = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
-            <!-- Header Section -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #34C759, #2da140); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(52, 199, 89, 0.2);">
-                        <span style="font-size: 28px;">📦</span>
-                    </div>
-                    <div>
-                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Statut du matériel ATS</h1>
-                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Gestion et inventaire du stock</p>
+    try {
+        const buildings = await api.getBuildings();
+        content.innerHTML = `
+            <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+                <div style="padding: 20px; background: rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h2 style="margin:0; color: white;">🏢 Plans des Bâtiments</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="machine-global-search" placeholder="Rechercher MI... (ID)" class="form-input" style="width: 250px;">
+                        <button class="btn-primary" onclick="window.openAddBuildingModal()">+ Nouveau Bâtiment</button>
                     </div>
                 </div>
-
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <button class="btn-primary" id="material-requests-btn" onclick="window.openMaterialRequestsModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #5856D6; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s; position: relative;">
-                        <span style="font-size: 18px;">🔔</span> Demandes
-                        <span id="requests-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: #FF3B30; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; border: 2px solid #1c1c1e;">0</span>
-                    </button>
-                    <button onclick="window.openQrExportModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;" title="Exporter QR Codes PDF">
-                        <span style="font-size: 16px;">📱</span> QR Codes
-                    </button>
-                    <button class="btn-primary" onclick="window.openEditMaterialModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
-                        <span style="font-size: 18px;">+</span> Ajouter Matériel
-                    </button>
-                    <button onclick="window.renderAdminMaterialTracking()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                    </button>
+                <div id="buildings-grid" style="flex: 1; padding: 30px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; overflow-y: auto; background: var(--bg-darker, #000);">
+                    ${buildings.length === 0 ? `
+                        <div style="grid-column: 1/-1; text-align: center; color: #8E8E93; padding-top: 100px;">
+                            <div style="font-size: 64px; margin-bottom: 20px;">🏢</div>
+                            <h3>Aucun bâtiment configuré</h3>
+                            <p>Commencez par ajouter un bâtiment et son plan SVG.</p>
+                        </div>
+                    ` : buildings.map(b => `
+                        <div class="category-card" onclick="window.renderBuildingSchematic('${b.id}')" style="background: rgba(255,255,255,0.05); padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; position: relative;">
+                            <div style="font-size: 40px; margin-bottom: 15px;">🏪</div>
+                            <h3 style="margin:0; color: white; font-size: 20px;">${b.name}</h3>
+                            <div style="margin-top: 10px; font-size: 13px; color: #8E8E93;">Cliquer pour voir le plan</div>
+                            <button onclick="event.stopPropagation(); window.handleDeleteBuilding('${b.id}')" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 16px; cursor: pointer; opacity: 0.5;">🗑️</button>
+                        </div>
+                    `).join('')}
                 </div>
             </div>
-
-            <!-- Filters Bar -->
-            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 24px; padding: 0 10px;">
-                <div style="position: relative; flex: 1;">
-                    <input type="text" id="material-search" placeholder="Rechercher par nom, type, référence..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 20px 0 45px; font-size: 14px; outline: none;">
-                    <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
-                </div>
-
-                <div style="display: flex; align-items: center; gap: 10px; background: rgba(255, 59, 48, 0.1); padding: 0 16px; border-radius: 12px; height: 48px; border: 1px solid rgba(255, 59, 48, 0.2); cursor: pointer;" onclick="document.getElementById('material-filter-missing').click()">
-                    <input type="checkbox" id="material-filter-missing" style="width: 18px; height: 18px; accent-color: #FF3B30; cursor: pointer;">
-                    <span style="color: #FF3B30; font-size: 14px; font-weight: 700;">Manquants</span>
-                </div>
-
-                <div style="position: relative; min-width: 200px;">
-                    <select id="material-filter-location" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
-                        <option value="" style="background: #1c1c1e;">📍 Tous les lieux</option>
-                    </select>
-                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
-                </div>
-            </div>
-
-            <div id="material-list-container" style="flex: 1; overflow-y: auto; padding-right: 10px;">
-                <div id="material-list-loader" style="text-align:center; padding: 80px;">
-                    <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: #34C759; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-                </div>
-                <div id="material-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; padding-bottom: 40px;"></div>
-            </div>
-        </div>
-    `;
-
-    // Ensure we have clignotant style
-    if (!document.getElementById('clignotant-style')) {
-        const style = document.createElement('style');
-        style.id = 'clignotant-style';
-        style.innerHTML = `
-            @keyframes pulse-red {
-                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
-                70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
-                100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
-            }
-            .clignotant {
-                animation: clignote 1.5s infinite;
-            }
-            @keyframes clignote {
-                0% { opacity: 1; }
-                50% { opacity: 0.6; transform: scale(1.02); }
-                100% { opacity: 1; }
-            }
         `;
-        document.head.appendChild(style);
-    }
-
-    // Update badge immediately
-    window.updateMaterialStockBadge();
-
-    try {
-        const stock = await api.getMaterialStock();
-
-        // Populate locations filter
-        const locations = [...new Set(stock.map(s => s.lieu_de_stockage).filter(Boolean))].sort();
-        const filterSelect = document.getElementById('material-filter-location');
-        locations.forEach(loc => {
-            const opt = document.createElement('option');
-            opt.value = loc;
-            opt.textContent = loc;
-            opt.style.background = "#1c1c1e";
-            opt.style.color = "white";
-            filterSelect.appendChild(opt);
-        });
-
-        const renderGrid = (items) => {
-            const grid = document.getElementById('material-grid');
-            const countBadge = document.getElementById('material-count-badge');
-            if (countBadge) countBadge.innerText = `${items.length} articles`;
-
-            if (items.length === 0) {
-                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #71717a; padding: 120px; font-size: 18px;">Aucun matériel trouvé</div>`;
-                return;
-            }
-            grid.innerHTML = items.map(item => {
-                const isMissing = (item.nb_souhaite || 0) > (item.stock_reel || 0);
-                const missingQty = (item.nb_souhaite || 0) - (item.stock_reel || 0);
-
-                return `
-                    <div class="material-card" onclick="window.openEditMaterialModal('${item.id}')" style="background: rgba(45, 45, 50, 0.4); backdrop-filter: blur(20px); border: 1px solid ${isMissing ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255,255,255,0.05)'}; border-radius: 24px; padding: 24px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; gap: 16px; position: relative; overflow: hidden;">
-                        <!-- Header: Designation & Stock -->
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
-                            <div style="flex: 1;">
-                                <div style="font-weight: 800; color: white; font-size: 16px; line-height: 1.3; margin-bottom: 6px;">${item.designation || 'Sans nom'}</div>
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <span style="font-size: 10px; color: #5856D6; background: rgba(88, 86, 214, 0.1); padding: 4px 8px; border-radius: 6px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(88, 86, 214, 0.15);">${item.type || 'MATÉRIEL'}</span>
-                                    ${item.qr_ref ? `<span style="font-size: 10px; color: #FF9500; background: rgba(255, 149, 0, 0.1); padding: 4px 8px; border-radius: 6px; font-weight: 800; font-family: monospace; letter-spacing: 0.5px; border: 1px solid rgba(255, 149, 0, 0.15);">${item.qr_ref}</span>` : ''}
-                                </div>
-                            </div>
-                            <div style="display: flex; flex-direction: column; align-items: flex-end;">
-                                <div style="background: ${item.stock_reel > 0 ? 'rgba(52, 199, 89, 0.1)' : 'rgba(255, 59, 48, 0.1)'}; color: ${item.stock_reel > 0 ? '#34C759' : '#FF453A'}; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; border: 1px solid ${item.stock_reel > 0 ? 'rgba(52, 199, 89, 0.2)' : 'rgba(255, 59, 48, 0.2)'};">
-                                    ${item.stock_reel || 0}
-                                </div>
-                                <div style="font-size: 10px; color: #8E8E93; margin-top: 6px; font-weight: 700; text-transform: uppercase;">Cible: ${item.nb_souhaite || 0}</div>
-                            </div>
-                        </div>
-
-                        <!-- Metadata: Ref & Supplier -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 14px; border: 1px solid rgba(255,255,255,0.03);">
-                            <div style="overflow: hidden;">
-                                <div style="font-size: 9px; color: #8E8E93; font-weight: 800; text-transform: uppercase; margin-bottom: 2px;">Référence</div>
-                                <div style="font-size: 12px; color: #D1D1D6; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${item.reference_fournisseur || ''}">${item.reference_fournisseur || '—'}</div>
-                            </div>
-                            <div style="overflow: hidden;">
-                                <div style="font-size: 9px; color: #8E8E93; font-weight: 800; text-transform: uppercase; margin-bottom: 2px;">Fournisseur</div>
-                                <div style="font-size: 12px; color: #D1D1D6; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${item.fournisseur || ''}">${item.fournisseur || '—'}</div>
-                            </div>
-                        </div>
-
-                        <!-- Description -->
-                        <div style="font-size: 13px; color: #AEAEB2; line-height: 1.5; font-weight: 400; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 40px;">
-                            ${item.caracteristiques || 'Aucune description détaillée.'}
-                        </div>
-
-                        <!-- Footer: Location & Status -->
-                        <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 14px;">
-                            <div style="display: flex; align-items: center; gap: 6px; color: #8E8E93; font-size: 12px; font-weight: 500;">
-                                <span style="font-size: 14px;">📍</span> ${item.lieu_de_stockage || 'Non localisé'}
-                            </div>
-                            ${isMissing ? `<span style="background: #FF3B30; color: white; padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 900; box-shadow: 0 4px 12px rgba(255, 59, 48, 0.2);">MANQUANT: ${missingQty}</span>` : ''}
-                        </div>
-
-                        <!-- Status bar at bottom -->
-                        <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: ${isMissing ? '#FF3B30' : '#34C759'}; opacity: 0.6;"></div>
-                    </div>
-                `;
-            }).join('');
+        const globalSearch = document.getElementById('machine-global-search');
+        globalSearch.oninput = async (e) => {
+            const val = e.target.value.trim().toUpperCase();
+            if (val.length < 3) return;
+            const machines = await api.getMachines();
+            const found = machines.find(m => m.machine_id === val);
+            if (found && found.building_id) window.renderBuildingSchematic(found.building_id, found.id);
         };
-
-        const loader = document.getElementById('material-list-loader');
-        if (loader) loader.remove();
-        renderGrid(stock);
-
-        const searchInput = document.getElementById('material-search');
-        const locationFilter = document.getElementById('material-filter-location');
-        const missingFilter = document.getElementById('material-filter-missing');
-
-        const handleFilter = () => {
-            const search = searchInput.value.toLowerCase();
-            const location = locationFilter.value;
-            const onlyMissing = missingFilter.checked;
-
-            const filtered = stock.filter(s => {
-                const matchesSearch = (s.designation || '').toLowerCase().includes(search) ||
-                    (s.type || '').toLowerCase().includes(search) ||
-                    (s.caracteristiques || '').toLowerCase().includes(search) ||
-                    (s.reference_fournisseur || '').toLowerCase().includes(search) ||
-                    (s.fournisseur || '').toLowerCase().includes(search);
-                const matchesLocation = !location || s.lieu_de_stockage === location;
-                const matchesMissing = !onlyMissing || (s.nb_souhaite || 0) > (s.stock_reel || 0);
-                return matchesSearch && matchesLocation && matchesMissing;
-            });
-            renderGrid(filtered);
-        };
-
-        searchInput.oninput = handleFilter;
-        locationFilter.onchange = handleFilter;
-        missingFilter.onchange = handleFilter;
-
-        // Save stock for modal
-        window._currentStock = stock;
-
-    } catch (e) {
-        console.error(e);
-        document.getElementById('material-list-container').innerHTML = `<div style="color:red; padding: 20px;">Erreur lors du chargement du stock: ${e.message}</div>`;
-    }
+    } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.openEditMaterialModal = async function (id = null) {
-    const isMobile = window.innerWidth <= 768;
-    const item = id ? window._currentStock.find(s => s.id === id) : {
-        designation: '',
-        type: '',
-        caracteristiques: '',
-        reference_fournisseur: '',
-        fournisseur: '',
-        stock_reel: 0,
-        nb_souhaite: 0,
-        lieu_de_stockage: ''
-    };
-
-    if (!item) return;
-
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.zIndex = '1000000';
-    modal.style.backdropFilter = 'blur(8px)';
-    modal.innerHTML = `
-        <div class="modal-box glass-panel" style="width: 90%; max-width: 650px; padding: ${isMobile ? '24px' : '40px'}; border-radius: 32px; background: rgba(28, 28, 30, 0.8); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); animation: modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); max-height: 90vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
-                <h2 style="margin:0; font-size: ${isMobile ? '20px' : '24px'}; font-weight: 800;">${id ? 'Modifier' : 'Ajouter'} Matériel</h2>
-                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
-            </div>
-            
-            <form id="edit-material-form" style="display: grid; grid-template-columns: ${isMobile ? '1fr' : '1fr 1fr'}; gap: 20px;">
-                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Désignation</label>
-                    <input type="text" name="designation" value="${item.designation || ''}" class="form-input" style="width:100%;" required>
-                </div>
-
-                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Type / Localisation Principale</label>
-                    <input type="text" name="type" list="existing-types" value="${item.type || ''}" class="form-input" style="width:100%;">
-                    <datalist id="existing-types">
-                        ${[...new Set(window._currentStock.map(s => s.type).filter(Boolean))].sort().map(t => `<option value="${t}">`).join('')}
-                    </datalist>
-                </div>
-                
-                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Caractéristiques</label>
-                    <textarea name="caracteristiques" class="form-input" style="width:100%; height: 80px; resize: vertical;">${item.caracteristiques || ''}</textarea>
-                </div>
-                
-                <div>
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Référence Fournisseur</label>
-                    <input type="text" name="reference_fournisseur" value="${item.reference_fournisseur || ''}" class="form-input" style="width:100%;">
-                </div>
-                
-                <div>
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Fournisseur</label>
-                    <input type="text" name="fournisseur" value="${item.fournisseur || ''}" class="form-input" style="width:100%;">
-                </div>
-                
-                <div>
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Stock Réel</label>
-                    <input type="number" step="0.01" name="stock_reel" value="${item.stock_reel || 0}" class="form-input" style="width:100%;">
-                </div>
-                
-                <div>
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Nb Souhaité</label>
-                    <input type="number" step="0.01" name="nb_souhaite" value="${item.nb_souhaite || 0}" class="form-input" style="width:100%;">
-                </div>
-                
-                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'}">
-                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Lieu de Stockage</label>
-                    <input type="text" name="lieu_de_stockage" list="existing-locations" value="${item.lieu_de_stockage || ''}" class="form-input" style="width:100%;">
-                    <datalist id="existing-locations">
-                        ${[...new Set(window._currentStock.map(s => s.lieu_de_stockage).filter(Boolean))].sort().map(loc => `<option value="${loc}">`).join('')}
-                    </datalist>
-                </div>
-
-                <div style="${isMobile ? '' : 'grid-column: 1 / -1;'} display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
-                    ${id ? `<button type="button" id="delete-material-btn" style="margin-right: auto; padding: 12px 20px; border-radius: 12px; background: rgba(255, 59, 48, 0.1); border: 1px solid #FF3B30; color: #FF3B30; font-weight: 700; cursor: pointer;">Supprimer</button>` : ''}
-                    <button type="button" class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                    <button type="submit" class="btn-primary" style="padding: 12px 30px; font-weight: 700; flex: ${isMobile ? '1' : 'none'};">${id ? 'Enregistrer' : 'Créer'}</button>
-                </div>
-
-                ${id ? `
-                <div style="grid-column: 1 / -1; margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-                    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Historique des logs</h3>
-                    <div id="material-history-list" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 10px;">
-                        <div style="text-align:center; color:#8E8E93;">Chargement de l'historique...</div>
-                    </div>
-                </div>
-                ` : ''}
-
-                ${(id && item.qr_ref) ? `
-                <div style="grid-column: 1 / -1; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-                    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #FF9500; text-transform: uppercase; font-weight: 700;">📱 QR Code — ${item.qr_ref}</h3>
-                    <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
-                        <canvas id="qr-canvas-modal" style="border-radius: 8px; background: white; padding: 8px;"></canvas>
-                        <div style="flex: 1;">
-                            <div style="font-family: monospace; font-size: 22px; color: #FF9500; font-weight: 900; margin-bottom: 8px;">${item.qr_ref}</div>
-                            <div style="font-size: 12px; color: #8E8E93; margin-bottom: 16px;">Scannez ce QR code pour accéder directement à cette fiche matériel.</div>
-                            <button type="button" onclick="window.downloadSingleQr('${item.qr_ref}', '${(item.designation || 'materiel').replace(/'/g, "\\\\'")}')" style="padding: 10px 16px; background: #FF9500; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 13px;">📥 Télécharger ce QR</button>
-                        </div>
-                    </div>
-                </div>
-                ` : ''}
-            </form>
-        </div>
-    `;
-    document.body.appendChild(modal);
-
-    // Generate QR code in modal if item has qr_ref
-    if (id && item.qr_ref && typeof QRCode !== 'undefined') {
-        const canvas = document.getElementById('qr-canvas-modal');
-        if (canvas) {
-            const qrUrl = `${config.api.workerUrl}/material?ref=${item.qr_ref}`;
-            QRCode.toCanvas(canvas, qrUrl, { width: 140, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
-        }
+window.renderMobileMap = async function() {
+    window.stopPlacingMachine();
+    document.body.classList.remove('hide-main-nav');
+    const container = document.getElementById('list-content');
+    if (container) {
+        container.style.position = '';
+        container.style.inset = '';
+        container.style.zIndex = '';
+        container.classList.remove('landscape-mode');
     }
-
-    if (id) {
-        window.loadMaterialHistory(id, 'material-history-list');
-    }
-
-    modal.querySelector('form').onsubmit = async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('button[type="submit"]');
-        const originalText = btn.innerText;
-        btn.disabled = true;
-        btn.innerText = "Sauvegarde...";
-
-        const formData = new FormData(e.target);
-        const updates = Object.fromEntries(formData.entries());
-
-        // Convert numbers
-        updates.stock_reel = parseFloat(updates.stock_reel) || 0;
-        updates.nb_souhaite = parseFloat(updates.nb_souhaite) || 0;
-
-        try {
-            if (id) {
-                const prevItem = window._currentStock.find(s => s.id === id);
-                await api.updateMaterialStock(id, updates);
-
-                // Create logs for changes
-                if (prevItem) {
-                    if (prevItem.lieu_de_stockage !== updates.lieu_de_stockage) {
-                        await api.addMaterialLog(id, 'Deplacement', `Lieu : ${prevItem.lieu_de_stockage || 'Nouveau'} -> ${updates.lieu_de_stockage || 'Non localisé'}`);
-                    }
-                    if (prevItem.stock_reel !== updates.stock_reel) {
-                        await api.addMaterialLog(id, 'Stock', `Quantité : ${prevItem.stock_reel} -> ${updates.stock_reel}`);
-                    }
-                }
-
-                showToast("Matériel mis à jour");
-            } else {
-                const created = await api.createMaterialStock(updates);
-                if (created && created.id) {
-                    await api.addMaterialLog(created.id, 'Creation', 'Matériel ajouté au stock');
-                }
-                showToast("Matériel ajouté");
-            }
-            modal.remove();
-            renderAdminMaterialTracking(); // Refresh
-        } catch (err) {
-            alert("Erreur lors de la sauvegarde: " + err.message);
-            btn.disabled = false;
-            btn.innerText = originalText;
-        }
-    };
-
-    const deleteBtn = modal.querySelector('#delete-material-btn');
-    if (deleteBtn) {
-        deleteBtn.onclick = async () => {
-            if (confirm("Voulez-vous vraiment supprimer ce matériel ?")) {
-                try {
-                    await api.deleteMaterialStock(id);
-                    showToast("Matériel supprimé");
-                    modal.remove();
-                    renderAdminMaterialTracking();
-                } catch (err) {
-                    alert("Erreur lors de la suppression: " + err.message);
-                }
-            }
-        };
-    }
-};
-
-// --- QR CODE UTILITIES ---
-
-window.downloadSingleQr = async function (ref, designation) {
-    if (typeof QRCode === 'undefined') { alert('QR library not loaded'); return; }
-    const qrUrl = `${config.api.workerUrl}/material?ref=${ref}`;
-    const canvas = document.createElement('canvas');
-    await QRCode.toCanvas(canvas, qrUrl, { width: 400, margin: 2, color: { dark: '#000000', light: '#ffffff' } });
-
-    // Create a labeled version
-    const labelCanvas = document.createElement('canvas');
-    const padding = 40;
-    labelCanvas.width = canvas.width + padding * 2;
-    labelCanvas.height = canvas.height + padding * 2 + 60;
-    const ctx = labelCanvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
-    ctx.drawImage(canvas, padding, padding);
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 28px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(ref, labelCanvas.width / 2, canvas.height + padding + 35);
-    ctx.font = '16px sans-serif';
-    ctx.fillStyle = '#666666';
-    ctx.fillText(designation.substring(0, 40), labelCanvas.width / 2, canvas.height + padding + 58);
-
-    const link = document.createElement('a');
-    link.download = `QR_${ref}.png`;
-    link.href = labelCanvas.toDataURL('image/png');
-    link.click();
-};
-
-window.openQrExportModal = async function () {
-    const stock = window._currentStock || [];
-    const withRef = stock.filter(s => s.qr_ref);
-    const withoutRef = stock.filter(s => !s.qr_ref);
-
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.zIndex = '1000000';
-    modal.style.backdropFilter = 'blur(8px)';
-    modal.innerHTML = `
-        <div class="modal-box glass-panel" style="width: 90%; max-width: 600px; padding: 40px; border-radius: 32px; background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
-                <h2 style="margin:0; font-size: 24px; font-weight: 800;">📱 Gestion QR Codes</h2>
-                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 30px;">
-                <div style="background: rgba(52, 199, 89, 0.1); border: 1px solid rgba(52, 199, 89, 0.2); border-radius: 16px; padding: 20px; text-align: center;">
-                    <div style="font-size: 32px; font-weight: 900; color: #34C759;">${withRef.length}</div>
-                    <div style="font-size: 12px; color: #8E8E93; font-weight: 600;">AVEC REF QR</div>
-                </div>
-                <div style="background: rgba(255, 149, 0, 0.1); border: 1px solid rgba(255, 149, 0, 0.2); border-radius: 16px; padding: 20px; text-align: center;">
-                    <div style="font-size: 32px; font-weight: 900; color: #FF9500;">${withoutRef.length}</div>
-                    <div style="font-size: 12px; color: #8E8E93; font-weight: 600;">SANS REF QR</div>
-                </div>
-            </div>
-
-            ${withoutRef.length > 0 ? `
-            <button onclick="window.batchGenerateRefs(this)" style="width: 100%; padding: 16px; background: linear-gradient(135deg, #FF9500, #FF3B30); color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; margin-bottom: 20px; transition: 0.2s;">
-                ⚡ Attribuer les références aux ${withoutRef.length} matériels manquants
-            </button>` : ''}
-
-            <div style="margin-bottom: 20px;">
-                <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:10px; font-weight:700; text-transform:uppercase;">Taille des QR codes sur le PDF</label>
-                <select id="qr-size-select" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:12px; color:white; padding:12px; font-size:15px; outline:none;">
-                    <option value="60">Petit (60×60 mm) — ~24 par page</option>
-                    <option value="80" selected>Moyen (80×80 mm) — ~12 par page</option>
-                    <option value="100">Grand (100×100 mm) — ~8 par page</option>
-                    <option value="120">Très grand (120×120 mm) — ~6 par page</option>
-                </select>
-            </div>
-
-            <button onclick="window.exportAllQrPdf(this)" style="width: 100%; padding: 16px; background: #5856D6; color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; transition: 0.2s;" ${withRef.length === 0 ? 'disabled style="opacity:0.5"' : ''}>
-                📥 Exporter tous les QR codes en PDF (${withRef.length} matériels)
-            </button>
-            <p style="font-size: 11px; color: #8E8E93; text-align: center; margin-top: 12px;">Les QR codes seront disposés automatiquement sur des feuilles A4</p>
-        </div>
-    `;
-    document.body.appendChild(modal);
-};
-
-window.batchGenerateRefs = async function (btn) {
-    btn.disabled = true;
-    btn.innerText = '⏳ Attribution en cours...';
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+    document.getElementById('selected-category-title').innerText = "Plans Bâtiments";
+    mobileCurrentPath = "map";
     try {
-        const result = await api.generateMaterialRefs();
-        showToast(result.message || `${result.count} références générées`);
-        btn.closest('.modal-overlay').remove();
-        renderAdminMaterialTracking();
-    } catch (err) {
-        alert('Erreur: ' + err.message);
-        btn.disabled = false;
-        btn.innerText = '⚡ Réessayer';
-    }
-};
-
-window.exportAllQrPdf = async function (btn) {
-    if (typeof QRCode === 'undefined') { alert('QR library not loaded'); return; }
-    const stock = (window._currentStock || []).filter(s => s.qr_ref);
-    if (stock.length === 0) { alert('Aucun matériel avec référence QR'); return; }
-
-    btn.disabled = true;
-    const origText = btn.innerText;
-    btn.innerText = '⏳ Génération du PDF...';
-
-    const sizeMm = parseInt(document.getElementById('qr-size-select').value) || 80;
-    const pxPerMm = 3.78; // ~96 DPI
-    const qrPx = Math.round(sizeMm * pxPerMm);
-    const labelH = Math.round(20 * pxPerMm);
-    const cellW = qrPx;
-    const cellH = qrPx + labelH;
-    const marginMm = 10;
-    const margin = Math.round(marginMm * pxPerMm);
-    const pageW = Math.round(210 * pxPerMm); // A4 width
-    const pageH = Math.round(297 * pxPerMm); // A4 height
-    const cols = Math.floor((pageW - margin * 2) / (cellW + margin));
-    const rows = Math.floor((pageH - margin * 2) / (cellH + margin));
-    const perPage = cols * rows;
-    const totalPages = Math.ceil(stock.length / perPage);
-
-    const pages = [];
-
-    for (let page = 0; page < totalPages; page++) {
-        const canvas = document.createElement('canvas');
-        canvas.width = pageW;
-        canvas.height = pageH;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pageW, pageH);
-
-        const startIdx = page * perPage;
-        const endIdx = Math.min(startIdx + perPage, stock.length);
-
-        for (let i = startIdx; i < endIdx; i++) {
-            const item = stock[i];
-            const localIdx = i - startIdx;
-            const col = localIdx % cols;
-            const row = Math.floor(localIdx / cols);
-            const x = margin + col * (cellW + margin);
-            const y = margin + row * (cellH + margin);
-
-            // Generate QR
-            const qrCanvas = document.createElement('canvas');
-            const qrUrl = `${config.api.workerUrl}/material?ref=${item.qr_ref}`;
-            await QRCode.toCanvas(qrCanvas, qrUrl, { width: qrPx - 8, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
-
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(x, y, cellW, cellH);
-            ctx.strokeStyle = '#e0e0e0';
-            ctx.strokeRect(x, y, cellW, cellH);
-            ctx.drawImage(qrCanvas, x + 4, y + 4);
-
-            // Label
-            ctx.fillStyle = '#000000';
-            ctx.font = `bold ${Math.max(10, Math.round(sizeMm * 0.15))}px monospace`;
-            ctx.textAlign = 'center';
-            ctx.fillText(item.qr_ref, x + cellW / 2, y + qrPx + 14);
-            ctx.font = `${Math.max(8, Math.round(sizeMm * 0.1))}px sans-serif`;
-            ctx.fillStyle = '#666666';
-            const shortName = (item.designation || '').substring(0, 25);
-            ctx.fillText(shortName, x + cellW / 2, y + qrPx + 28);
-        }
-
-        // Footer
-        ctx.fillStyle = '#aaaaaa';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText(`Page ${page + 1}/${totalPages} — Pouchain App`, pageW - margin, pageH - 10);
-
-        pages.push(canvas);
-        btn.innerText = `⏳ Page ${page + 1}/${totalPages}...`;
-    }
-
-    // Download each page as PNG (simple approach without jsPDF dependency)
-    for (let i = 0; i < pages.length; i++) {
-        const link = document.createElement('a');
-        link.download = `QR_Codes_Pouchain_Page_${i + 1}.png`;
-        link.href = pages[i].toDataURL('image/png');
-        link.click();
-        await new Promise(r => setTimeout(r, 300));
-    }
-
-    btn.disabled = false;
-    btn.innerText = origText;
-    showToast(`${pages.length} page(s) exportée(s) avec ${stock.length} QR codes`);
-};
-
-window.loadMaterialHistory = async function (materialId, containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
-    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
-
-    try {
-        const logs = await api.getMaterialHistory(materialId);
-        if (!logs || logs.length === 0) {
-            container.innerHTML = `<div style="color: #8E8E93; font-size: 13px; text-align: center; padding: 10px;">Aucun historique disponible</div>`;
-            return;
-        }
-
-        container.innerHTML = logs.map(log => {
-            const date = new Date(log.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            let userName = 'Système';
-            if (log.profiles) {
-                userName = `${log.profiles.first_name || ''} ${log.profiles.last_name || ''}`.trim() || 'Utilisateur inconnu';
-            }
-            return `
-                <div style="padding: 12px; border-left: 3px solid #5856D6; background: rgba(88, 86, 214, 0.05); border-radius: 0 10px 10px 0; margin-bottom: 8px;">
-                    <div style="font-size: 11px; color: #8E8E93; font-weight: 600;">${date} • ${userName}</div>
-                    <div style="font-size: 13px; color: ${textColor}; font-weight: 500; margin-top: 4px;">${log.details}</div>
+        const buildings = await api.getBuildings();
+        container.innerHTML = `
+            <div style="padding: 20px; display: grid; gap: 15px; background: var(--bg-color);">
+                <div style="position: relative;">
+                    <input type="text" id="mobile-machine-search" placeholder="🔍 Rechercher N° MI..." style="width:100%; padding: 14px; border-radius: 14px; border:none; background: rgba(142, 142, 147, 0.12); color: var(--text-color);">
+                    <div id="m-suggestions" style="display:none; position: absolute; left:0; right:0; top: 100%; max-height: 200px; overflow-y: auto; background: var(--bg-color); border-radius: 0 0 14px 14px; box-shadow: 0 10px 15px rgba(0,0,0,0.2); z-index: 1000; border-top: 1px solid rgba(142,142,147,0.1);"></div>
                 </div>
-            `;
-        }).join('');
-    } catch (e) {
-        container.innerHTML = `<div style="color: red; font-size: 12px;">Erreur historique: ${e.message}</div>`;
-    }
+                ${buildings.map(b => `
+                    <div style="background: rgba(142, 142, 147, 0.1); padding: 20px; border-radius: 20px; display: flex; align-items: center; gap: 15px;" onclick="window.renderBuildingSchematic('${b.id}')">
+                        <div style="font-size: 32px;">🏢</div>
+                        <div style="flex:1;"><div style="font-weight: bold; color: var(--text-color);">${b.name}</div><div style="font-size: 12px; color: #8E8E93;">Voir le plan</div></div>
+                        <div style="color: #8E8E93;">→</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        const mSearch = document.getElementById('mobile-machine-search');
+        const mSugg = document.getElementById('m-suggestions');
+        mSearch.oninput = async (e) => {
+            const val = e.target.value.trim().toUpperCase();
+            if (val.length < 2) { mSugg.style.display = 'none'; return; }
+            const machines = await api.getMachines();
+            const filtered = machines.filter(m => (m.machine_id || "").toUpperCase().includes(val)).slice(0, 5);
+            if (filtered.length > 0) {
+                mSugg.style.display = 'block';
+                mSugg.innerHTML = filtered.map(m => `
+                    <div onclick="window.renderBuildingSchematic('${m.building_id}', '${m.id}')" style="padding: 12px 15px; border-bottom: 1px solid rgba(142,142,147,0.1); color: var(--text-color); display: flex; justify-content: space-between;">
+                        <span>${m.machine_id}</span>
+                        <small style="opacity: 0.6;">Bât. ${m.building_id ? buildings.find(b => b.id === m.building_id)?.name : 'N/A'}</small>
+                    </div>
+                `).join('');
+            } else { mSugg.style.display = 'none'; }
+        };
+    } catch (e) { container.innerHTML = `<p style="padding:20px;">Erreur: ${e.message}</p>`; }
 };
 
-window.renderBuildingSchematic = async function (buildingId, highlightMachineId = null) {
+window.renderBuildingSchematic = async function(buildingId, highlightMachineId = null) {
     const isMobile = window.innerWidth <= 768;
     const container = isMobile ? document.getElementById('list-content') : document.getElementById('admin-content');
-
+    
     // Si c'est mobile et qu'on cherche une machine, on passe en plein écran horizontal (rotation 90)
     if (isMobile && highlightMachineId) {
         document.body.classList.add('hide-main-nav');
@@ -8042,7 +7050,7 @@ window.renderBuildingSchematic = async function (buildingId, highlightMachineId 
         document.body.classList.remove('hide-main-nav');
         container.classList.remove('landscape-mode');
     }
-
+    
     try {
         const buildings = await api.getBuildings();
         const b = buildings.find(x => x.id === buildingId);
@@ -8057,7 +7065,7 @@ window.renderBuildingSchematic = async function (buildingId, highlightMachineId 
                     <!-- Bouton retour flottant supprimé au profit du bouton retour Android -->
                 ` : `
                     <div style="padding: 15px 20px; background: rgba(0,0,0,0.4); display: flex; align-items: center; gap: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); z-index: 10;">
-                        <button onclick="${isMobile ? 'window.renderMobileMaterialTracking()' : 'window.renderAdminMaterialTracking()'}" style="background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <button onclick="${isMobile ? 'window.renderMobileMap()' : 'window.renderAdminMap()'}" style="background: none; border: none; color: white; cursor: pointer; display: flex; align-items: center; gap: 5px;">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                             ${isMobile ? '' : 'Retour'}
                         </button>
@@ -8100,10 +7108,10 @@ window.renderBuildingSchematic = async function (buildingId, highlightMachineId 
                     pin.className = 'machine-pin' + (m.id === highlightMachineId ? ' pin-searched' : '');
                     pin.style.cssText = `position: absolute; left: ${m.x_pos}%; top: ${m.y_pos}%; width: 32px; height: 32px; margin: -16px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: rgba(255,255,255,0.25); border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); cursor: pointer; z-index: ${m.id === highlightMachineId ? 10000 : 100}; transition: all 0.2s ease; backdrop-filter: blur(5px);`;
                     pin.innerHTML = m.emoji || '🔧';
-                    pin.onclick = (ev) => {
-                        ev.stopPropagation();
-                        if (window.isPlacingMachine) return;
-                        window.renderMachineDetailsUI(m.id);
+                    pin.onclick = (ev) => { 
+                        ev.stopPropagation(); 
+                        if(window.isPlacingMachine) return; 
+                        window.renderMachineDetailsUI(m.id); 
                     };
                     sc.appendChild(pin);
                 }
@@ -8113,7 +7121,7 @@ window.renderBuildingSchematic = async function (buildingId, highlightMachineId 
     } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.focusMachineOnSchematic = function (id) {
+window.focusMachineOnSchematic = function(id) {
     const pins = document.querySelectorAll('.machine-pin');
     pins.forEach(p => p.style.background = '#5856D6');
     const target = document.getElementById(`pin-${id}`);
@@ -8121,11 +7129,11 @@ window.focusMachineOnSchematic = function (id) {
         target.style.background = '#FF3B30';
         target.style.transform = 'scale(1.5)';
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => { if (target) target.style.transform = 'scale(1)'; }, 1000);
+        setTimeout(() => { if(target) target.style.transform = 'scale(1)'; }, 1000);
     }
 };
 
-window.openAddBuildingModal = function () {
+window.openAddBuildingModal = function() {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -8152,24 +7160,24 @@ window.openAddBuildingModal = function () {
             const svg_url = `${config.api.workerUrl}/get/${key}`;
             await api.saveBuilding({ name, svg_url });
             modal.remove();
-            window.renderAdminMaterialTracking();
-        } catch (e) { alert("Erreur: " + e.message); }
+            window.renderAdminMap();
+        } catch(e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.handleDeleteBuilding = async function (id) {
+window.handleDeleteBuilding = async function(id) {
     if (!confirm("Supprimer ce bâtiment ?")) return;
-    try { await api.deleteBuilding(id); window.renderAdminMaterialTracking(); } catch (e) { alert("Erreur: " + e.message); }
+    try { await api.deleteBuilding(id); window.renderAdminMap(); } catch(e) { alert("Erreur: " + e.message); }
 };
 
-window.startPlacingMachine = function (buildingId) {
+window.startPlacingMachine = function(buildingId) {
     window.isPlacingMachine = true;
     document.getElementById('add-m-btn').style.display = 'none';
     document.getElementById('cancel-m-btn').style.display = 'block';
     document.getElementById('placement-hint').style.display = 'block';
 };
 
-window.stopPlacingMachine = function () {
+window.stopPlacingMachine = function() {
     window.isPlacingMachine = false;
     const addBtn = document.getElementById('add-m-btn');
     const cancelBtn = document.getElementById('cancel-m-btn');
@@ -8179,7 +7187,7 @@ window.stopPlacingMachine = function () {
     if (hint) hint.style.display = 'none';
 };
 
-window.openAddMachineModal = function (x, y, buildingId) {
+window.openAddMachineModal = function(x, y, buildingId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -8195,7 +7203,7 @@ window.openAddMachineModal = function (x, y, buildingId) {
             <div style="margin-bottom: 12px;">
                 <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Emoji Représentatif</label>
                 <div style="display:flex; gap: 8px; flex-wrap: wrap;" id="emoji-picker">
-                    ${['🔧', '🚜', '🏭', '⛽', '⚡', '💧', '🌪️', '📦', '🦾', '🌡️'].map(e => `<div onclick="window.selectEmoji(this, '${e}')" style="font-size: 24px; padding: 5px; cursor: pointer; border-radius: 8px; border: 2px solid transparent;">${e}</div>`).join('')}
+                    ${['🔧','🚜','🏭','⛽','⚡','💧','🌪️','📦','🦾','🌡️'].map(e => `<div onclick="window.selectEmoji(this, '${e}')" style="font-size: 24px; padding: 5px; cursor: pointer; border-radius: 8px; border: 2px solid transparent;">${e}</div>`).join('')}
                 </div>
                 <input type="hidden" id="new-m-emoji" value="🔧">
             </div>
@@ -8230,12 +7238,12 @@ window.openAddMachineModal = function (x, y, buildingId) {
             await api.saveMachine({ machine_id: id, type, x_pos: x, y_pos: y, building_id: buildingId, image_url, emoji });
             window.stopPlacingMachine();
             modal.remove();
-            if (buildingId) window.renderBuildingSchematic(buildingId); else window.renderAdminMaterialTracking();
-        } catch (e) { alert("Erreur: " + e.message); }
+            if (buildingId) window.renderBuildingSchematic(buildingId); else window.renderAdminMap();
+        } catch(e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.renderMachineDetailsUI = async function (machineDbId) {
+window.renderMachineDetailsUI = async function(machineDbId) {
     try {
         const machines = await api.getMachines();
         const machine = machines.find(m => m.id === machineDbId);
@@ -8272,10 +7280,10 @@ window.renderMachineDetailsUI = async function (machineDbId) {
             </div>
         `;
         document.body.appendChild(modal);
-    } catch (e) { alert("Erreur: " + e.message); }
+    } catch(e) { alert("Erreur: " + e.message); }
 };
 
-window.openAddMachineLogModal = function (machineDbId) {
+window.openAddMachineLogModal = function(machineDbId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -8306,1216 +7314,620 @@ window.openAddMachineLogModal = function (machineDbId) {
             await api.addMachineLog(machineDbId, actionType, desc);
             document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
             renderMachineDetailsUI(machineDbId);
-        } catch (e) { alert("Erreur: " + e.message); }
+        } catch(e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.handleDeleteMachine = async function (id, buildingId = null) {
+window.handleDeleteMachine = async function(id, buildingId = null) {
     if (!confirm("Supprimer cette machine ?")) return;
     console.log("UI: Starting machine deletion for:", id);
     try {
         await api.deleteMachine(id);
         console.log("UI: Machine deleted successfully, closing modals...");
         document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
-
+        
         console.log("UI: Refreshing view... BuildingId:", buildingId);
         if (buildingId && typeof window.renderBuildingSchematic === "function") {
             window.renderBuildingSchematic(buildingId);
-        } else if (typeof window.renderMobileMaterialTracking === "function") {
-            window.renderMobileMaterialTracking();
+        } else if (typeof window.renderMobileMap === "function") {
+            window.renderMobileMap();
         } else {
-            renderAdminMaterialTracking();
+            renderAdminMap();
         }
-    } catch (e) {
+    } catch(e) { 
         console.error("UI: Machine deletion FAILED:", e);
-        alert("Erreur: " + e.message);
+        alert("Erreur: " + e.message); 
     }
 };
 
-window.openStorageAnalysisModal = async function (event) {
-    const originalBtn = event?.currentTarget;
-    if (originalBtn) originalBtn.innerText = '📊 Analyse...';
-
-    let fullFiles = [];
-    let spaceData = null;
+/**
+ * Enhanced Push Diagnostic for User
+ */
+window.debugPushNotifications = async function() {
+    let message = "--- Diagnostic Notifications ---\n\n";
     try {
-        // Fetch both the full file list AND the official space usage
-        [fullFiles, spaceData] = await Promise.all([
-            api.listFiles(null, true),
-            api.getSpaceUsage()
-        ]);
-        if (originalBtn) originalBtn.innerText = '📊 Analyser le stockage';
-    } catch (e) {
-        console.error("Storage analysis fetch failed", e);
-        if (originalBtn) originalBtn.innerText = '📊 Analyser le stockage';
-        alert("Erreur lors de la récupération des données complètes.");
-        return;
-    }
+        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+            message += "Plateforme : ANDROID (NATIVE)\n";
+            const { PushNotifications } = window.Capacitor.Plugins;
+            if (!PushNotifications) throw new Error("Le plugin PushNotifications n'est pas chargé.");
 
-    if (!fullFiles || fullFiles.length === 0) {
-        alert("Aucun fichier trouvé pour l'analyse.");
-        return;
-    }
-
-    // Official total from Cloudflare (matches sidebar)
-    const officialTotalSize = spaceData?.usedBytes || 0;
-
-    // Step 1: Pre-calculate total and extension breakdown
-    const extStats = {};
-    let listedTotalSize = 0;
-    const allFiles = [];
-
-    fullFiles.forEach(f => {
-        if (f.key.startsWith('.meta_')) return;
-        listedTotalSize += f.size;
-        allFiles.push(f);
-        const ext = f.key.split('.').pop().toLowerCase() || 'inconnu';
-        if (!extStats[ext]) extStats[ext] = { size: 0, count: 0 };
-        extStats[ext].size += f.size;
-        extStats[ext].count++;
-    });
-
-    // Use official total if it's larger than what we listed
-    const totalSize = Math.max(officialTotalSize, listedTotalSize);
-
-    // Step 2: Categories
-    const categories = {
-        'Images': { color: '#FF3B30', size: 0, count: 0, exts: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'], icon: '🖼️' },
-        'PDF': { color: '#FF9500', size: 0, count: 0, exts: ['pdf'], icon: '📕' },
-        'Documents': { color: '#007AFF', size: 0, count: 0, exts: ['doc', 'docx', 'xls', 'xlsx', 'txt', 'csv'], icon: '📔' },
-        'Vidéos': { color: '#AF52DE', size: 0, count: 0, exts: ['mp4', 'mov', 'webm', 'mkv'], icon: '🎬' }
-    };
-
-    const finalCategories = {};
-    const handledExts = new Set();
-    for (const [name, data] of Object.entries(categories)) {
-        data.exts.forEach(e => {
-            if (extStats[e]) {
-                data.size += extStats[e].size;
-                data.count += extStats[e].count;
-                handledExts.add(e);
-            }
-        });
-        if (data.size > 0) finalCategories[name] = data;
-    }
-
-    // Discrepancy between listed files and official storage (System overhead / hidden R2 data)
-    if (officialTotalSize > listedTotalSize) {
-        finalCategories['Système / Métadonnées'] = {
-            color: '#5856D6',
-            size: officialTotalSize - listedTotalSize,
-            count: 0,
-            icon: '⚙️'
-        };
-    }
-
-    const palette = ['#5AC8FA', '#4CD964', '#FF2D55', '#E5E5EA', '#FFCC00', '#5856D6'];
-    let pIdx = 0;
-    const remainingExts = Object.entries(extStats).filter(([e]) => !handledExts.has(e));
-    const others = { color: '#8E8E93', size: 0, count: 0, icon: '📄' };
-
-    remainingExts.forEach(([ext, stats]) => {
-        const percent = (stats.size / totalSize) * 100;
-        if (percent > 1.0) {
-            finalCategories[ext.toUpperCase()] = {
-                color: palette[pIdx % palette.length],
-                size: stats.size,
-                count: stats.count,
-                icon: '📂'
-            };
-            pIdx++;
-        } else {
-            others.size += stats.size;
-            others.count += stats.count;
-        }
-    });
-    if (others.size > 0) finalCategories['Autres'] = others;
-
-    const topFiles = allFiles.sort((a, b) => b.size - a.size).slice(0, 5);
-    const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(2) + ' Mo';
-
-    // Step 3: BUILD SVG DONUT
-    // Radius 40, Circumference = 2 * PI * 40 = 251.32
-    const radius = 40;
-    const circ = 2 * Math.PI * radius;
-    let currentOffset = 0;
-    const activeCats = Object.entries(finalCategories).filter(([_, data]) => data.size > 0).sort((a, b) => b[1].size - a[1].size);
-
-    let svgContent = `<circle cx="50" cy="50" r="${radius}" fill="transparent" stroke="rgba(255,255,255,0.05)" stroke-width="12"/>`;
-
-    activeCats.forEach(([_, data]) => {
-        const p = data.size / totalSize;
-        const dashArray = p * circ;
-        const dashOffset = -currentOffset;
-        svgContent += `<circle cx="50" cy="50" r="${radius}" fill="transparent" 
-            stroke="${data.color}" stroke-width="12" 
-            stroke-dasharray="${dashArray} ${circ - dashArray}" 
-            stroke-dashoffset="${dashOffset}" 
-            transform="rotate(-90 50 50)" />`;
-        currentOffset += dashArray;
-        data.percent = p * 100;
-    });
-
-    const donutSVG = `
-        <svg viewBox="0 0 100 100" style="width: 250px; height: 250px; filter: drop-shadow(0 15px 30px rgba(0,0,0,0.5)); transform: scale(1.05);">
-            ${svgContent}
-        </svg>
-    `;
-
-    // Step 4: Render Modal
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay storage-analysis-overlay';
-    modal.style.zIndex = "10000001";
-    modal.style.padding = "20px";
-
-    // Inject Custom Styles for Scrollbar
-    const styleTag = document.createElement('style');
-    styleTag.innerHTML = `
-        .storage-analysis-modal::-webkit-scrollbar { width: 8px; }
-        .storage-analysis-modal::-webkit-scrollbar-track { background: transparent; }
-        .storage-analysis-modal::-webkit-scrollbar-thumb { background: #000; border-radius: 10px; border: 2px solid #1c1c1c; }
-        .storage-analysis-modal::-webkit-scrollbar-thumb:hover { background: #333; }
-    `;
-    document.head.appendChild(styleTag);
-
-    modal.innerHTML = `
-        <div class="modal-box glass-panel storage-analysis-modal" style="width: 750px; max-height: 85vh; overflow-y: auto; padding: 0; border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; animation: modalPop 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28); background: #111;">
-            <!-- Header Opaque and Sticky -->
-            <div style="position: sticky; top: 0; background: #000; padding: 30px 40px; z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="margin:0; font-weight: 800; font-size: 22px; color: white;">📊 Analyse Avancée du Stockage</h2>
-                <button onclick="this.closest('.modal-overlay').remove()" style="background: rgba(255,255,255,0.1); border: none; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px;">&times;</button>
-            </div>
-
-            <div style="padding: 40px;">
-                <div style="display: flex; gap: 45px; align-items: center; margin-bottom: 40px; flex-wrap: wrap;">
-                    <div style="width: 250px; height: 250px; flex-shrink: 0; position: relative; margin: 0 auto;">
-                        ${donutSVG}
-                        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 120px;">
-                            <div style="font-size: 10px; color: #888; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Total</div>
-                            <div style="font-size: 22px; font-weight: 900; color: white;">${formatSize(totalSize)}</div>
-                        </div>
-                    </div>
-
-                    <div style="flex: 1; min-width: 300px; display: grid; grid-template-columns: 1fr; gap: 10px;">
-                        ${activeCats.map(([name, data]) => `
-                            <div style="display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.03); padding: 12px 18px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05);">
-                                <div style="width: 12px; height: 12px; border-radius: 50%; background: ${data.color}; box-shadow: 0 0 10px ${data.color}88;"></div>
-                                <div style="flex: 1;">
-                                    <div style="display:flex; justify-content: space-between; align-items: flex-end;">
-                                        <span style="font-weight: 800; font-size: 14px; color: #fff;">${data.icon} ${name}</span>
-                                        <span style="font-size: 11px; color: #666;">${data.count} fichiers</span>
-                                    </div>
-                                    <div style="display:flex; justify-content: space-between; align-items: flex-end; margin-top: 4px;">
-                                        <span style="font-size: 14px; color: white; font-weight: 800;">${data.percent.toFixed(1)}%</span>
-                                        <span style="font-size: 11px; color: #aaa; font-weight: 600;">${formatSize(data.size)}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-
-                <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 35px; margin-bottom: 30px;">
-                    <h3 style="font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 25px; font-weight: 900;">📂 Top 5 des fichiers les plus lourds</h3>
-                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                        ${topFiles.map((f, i) => {
-        const name = f.key.split('/').pop();
-        return `
-                                <div style="display: flex; align-items: center; gap: 20px; padding: 15px 25px; background: #000; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
-                                    <span style="font-size: 16px; font-weight: 900; color: #333; width: 25px;">#${i + 1}</span>
-                                    <div style="flex: 1; min-width: 0;">
-                                        <div style="font-size: 14px; font-weight: 800; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${window.escapeHTML(name)}</div>
-                                        <div style="font-size: 11px; color: #555; margin-top: 3px;">${f.key}</div>
-                                    </div>
-                                    <div style="font-weight: 900; color: var(--primary); font-size: 14px;">${formatSize(f.size)}</div>
-                                </div>
-                            `;
-    }).join('')}
-                    </div>
-                </div>
-
-                <div style="padding: 20px; background: rgba(0,122,255,0.05); border-radius: 12px; border: 1px solid rgba(0,122,255,0.1);">
-                    <p style="margin:0; font-size: 13px; color: #aaa; line-height: 1.6;">
-                        <strong>Note :</strong> L'analyse inclut uniquement les fichiers indexés. Les fichiers dépassant 1% de l'espace total sont mis en avant individuellement.
-                    </p>
-                </div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-};
-
-window.renderAdminNotifications = async function () {
-    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
-    document.getElementById('nav-notifications').classList.add('active');
-    const container = document.getElementById('admin-content');
-
-    // Structure HTML Ultra Premium avec Glassmorphism et SCROLLABLE
-    container.innerHTML = `
-        <div style="height: 100%; width: 100%; position: relative; overflow: hidden; background: url('https://images.unsplash.com/photo-1550745165-9bc0b25272a7?auto=format&fit=crop&q=80&w=2070') center/cover no-repeat fixed; border-radius: 20px;">
-            <div style="position: absolute; inset: 0; background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(25px); pointer-events: none; z-index: 0;"></div>
+            message += "1. Permissions : ";
+            let permStatus = await PushNotifications.checkPermissions();
+            message += `${permStatus.receive}\n`;
             
-            <div style="position: absolute; inset: 0; overflow-x: hidden; overflow-y: auto; z-index: 1;">
-                <div style="padding: 40px; min-height: 100%; display: flex; flex-direction: column; color: white; gap: 40px; max-width: 1400px; margin: 0 auto; box-sizing: border-box;">
+            if (permStatus.receive !== 'granted') {
+                message += "-> Demande permission...\n";
+                permStatus = await PushNotifications.requestPermissions();
+                message += `Nouvel état: ${permStatus.receive}\n`;
+            }
+
+            if (permStatus.receive === 'granted') {
+                message += "2. Inscription FCM en cours...\n";
                 
-                <!-- HEADER -->
-                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                    <div>
-                        <h1 style="font-size: 36px; font-weight: 800; margin: 0; letter-spacing: -1px;">🔔 Centre de Notifications</h1>
-                        <p style="color: #aaa; font-size: 16px; margin-top: 10px;">Gérez les communications directes et les automatisations du système.</p>
+                // On fixe un témoin pour voir si la réponse arrive
+                let tokenReceived = false;
+                
+                const registrationListener = await PushNotifications.addListener('registration', (token) => {
+                    tokenReceived = true;
+                    alert("✅ TOKEN REÇU !\n\nVotre jeton Firebase est : \n" + token.value + "\n\n(Ce Token a été envoyé au serveur)");
+                    registrationListener.remove();
+                });
+
+                const errorListener = await PushNotifications.addListener('registrationError', (err) => {
+                    tokenReceived = true;
+                    alert("❌ ERREUR FIREBASE :\n\n" + (err.error || "Problème d'enregistrement. Vérifiez vos clés Firebase."));
+                    errorListener.remove();
+                });
+
+                await PushNotifications.register();
+                
+                alert(message + "\nAttente de Firebase pendant 10s...");
+                
+                // Timeout au bout de 10s si rien n'est reçu
+                setTimeout(() => {
+                    if (!tokenReceived) {
+                        alert("⏳ Pas de réponse de Firebase au bout de 10s.\n\nVérifiez que :\n- Le téléphone a internet\n- Les services Google Play sont à jour\n- Le fichier google-services.json est le bon.");
+                        registrationListener.remove();
+                        errorListener.remove();
+                    }
+                }, 10000);
+                
+                return;
+            } else {
+                throw new Error("Permission refusée.");
+            }
+        }
+
+        // Web Fallback
+        message += "Plateforme : WEB / PWA\n";
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) throw new Error("Service Worker absent.");
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+             await initPushNotifications();
+        } else {
+            await api.subscribePush(sub);
+            alert("✅ Web Push OK.");
+        }
+    } catch (e) {
+        alert(message + "\n❌ ERREUR : " + e.message);
+    }
+};
+
+
+// --- MOBILE : GESTION DU PARC ET MAINTENANCE ---
+window.renderMobileParc = async function() {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Parc Matériel";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    window.mobileCurrentPath = "parc_list";
+
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const border = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    container.innerHTML = `
+        <div style="padding: 16px; padding-bottom: 100px;">
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+                <div style="display: flex; gap: 10px;">
+                    <div style="position: relative; flex: 1;">
+                        <input type="text" id="mobile-parc-search" placeholder="Rechercher (ID, nom, marque)..." 
+                            style="width: 100%; padding: 14px 14px 14px 40px; border-radius: 16px; border: none; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; color: ${textColor}; font-size: 15px;">
+                        <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
                     </div>
+                    <button onclick="window.openMobileMachineEditModal()" style="width: 48px; height: 48px; background: var(--primary,#2da140); border: none; border-radius: 14px; color: white; font-size: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); flex-shrink:0;">+</button>
                 </div>
-
-                <!-- SECTION 1: ENVOI DIRECT -->
-                <div style="display: grid; grid-template-columns: 1fr 400px; gap: 40px;">
-                    <div class="glass-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 30px; padding: 40px; display: flex; flex-direction: column; gap: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
-                        <h2 style="margin:0; font-size: 20px; font-weight: 800; color: var(--primary);">🚀 Message Instantané</h2>
-                        <div>
-                            <label style="display:block; margin-bottom:12px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 1px; font-size: 11px;">Contenu du message</label>
-                            <textarea id="notif-message" class="form-input" rows="5" 
-                                      placeholder="Ex: N'oubliez pas votre pointage KIZEO..." 
-                                      style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; width: 100%; color: white; padding: 20px; font-size: 17px; resize: none; transition: all 0.3s ease;"></textarea>
-                            <div id="char-count" style="text-align: right; margin-top: 8px; font-size: 12px; color: #666;">0 / 200</div>
-                        </div>
-
-
-                        <div id="notif-status" style="min-height: 30px; text-align: center;"></div>
-
-                        <button class="btn btn-primary" onclick="window.sendCustomNotification()" id="btn-send-notif" 
-                                style="height: 60px; border-radius: 20px; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; box-shadow: 0 10px 30px rgba(0, 122, 255, 0.25);">
-                            <span>Envoyer le message</span>
-                        </button>
-                    </div>
-
-                    <!-- Recipient Selection -->
-                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 30px; display: flex; flex-direction: column; overflow: hidden;">
-                        <div style="padding: 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-weight: 800; font-size: 14px;">Destinataires</span>
-                            <button onclick="window.toggleAllRecipients()" style="background: none; border: none; color: var(--primary); font-weight: 700; cursor: pointer; font-size: 12px;">Tout cocher</button>
-                        </div>
-                        
-                        <div id="recipient-list" style="height: 300px; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 6px;">
-                            <div style="text-align:center; padding: 30px; color: #555;">Chargement...</div>
-                        </div>
-
-                        <div style="padding: 15px; background: rgba(0,0,0,0.1); border-top: 1px solid rgba(255,255,255,0.05); text-align: center;">
-                            <span id="selected-count" style="font-size: 12px; color: #777;">0 sélectionné(s)</span>
-                        </div>
-                    </div>
+                <!-- Filtre Famille Mobile -->
+                <div id="mobile-family-filter-container">
+                    <select id="mobile-parc-family" style="width: 100%; padding: 12px; border-radius: 12px; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; color: ${textColor}; border:none; font-size:14px; appearance:none;">
+                        <option value="">Toutes les familles</option>
+                    </select>
                 </div>
-
-                <!-- SECTION 2: AUTOMATISATIONS & RÉGLAGES -->
-                <div>
-                    <h2 style="font-size: 24px; font-weight: 800; margin-bottom: 25px; display: flex; align-items: center; gap: 12px;">
-                        <span style="background: var(--primary); width: 12px; height: 12px; border-radius: 3px;"></span>
-                        Réglages des Automatisations
-                    </h2>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px;">
-                        
-                        <!-- CARD: PLANNING -->
-                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px; transition: 0.3s;">
-                            <div style="font-size: 32px; margin-bottom: 15px;">📅</div>
-                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Alerte Planning</h3>
-                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Prévenir automatiquement le salarié lorsqu'une nouvelle tâche lui est assignée.</p>
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-planning">ACTIF</b></span>
-                                <label class="switch-ui"><input type="checkbox" id="auto-planning" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
-                            </div>
-                        </div>
-
-                        <!-- CARD: VÉHICULE (KILOMÉTRAGE) -->
-                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px;">
-                            <div style="font-size: 32px; margin-bottom: 15px;">🚗</div>
-                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Rappel Kilométrage</h3>
-                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Rappel automatique chaque vendredi à 14h pour tous les détenteurs d'un véhicule.</p>
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-mileage">ACTIF</b></span>
-                                <label class="switch-ui"><input type="checkbox" id="auto-mileage" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
-                            </div>
-                        </div>
-
-                        <!-- CARD: VÉHICULE (ÉCHÉANCES) -->
-                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px;">
-                            <div style="font-size: 32px; margin-bottom: 15px;">⏳</div>
-                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Échéances Véhicule</h3>
-                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Alerter le conducteur 500km ou 1 mois avant un entretien ou un contrôle technique.</p>
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-deadline">ACTIF</b></span>
-                                <label class="switch-ui"><input type="checkbox" id="auto-deadline" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
-                            </div>
-                        </div>
-
-                        <!-- CARD: MATÉRIEL (SUIVI) -->
-                        <div class="automation-card" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 25px; padding: 30px;">
-                            <div style="font-size: 32px; margin-bottom: 15px;">🛠️</div>
-                            <h3 style="margin:0; font-size: 18px; font-weight: 800;">Statut Matériel</h3>
-                            <p style="color: #888; font-size: 13px; margin: 10px 0 20px;">Notifier le demandeur dès qu'une commande est confirmée, commandée ou refusée.</p>
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 12px; font-weight: 700; color: #aaa;">STATUT : <b id="st-material">ACTIF</b></span>
-                                <label class="switch-ui"><input type="checkbox" id="auto-material" checked onchange="saveAutoSettings()"><span class="slider"></span></label>
-                            </div>
-                        </div>
-
-                        <!-- CARD: MAINTENANCE PARC -->
-                        <div class="automation-card" style="background: rgba(255,149,0,0.05); border: 1px solid rgba(255,149,0,0.1); border-radius: 25px; padding: 30px; grid-column: 1 / -1;">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 40px;">
-                                <div style="flex: 1;">
-                                    <div style="font-size: 32px; margin-bottom: 10px;">🚜</div>
-                                    <h3 style="margin:0; font-size: 18px; font-weight: 800; color: #FF9500;">Maintenance Matériel</h3>
-                                    <p style="color: #888; font-size: 13px; margin: 10px 0;">Alertes automatiques (Push/Web) avant l'échéance de la prochaine maintenance calculée.</p>
-                                </div>
-                                <div style="text-align: right; min-width: 250px;">
-                                    <div style="font-size: 11px; font-weight: 800; color: #FF9500; margin-bottom: 12px; letter-spacing: 1px;">DÉLAI D'AVERTISSEMENT</div>
-                                    <div style="display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.03); padding: 10px 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
-                                        <input type="range" id="maint-alert-days" min="7" max="60" value="30" style="flex: 1; accent-color: #FF9500;" oninput="document.getElementById('maint-alert-days-val').innerText = this.value + ' jours'" onchange="saveAutoSettings()">
-                                        <span id="maint-alert-days-val" style="font-weight: 800; color: white; font-size: 14px; min-width: 65px;">30 jours</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div style="border-top: 1px dashed rgba(255,149,0,0.2); padding-top: 25px; margin-top: 25px;">
-                                <h4 style="margin: 0 0 15px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #888;">Qui doit recevoir ces alertes ?</h4>
-                                <div id="maint-alert-users" style="display: flex; flex-wrap: wrap; gap: 10px;">
-                                    <!-- Liste des administrateurs pour maintenance -->
-                                    <div style="font-size: 11px; color: #555;">Chargement des administrateurs...</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SECTION 3: ALERTES ADMINISTRATEURS -->
-                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 30px; padding: 40px; margin-bottom: 60px;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
-                        <div>
-                            <h2 style="margin:0; font-size: 22px; font-weight: 800; color: #FF9500;">🚨 Alertes Administrateurs</h2>
-                            <p style="color: #888; font-size: 14px; margin-top: 5px;">Configurer qui reçoit une notification immédiate pour chaque nouvelle demande de matériel.</p>
-                        </div>
-                        <button class="btn btn-secondary" onclick="window.saveAdminAlertSettings()" style="padding: 10px 25px; border-radius:12px;">Enregistrer les destinataires</button>
-                    </div>
-                    
-                    <div id="admin-alert-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
-                        <!-- Liste des admins avec cases à cocher -->
-                        <div style="text-align:center; padding: 20px; color: #666;">Chargement des administrateurs...</div>
-                    </div>
-
-                    <div style="margin-top: 25px; border-top: 1px dashed rgba(255,255,255,0.05); padding-top: 25px; display: flex; justify-content: flex-end;">
-                        <button id="btn-test-reminders" class="btn btn-secondary" style="border-color: #FF9500; color: #FF9500; font-size: 13px; background: rgba(255, 149, 0, 0.05); padding: 12px 20px; border-radius: 12px;" onclick="window.triggerMaterialReminder()">🔔 Tester les rappels de demandes (+7j)</button>
-                    </div>
-                </div>
-
-                <!-- SECTION 4: NOTIFICATIONS PLANIFIÉES (CUSTOM) -->
-                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 30px; padding: 40px; margin-bottom: 100px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
-                        <div>
-                            <h2 style="margin:0; font-size: 22px; font-weight: 800; color: #5856D6;">📅 Programmations Personnalisées</h2>
-                            <p style="color: #aaa; font-size: 14px; margin-top: 5px;">Envoyer des notifications automatiques personnalisées sur le téléphone des collaborateurs.</p>
-                        </div>
-                        <button class="btn btn-primary" onclick="window.showCreateScheduleModal()" style="padding: 12px 25px; border-radius: 12px; background: #5856D6; border-color: #5856D6;">
-                            + Nouveau Planning
-                        </button>
-                    </div>
-
-                    <div id="scheduled-notifications-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px;">
-                        <!-- Les programmations seront injectées ici -->
-                        <div style="text-align:center; padding: 40px; color: #555; grid-column: 1 / -1;">Chargement des programmations...</div>
-                    </div>
-                </div>
-
+            </div>
+            <div id="mobile-parc-list">
+                <div style="text-align: center; padding: 40px;"><div class="loader-spinner"></div></div>
             </div>
         </div>
-        
-        <style>
-            .automation-card:hover { transform: translateY(-5px); background: rgba(255,255,255,0.08); }
-            
-            /* Styles pour les Switchs */
-            .switch-ui { position: relative; display: inline-block; width: 46px; height: 26px; }
-            .switch-ui input { opacity: 0; width: 0; height: 0; }
-            .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 34px; border: 1px solid rgba(255,255,255,0.1); }
-            .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-            input:checked + .slider { background-color: var(--primary); border-color: var(--primary); }
-            input:focus + .slider { box-shadow: 0 0 1px var(--primary); }
-            input:checked + .slider:before { transform: translateX(20px); }
-            
-            .admin-alert-row {
-                padding: 15px 20px;
-                background: rgba(0,0,0,0.2);
-                border-radius: 15px;
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                cursor: pointer;
-                border: 1px solid transparent;
-            }
-            .admin-alert-row:hover { background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); }
-            .admin-alert-row.selected { border-color: #FF9500; background: rgba(255, 149, 0, 0.1); }
-            .admin-alert-row .admin-status-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #444; background: transparent; transition: all 0.2s ease; }
-            .admin-alert-row.selected .admin-status-dot { border-color: #FF9500; background: #FF9500; }
-
-            .schedule-card {
-                background: rgba(255,255,255,0.03); 
-                border: 1px solid rgba(255,255,255,0.05); 
-                border-radius: 20px; 
-                padding: 20px;
-                display: flex;
-                flex-direction: column;
-                gap: 15px;
-                transition: 0.2s;
-            }
-            .schedule-card:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); }
-        </style>
     `;
 
-    const list = document.getElementById('recipient-list');
-    if (list) list.innerHTML = '<div style="padding: 20px; color: #888;">⌛ Chargement des utilisateurs...</div>';
-
     try {
-        // Chargement des données avec Promise.allSettled pour plus de robustesse
-        const results = await Promise.allSettled([
-            api.listUsers(),
-            api.getNotificationSubscribers(),
-            api.getNotificationConfig(),
-            api.getNotificationSchedules().catch(() => [])
+        const [machines, families] = await Promise.all([
+            api.getMachines(),
+            api.getMachineFamilies()
         ]);
+        
+        const listContainer = document.getElementById('mobile-parc-list');
+        const familySelect = document.getElementById('mobile-parc-family');
 
-        const failed = results.filter(r => r.status === 'rejected');
-        if (failed.length > 0 && failed.some(f => {
-            const msg = (f.reason && f.reason.message) || String(f.reason || "");
-            return msg.includes("Unauthorized");
-        })) {
-            if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">
-                <p>⚠️ Session expirée ou accès refusé.</p>
-                <button onclick="location.reload()" class="btn" style="margin-top:10px; background:rgba(255,255,255,0.1); color:white; border:none; padding:8px 15px; border-radius:10px;">Réessayer</button>
-             </div>`;
-            return;
-        }
+        // Fill families
+        families.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            opt.innerText = f.name;
+            familySelect.appendChild(opt);
+        });
 
-        const users = results[0].status === 'fulfilled' ? results[0].value : [];
-        const subsResult = results[1].status === 'fulfilled' ? results[1].value : [];
-        const configRes = results[2].status === 'fulfilled' ? results[2].value : {};
-        const schedules = results[3].status === 'fulfilled' ? results[3].value : [];
+        const renderList = () => {
+            const filter = document.getElementById('mobile-parc-search').value.toLowerCase();
+            const family = familySelect.value;
 
-        if (results[0].status === 'rejected' || results[1].status === 'rejected') {
-            console.error("Certaines APIs de notification ont échoué", results);
-            if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">
-                <p>⚠️ Erreur lors du chargement des abonnés.</p>
-                <p style="font-size:10px; opacity:0.6;">${results[0].status === 'rejected' ? results[0].reason : results[1].reason}</p>
-            </div>`;
-        }
+            const filtered = machines.filter(m => {
+                const matchesSearch = m.machine_id.toLowerCase().includes(filter) || 
+                                     (m.name && m.name.toLowerCase().includes(filter)) ||
+                                     (m.description && m.description.toLowerCase().includes(filter)) ||
+                                     (m.brand && m.brand.toLowerCase().includes(filter)) ||
+                                     (m.serial_number && m.serial_number.toLowerCase().includes(filter));
+                const matchesFamily = !family || m.family === family;
+                return matchesSearch && matchesFamily;
+            });
 
-        const subscriberUserIds = new Set(subsResult.filter(Boolean).map(s => s.user_id));
-        const adminAlertIds = new Set(configRes.admin_alert_ids || []);
-
-        // Appliquer les réglages d'automatisation (toggles)
-        const checkEl = (id) => document.getElementById(id);
-        if (checkEl('auto-planning')) checkEl('auto-planning').checked = configRes.auto_planning !== false;
-        if (checkEl('auto-mileage')) checkEl('auto-mileage').checked = configRes.auto_mileage !== false;
-        if (checkEl('auto-deadline')) checkEl('auto-deadline').checked = configRes.auto_deadline !== false;
-        if (checkEl('auto-material')) checkEl('auto-material').checked = configRes.auto_material !== false;
-
-        if (checkEl('maint-alert-days')) {
-            checkEl('maint-alert-days').value = configRes.maint_alert_days || 30;
-            if (checkEl('maint-alert-days-val')) {
-                checkEl('maint-alert-days-val').innerText = (configRes.maint_alert_days || 30) + ' jours';
+            if (filtered.length === 0) {
+                listContainer.innerHTML = `<div style="text-align: center; padding: 40px; color: #8E8E93; font-style: italic;">Aucun matériel trouvé</div>`;
+                return;
             }
-        }
-        const maintAlertUserIds = new Set(configRes.maint_alert_userIds || []);
 
-        // Remplir la liste des destinataires (Envoi direct)
-        if (list) {
-            list.innerHTML = "";
-            if (users.length === 0 && results[0].status === 'fulfilled') {
-                list.innerHTML = '<div style="padding: 20px; color: #888; text-align:center;">Aucun utilisateur trouvé.</div>';
-            }
-        }
-        const validUsers = users.filter(u => u && u.id);
-        validUsers.sort((a, b) => {
-            const subA = subscriberUserIds.has(a.id);
-            const subB = subscriberUserIds.has(b.id);
-            if (subA !== subB) return subB ? 1 : -1;
-            return (a.first_name || "").localeCompare(b.first_name || "");
-        });
-
-        validUsers.forEach(u => {
-            const isSubbed = subscriberUserIds.has(u.id);
-            const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email;
-            const div = document.createElement('div');
-            div.className = `recipient-row ${isSubbed ? 'subbed' : ''}`;
-            div.dataset.userId = u.id;
-            div.onclick = () => { div.classList.toggle('selected'); window.updateSelectedCount(); };
-            div.innerHTML = `
-                <div class="checkbox-visual" style="width: 20px; height: 20px; border-radius: 6px; border: 2px solid rgba(255,255,255,0.2); display: flex; align-items:center; justify-content:center;">
-                    <div class="check-mark" style="width: 10px; height: 10px; background: var(--primary); border-radius: 2px; opacity: 0; transition: 0.2s;"></div>
-                </div>
-                <div style="flex:1;">
-                    <span style="font-weight: 700; font-size: 13px; ${!isSubbed ? 'opacity: 0.5;' : ''}">${name}</span>
-                    <div style="font-size:10px; opacity: 0.6;">${isSubbed ? '✓ Joignable' : '✕ Non inscrit'}</div>
-                </div>
-            `;
-            list.appendChild(div);
-        });
-
-        // Remplir les alertes Administrateurs & Maintenance
-        const adminList = document.getElementById('admin-alert-list');
-        const maintUserList = document.getElementById('maint-alert-users');
-        adminList.innerHTML = "";
-        maintUserList.innerHTML = "";
-        const admins = users.filter(u => u.role === 'admin');
-
-        admins.forEach(u => {
-            const isSelected = adminAlertIds.has(u.id);
-            const div = document.createElement('div');
-            div.className = `admin-alert-row ${isSelected ? 'selected' : ''}`;
-            div.dataset.adminId = u.id;
-            div.onclick = () => { div.classList.toggle('selected'); };
-            div.innerHTML = `
-                <div class="admin-status-dot"></div>
-                <span style="font-weight: 600; font-size: 14px;">${u.first_name} ${u.last_name}</span>
-            `;
-            adminList.appendChild(div);
-
-            // Version maintenance (plus petite)
-            const isMaintSelected = maintAlertUserIds.has(u.id);
-            const mBadge = document.createElement('div');
-            mBadge.className = `admin-badge-select ${isMaintSelected ? 'active' : ''}`;
-            mBadge.style.cssText = `padding: 8px 15px; border-radius: 10px; background: ${isMaintSelected ? '#FF9500' : 'rgba(255,149,0,0.1)'}; color: ${isMaintSelected ? 'white' : '#FF9500'}; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; border: 1px solid ${isMaintSelected ? '#FF9500' : 'rgba(255,149,0,0.2)'};`;
-            mBadge.dataset.userId = u.id;
-            mBadge.innerText = `${u.first_name} ${u.last_name}`;
-            mBadge.onclick = () => {
-                mBadge.classList.toggle('active');
-                if (mBadge.classList.contains('active')) {
-                    mBadge.style.background = '#FF9500';
-                    mBadge.style.color = 'white';
-                } else {
-                    mBadge.style.background = 'rgba(255,149,0,0.1)';
-                    mBadge.style.color = '#FF9500';
-                }
-                window.saveAutoSettings();
-            };
-            maintUserList.appendChild(mBadge);
-        });
-
-        // Remplir SECTION 4: Schedules Planifiés
-        const scheduleList = document.getElementById('scheduled-notifications-list');
-        scheduleList.innerHTML = "";
-        if (!schedules || (Array.isArray(schedules) && schedules.length === 0)) {
-            scheduleList.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; grid-column: 1 / -1;">Aucune programmation active.</div>`;
-        } else if (Array.isArray(schedules)) {
-            const daysNames = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
-            const monthNames = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
-
-            schedules.forEach(s => {
-                let targetLabel = "";
-                if (s.target_type === 'all') {
-                    targetLabel = "🌍 Tous les collaborateurs";
-                } else {
-                    const ids = s.target_user_ids || (s.user_id ? [s.user_id] : []);
-                    if (ids.length === 1) {
-                        const u = users.find(u => u.id === ids[0]);
-                        targetLabel = `👤 ${u ? u.first_name + ' ' + u.last_name : 'Inconnu'}`;
-                    } else {
-                        targetLabel = `👥 ${ids.length} collaborateurs sélectionnés`;
-                    }
+            listContainer.innerHTML = filtered.map(m => {
+                const nextDate = m.next_maintenance_date ? new Date(m.next_maintenance_date) : null;
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                
+                let statusColor = '#8E8E93';
+                if (nextDate) {
+                    if (nextDate < today) statusColor = '#FF3B30';
+                    else if (nextDate < new Date(today.getTime() + 15 * 24 * 60 * 60 * 1000)) statusColor = '#FF9500';
+                    else statusColor = '#34C759';
                 }
 
-                let freqInfo = "";
-                const timeString = s.hour !== undefined && s.hour !== null
-                    ? ` à ${s.hour}h${(s.minute || 0).toString().padStart(2, '0')}`
-                    : "";
-
-                if (s.frequency === 'daily') freqInfo = "Chaque jour" + timeString;
-                else if (s.frequency === 'weekly') freqInfo = `Chaque ${daysNames[s.day_of_week]}` + timeString;
-                else if (s.frequency === 'monthly') freqInfo = `Chaque ${s.day_of_month} du mois` + timeString;
-                else if (s.frequency === 'yearly') freqInfo = `Chaque ${s.day_of_month} ${monthNames[s.month]}` + timeString;
-
-                const card = document.createElement('div');
-                card.className = 'schedule-card';
-                card.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                        <span style="font-size:12px; font-weight:800; color:#5856D6; text-transform:uppercase;">${freqInfo}</span>
-                        <button onclick="window.deleteSchedule('${s.id}')" style="background:rgba(255,59,48,0.1); border:none; padding:8px; border-radius:10px; color:#FF3B30; cursor:pointer; transition:0.2s;">🗑️</button>
-                    </div>
-                    <div style="font-size:15px; color:white; font-weight:600; line-height:1.4;">${window.escapeHTML(s.message)}</div>
-                    ${s.app_url ? `<div style="font-size:12px; color:#5AC8FA; margin-top:5px; word-break:break-all;">🔗 ${window.escapeHTML(s.app_url)}</div>` : ''}
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
-                        <span style="font-size:12px; color:#888;">${targetLabel}</span>
-                        <span style="font-size:10px; color:#555;">Dernier envoi: ${s.last_sent_at ? new Date(s.last_sent_at).toLocaleDateString() : 'Jamais'}</span>
+                return `
+                    <div onclick="window.openMobileMachineDetail('${m.id}')" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); opacity: ${m.status_active === false ? '0.5' : '1'};">
+                        <div style="width: 54px; height: 54px; background: rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid ${border}; flex-shrink: 0;">
+                            <img src="${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.2'; this.style.filter='invert(1)';" style="width: 100%; height: 100%; object-fit: cover;">
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 800; color: ${textColor}; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px;">
+                                ${window.escapeHTML(m.machine_id)}
+                                ${m.vgp_status === 'OK' ? '<span style="color: #34C759; font-size: 10px;">✅ VGP</span>' : (m.vgp_status === 'KO' ? '<span style="color: #FF3B30; font-size: 10px;">⚠️ VGP KO</span>' : '')}
+                            </div>
+                            <div style="font-size: 13px; color: ${textColor}; opacity: 0.8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${window.escapeHTML(m.name || 'Sans nom')}</div>
+                            <div style="font-size: 11px; color: #8E8E93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
+                                ${m.family ? `📁 ${m.family}` : 'Non classé'} • SN: ${m.serial_number || '--'}
+                            </div>
+                            <div style="font-size: 11px; margin-top: 6px; display: flex; align-items: center; gap: 6px;">
+                                <span style="width: 7px; height: 7px; border-radius: 50%; background: ${statusColor};"></span>
+                                <span style="color: ${statusColor}; font-weight: 700;">Échéance : ${m.next_maintenance_date ? new Date(m.next_maintenance_date).toLocaleDateString('fr-FR') : '--'}</span>
+                            </div>
+                        </div>
+                        <div style="color: #8E8E93; font-size: 18px; opacity: 0.4;">›</div>
                     </div>
                 `;
-                scheduleList.appendChild(card);
-            });
-        }
+            }).join('');
+        };
 
-        window.showCreateScheduleModal = () => {
-            const modal = document.createElement('div');
-            modal.id = 'modal-schedule'; // Unique ID for easier removal
-            modal.className = 'modal-overlay';
-            modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px;";
+        renderList();
+        document.getElementById('mobile-parc-search').oninput = renderList;
+        familySelect.onchange = renderList;
 
-            // Sort users and filter for multi-selection
-            users.sort((a, b) => (a.first_name || "").localeCompare(b.first_name || ""));
-            const userSelectionHTML = users.map(u => `
-                <div class="sch-user-option" data-id="${u.id}" style="display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px; background:rgba(255,255,255,0.03); cursor:pointer; transition:0.2s;" onclick="this.classList.toggle('selected'); this.style.background = this.classList.contains('selected') ? 'rgba(88, 86, 214, 0.3)' : 'rgba(255,255,255,0.03)'">
-                    <div style="width:18px; height:18px; border:2px solid rgba(255,255,255,0.2); border-radius:4px; display:flex; align-items:center; justify-content:center;">
-                        <div class="check" style="width:10px; height:10px; background:#5856D6; border-radius:2px; opacity:0; transition:0.2s;"></div>
+    } catch (e) {
+        document.getElementById('mobile-parc-list').innerHTML = `<div style="color:red; text-align:center; padding:20px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.openMobileMachineDetail = async function(id) {
+    window.mobileCurrentPath = "parc_detail";
+    const container = document.getElementById('list-content');
+    container.innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader-spinner"></div></div>`;
+
+    try {
+        const machines = await api.getMachines();
+        const m = machines.find(item => item.id === id);
+        if (!m) return window.renderMobileParc();
+
+        const history = await api.getMachineMaintenanceHistory(m.id);
+        const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+        const cardBg = dk ? '#1C1C1E' : '#fff';
+        const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+        const border = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+        container.innerHTML = `
+            <div style="padding: 16px; padding-bottom: 100px;">
+                <!-- Header Card -->
+                <div style="background: linear-gradient(135deg, #1a1a1c, #2a2a2c); border-radius: 24px; overflow: hidden; margin-bottom: 20px; box-shadow: 0 12px 24px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="width: 100%; height: 180px; position: relative;">
+                         <img src="${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.1';" style="width: 100%; height: 100%; object-fit: cover;">
+                         <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.85));">
+                             <div style="font-size: 24px; font-weight: 800; color: white; line-height:1.1;">${window.escapeHTML(m.name || m.machine_id)}</div>
+                             <div style="font-size: 14px; color: rgba(255,255,255,0.7); margin-top: 6px;"><strong>ID :</strong> ${window.escapeHTML(m.machine_id)}</div>
+                         </div>
+                         <button onclick="window.openMobileMachineEditModal('${m.id}')" style="position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.15); backdrop-filter: blur(8px); border: none; width: 42px; height: 42px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                         </button>
                     </div>
-                    <span style="font-size:13px; font-weight:600;">${u.first_name} ${u.last_name}</span>
-                </div>
-            `).join('');
-
-            modal.innerHTML = `
-                <div class="modal-box" style="padding: 35px; border-radius: 35px; width: 100%; max-width: 650px; background: #1C1C1E; color: white; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 30px 60px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;">
-                    <h2 style="margin: 0 0 30px 0; font-size: 26px; font-weight:800; letter-spacing:-1px;">✨ Nouvelle Programmation</h2>
-                    
-                    <div style="margin-bottom: 25px;">
-                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Message de la notification</label>
-                        <textarea id="sch-message" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:18px; color:white; padding:18px; resize:none; height:100px; font-size:16px; outline:none;" placeholder="Ex: N'oubliez pas votre pointage KIZEO..."></textarea>
-                    </div>
-
-                    <div style="margin-bottom: 25px;">
-                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">URL de l'application (Optionnel)</label>
-                        <input type="text" id="sch-app-url" value="${localStorage.getItem('last_notif_app_url') || ''}" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:15px; font-size:15px; outline:none;" placeholder="Ex: kizeo:// ou https://...">
-                        <p style="font-size: 11px; color: #555; margin-top: 5px;">Si renseignée, cliquer sur la notification ouvrira cette application.</p>
-                    </div>
-
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
-                        <div>
-                            <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Destinataires</label>
-                            <select id="sch-target-type" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;" onchange="window.toggleSchUserBlock(this.value)">
-                                <option value="all">🌍 Tous les collaborateurs</option>
-                                <option value="specific">👤 Sélection spécifique</option>
-                            </select>
+                    <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: rgba(255,255,255,0.03);">
+                        <div style="text-align: center;">
+                            <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight:700; letter-spacing:0.05em;">Marque</div>
+                            <div style="color: white; font-weight: 700; font-size:14px; margin-top:2px;">${window.escapeHTML(m.brand || '--')}</div>
                         </div>
+                        <div style="text-align: center; border-left: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight:700; letter-spacing:0.05em;">Famille</div>
+                            <div style="color: white; font-weight: 700; font-size:14px; margin-top:2px;">${window.escapeHTML(m.family || '--')}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Grid -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                    <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 18px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                        <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">N° de Série</div>
+                        <div style="font-weight: 800; color: ${textColor}; font-family: monospace;">${window.escapeHTML(m.serial_number || '--')}</div>
+                    </div>
+                    <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 18px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                        <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Periodicité</div>
+                        <div style="font-weight: 800; color: ${textColor};">${m.periodicity || '--'} mois</div>
+                    </div>
+                </div>
+
+                <!-- Technical Status -->
+                <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 18px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
                         <div>
-                            <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Heure exacte d'envoi</label>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <select id="sch-hour" style="flex:1; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
-                                    ${Array.from({ length: 24 }, (_, i) => `<option value="${i}" ${i === 8 ? 'selected' : ''}>${i}h</option>`).join('')}
-                                </select>
-                                <span style="font-weight:800;">:</span>
-                                <select id="sch-minute" style="flex:1; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
-                                    ${Array.from({ length: 60 }, (_, i) => `<option value="${i}" ${i === 0 ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
-                                </select>
+                            <div style="font-size: 11px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Dernière VGP</div>
+                            <div style="font-size: 18px; font-weight: 800; color: ${textColor}; margin-top: 2px;">${m.last_vgp_date ? new Date(m.last_vgp_date).toLocaleDateString('fr-FR') : 'Non renseigné'}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 11px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Statut VGP</div>
+                            <div style="margin-top: 4px;">
+                                ${m.vgp_status === 'OK' ? '<span style="background: #34C759; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800;">CONFORME</span>' : 
+                                  (m.vgp_status === 'KO' ? '<span style="background: #FF3B30; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800;">A REPARER</span>' : 
+                                  '<span style="background: #8E8E93; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800;">INCONNU</span>')}
                             </div>
                         </div>
                     </div>
-
-                    <div id="sch-user-selector-block" style="display:none; margin-bottom: 25px;">
-                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Collaborateurs ciblés</label>
-                        <div id="sch-user-list" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 18px; padding: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            ${userSelectionHTML}
+                    <div style="padding-top: 15px; border-top: 1px solid ${border}; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 11px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Validité Maint.</div>
+                            <div style="font-size: 18px; font-weight: 800; color: #FF9500; margin-top: 2px;">${m.next_maintenance_date ? new Date(m.next_maintenance_date).toLocaleDateString('fr-FR') : '--'}</div>
                         </div>
-                    </div>
-
-                    <div style="margin-bottom: 30px;">
-                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Fréquence</label>
-                        <select id="sch-frequency" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;" onchange="window.updateScheduleFields(this.value)">
-                            <option value="daily">🔄 Chaque jour</option>
-                            <option value="weekly">📅 Hebdomadaire (Jour Fixe)</option>
-                            <option value="monthly">📆 Mensuel (Date Fixe)</option>
-                            <option value="yearly">🎉 Annuel</option>
-                        </select>
-                    </div>
-
-                    <div id="sch-day-week" style="display:none; margin-bottom: 25px;">
-                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Jour de la semaine</label>
-                        <select id="sch-val-day-week" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
-                            <option value="1">Lundi</option><option value="2">Mardi</option><option value="3">Mercredi</option><option value="4">Jeudi</option><option value="5" selected>Vendredi</option><option value="6">Samedi</option><option value="0">Dimanche</option>
-                        </select>
-                    </div>
-
-                    <div id="sch-day-month" style="display:none; margin-bottom: 25px;">
-                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Jour du mois (1-31)</label>
-                        <input type="number" id="sch-val-day-month" min="1" max="31" value="1" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
-                    </div>
-
-                    <div id="sch-month" style="display:none; margin-bottom: 30px;">
-                        <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Mois</label>
-                        <select id="sch-val-month" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;">
-                            <option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option>
-                        </select>
-                    </div>
-
-                    <div style="display:flex; gap:15px; margin-top:10px;">
-                        <button onclick="document.getElementById('modal-schedule').remove()" class="btn btn-secondary" style="flex:1; border-radius:18px; height:55px; background:rgba(255,255,255,0.05); border:none;">Annuler</button>
-                        <button onclick="window.saveNewSchedule(this)" class="btn btn-primary" style="flex:1; background:#5856D6; border-color:#5856D6; border-radius:18px; height:55px; font-weight:800;">🚀 Créer le planning</button>
+                        <button class="btn-primary" onclick="window.addMobileMaintenance('${m.id}')" style="padding: 12px 20px; border-radius: 14px; background: #34C759; font-weight: 800; border: none; color: white; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.2);">INTERVENTION</button>
                     </div>
                 </div>
+
+                <!-- History Section -->
+                <h3 style="font-size: 18px; margin: 0 0 16px 4px; color: ${textColor}; font-weight: 800;">📋 Historique</h3>
                 
-                <style>
-                    .sch-user-option.selected { border-color: #5856D6 !important; }
-                    .sch-user-option.selected .check { opacity: 1 !important; }
-                    select option { background: #2C2C2E; color: white; padding: 10px; }
-                </style>
-            `;
-            document.body.appendChild(modal);
-
-            window.toggleSchUserBlock = (val) => {
-                const block = document.getElementById('sch-user-selector-block');
-                block.style.display = val === 'specific' ? 'block' : 'none';
-            };
-
-            window.updateScheduleFields = (freq) => {
-                document.getElementById('sch-day-week').style.display = freq === 'weekly' ? 'block' : 'none';
-                document.getElementById('sch-day-month').style.display = (freq === 'monthly' || freq === 'yearly') ? 'block' : 'none';
-                document.getElementById('sch-month').style.display = freq === 'yearly' ? 'block' : 'none';
-            };
-
-            window.saveNewSchedule = async (btn) => {
-                const message = document.getElementById('sch-message').value.trim();
-                const appUrl = document.getElementById('sch-app-url').value.trim();
-                const targetType = document.getElementById('sch-target-type').value;
-                const frequency = document.getElementById('sch-frequency').value;
-                const hourVal = parseInt(document.getElementById('sch-hour').value);
-                const minuteVal = parseInt(document.getElementById('sch-minute').value);
-
-                const selectedUsers = Array.from(document.querySelectorAll('.sch-user-option.selected')).map(el => el.dataset.id);
-
-                if (!message) return alert("Veuillez saisir un message.");
-                if (targetType === 'specific' && selectedUsers.length === 0) return alert("Veuillez sélectionner au moins un collaborateur.");
-
-                const payload = {
-                    message,
-                    target_type: targetType,
-                    target_user_ids: targetType === 'specific' ? selectedUsers : null,
-                    user_id: targetType === 'specific' && selectedUsers.length === 1 ? selectedUsers[0] : null,
-                    app_url: appUrl || null,
-                    frequency: frequency,
-                    hour: hourVal,
-                    minute: minuteVal,
-                    day_of_week: frequency === 'weekly' ? parseInt(document.getElementById('sch-val-day-week').value) : null,
-                    day_of_month: (frequency === 'monthly' || frequency === 'yearly') ? parseInt(document.getElementById('sch-val-day-month').value) : null,
-                    month: frequency === 'yearly' ? parseInt(document.getElementById('sch-val-month').value) : null,
-                    active: true
-                };
-
-                btn.disabled = true;
-                btn.innerText = "Création...";
-
-                try {
-                    await api.saveNotificationSchedule(payload);
-                    if (appUrl) localStorage.setItem('last_notif_app_url', appUrl);
-                    document.getElementById('modal-schedule').remove();
-                    renderAdminNotifications();
-                } catch (e) {
-                    alert("Erreur: " + e.message);
-                    btn.disabled = false;
-                    btn.innerText = "🚀 Créer le planning";
-                }
-            };
-        };
-
-        window.deleteSchedule = (id) => {
-            const modal = document.createElement('div');
-            modal.className = 'modal-overlay';
-            modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); z-index:10001; display:flex; align-items:center; justify-content:center; padding:20px;";
-            modal.innerHTML = `
-                <div style="background:#1C1C1E; padding:35px; border-radius:30px; border:1px solid rgba(255,255,255,0.1); width:100%; max-width:400px; text-align:center; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
-                    <div style="font-size:50px; margin-bottom:20px;">🗑️</div>
-                    <h3 style="margin:0 0 10px 0; font-size:20px; font-weight:800; color:white;">Supprimer ?</h3>
-                    <p style="color:#888; font-size:14px; margin-bottom:30px; line-height:1.5;">Êtes-vous sûr de vouloir supprimer cette notification automatisée ? Cette action est irréversible.</p>
-                    <div style="display:flex; gap:12px;">
-                        <button onclick="this.closest('.modal-overlay').remove()" style="flex:1; padding:15px; border-radius:15px; border:none; background:rgba(255,255,255,0.05); color:white; font-weight:700; cursor:pointer; transition:0.2s;">Annuler</button>
-                        <button id="confirm-delete-btn" style="flex:1; padding:15px; border-radius:15px; border:none; background:#FF3B30; color:white; font-weight:800; cursor:pointer; transition:0.2s;">Supprimer</button>
+                ${history.length === 0 ? `
+                    <div style="text-align: center; padding: 40px 20px; color: #8E8E93; background: ${cardBg}; border-radius: 20px; border: 1px dashed ${border}; font-size: 14px;">
+                        Aucune maintenance enregistrée.
                     </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-
-            modal.querySelector('#confirm-delete-btn').onclick = async () => {
-                const btn = modal.querySelector('#confirm-delete-btn');
-                btn.disabled = true;
-                btn.innerText = "Suppression...";
-                try {
-                    await api.deleteNotificationSchedule(id);
-                    modal.remove();
-                    renderAdminNotifications();
-                } catch (e) {
-                    alert("Erreur: " + e.message);
-                    btn.disabled = false;
-                    btn.innerText = "Supprimer";
-                }
-            };
-        };
-
-        window.updateSelectedCount();
-
-    } catch (e) {
-        console.error("Render error", e);
-        const list = document.getElementById('recipient-list');
-        if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">⚠️ Une erreur est survenue lors de l'affichage :<br><small>${e.message}</small></div>`;
-    }
-};
-
-window.toggleAllRecipients = function () {
-    const rows = document.querySelectorAll('.recipient-row');
-    if (!rows.length) return;
-    const allSelected = Array.from(rows).every(r => r.classList.contains('selected'));
-    rows.forEach(r => r.classList.toggle('selected', !allSelected));
-    window.updateSelectedCount();
-};
-
-window.updateSelectedCount = function () {
-    const countEl = document.getElementById('selected-count');
-    if (!countEl) return;
-
-    const selected = document.querySelectorAll('.recipient-row.selected');
-    countEl.innerText = `${selected.length} destinataire(s) sélectionné(s)`;
-
-    // Styliser les checkboxes visuelles
-    document.querySelectorAll('.recipient-row').forEach(r => {
-        const check = r.querySelector('.check-mark');
-        const box = r.querySelector('.checkbox-visual');
-        if (check && box) {
-            if (r.classList.contains('selected')) {
-                check.style.opacity = '1';
-                box.style.borderColor = 'var(--primary)';
-            } else {
-                check.style.opacity = '0';
-                box.style.borderColor = 'rgba(255,255,255,0.2)';
-            }
-        }
-    });
-};
-
-window.setNotifTemplate = function (text) {
-    const textarea = document.getElementById('notif-message');
-    if (textarea) {
-        textarea.value = text;
-        textarea.dispatchEvent(new Event('input'));
-    }
-};
-
-window.sendCustomNotification = async function () {
-    const selectedRows = document.querySelectorAll('.recipient-row.selected');
-    const message = document.getElementById('notif-message') ? document.getElementById('notif-message').value.trim() : "";
-    const btn = document.getElementById('btn-send-notif');
-    const status = document.getElementById('notif-status');
-
-    if (!message) {
-        showSuccessModal("⚠️ Veuillez saisir un message.");
-        return;
-    }
-
-    if (selectedRows.length === 0) {
-        if (!confirm("📢 Aucun collaborateur sélectionné. Voulez-vous envoyer ce message à TOUS les collaborateurs ?")) return;
-    }
-
-    const userIds = Array.from(selectedRows).map(r => r.dataset.userId);
-    const payload = userIds.length > 0 ? { userIds, message } : { userId: 'all', message };
-
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = "⌛ Envoi...";
-    }
-
-    try {
-        const result = await api.sendNotification(userIds.length > 0 ? null : 'all', message, userIds.length > 0 ? userIds : null);
-
-        if (result.success) {
-            if (status) status.innerHTML = `<span style='color: #34C759; font-weight: 800;'>✅ Notification envoyée !</span>`;
-            if (document.getElementById('notif-message')) document.getElementById('notif-message').value = "";
-
-            selectedRows.forEach(r => r.classList.remove('selected'));
-            window.updateSelectedCount();
-
-            setTimeout(() => { if (status) status.innerHTML = ''; }, 5000);
-        } else {
-            if (status) status.innerHTML = `<span style='color: #FF3B30;'>⚠️ ${result.details || 'Échec'}</span>`;
-        }
-    } catch (e) {
-        if (status) status.innerHTML = `<span style='color: #FF3B30;'>❌ ${e.message}</span>`;
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = "Envoyer le message";
-        }
-    }
-};
-
-window.saveAutoSettings = async () => {
-    const autoPlanning = document.getElementById('auto-planning').checked;
-    const autoMileage = document.getElementById('auto-mileage').checked;
-    const autoDeadline = document.getElementById('auto-deadline').checked;
-    const autoMaterial = document.getElementById('auto-material').checked;
-    const maintAlertDays = document.getElementById('maint-alert-days').value;
-
-    const maintBadges = document.querySelectorAll('.admin-badge-select.active');
-    const maintAlertUserIds = Array.from(maintBadges).map(b => b.dataset.userId);
-
-    const payload = {
-        auto_planning: autoPlanning,
-        auto_mileage: autoMileage,
-        auto_deadline: autoDeadline,
-        auto_material: autoMaterial,
-        maint_alert_days: parseInt(maintAlertDays),
-        maint_alert_userIds: maintAlertUserIds
-    };
-
-    try {
-        await api.saveNotificationConfig(payload);
-    } catch (e) {
-        console.error("Save config error", e);
-    }
-};
-
-window.saveAdminAlertSettings = async () => {
-    const selectedRows = document.querySelectorAll('.admin-alert-row.selected');
-    const selectedIds = Array.from(selectedRows).map(el => el.dataset.adminId);
-    const btn = document.querySelector('button[onclick="window.saveAdminAlertSettings()"]');
-
-    try {
-        if (btn) {
-            btn.disabled = true;
-            btn.innerText = "⏳ Enregistrement...";
-        }
-
-        await api.saveMaterialConfig(selectedIds);
-
-        if (btn) {
-            btn.innerText = "✅ Enregistré";
-            btn.style.background = "#34C759";
-            btn.style.color = "white";
-            btn.style.borderColor = "#34C759";
-
-            showSuccessModal("Destinataires mis à jour avec succès !<br>Ils recevront désormais les alertes immédiates et les rappels hebdomadaires.");
-
-            setTimeout(() => {
-                btn.innerText = "Enregistrer les destinataires";
-                btn.style.background = "";
-                btn.style.color = "";
-                btn.style.borderColor = "";
-                btn.disabled = false;
-            }, 3000);
-        }
-    } catch (e) {
-        showSuccessModal(`❌ Erreur lors de l'enregistrement : ${e.message}`);
-        if (btn) {
-            btn.disabled = false;
-            btn.innerText = "Enregistrer les destinataires";
-        }
-    }
-};
-
-window.triggerMaterialReminder = async () => {
-    const btn = document.getElementById('btn-test-reminders');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerText = "⌛ Test en cours...";
-    }
-
-    try {
-        const result = await api.sendMaterialReminders();
-        if (result.success) {
-            showSuccessModal(`✅ Test réussi !<br><br>Demandes trouvées : <b>${result.count}</b><br>Admins notifiés : <b>${result.notified}</b>`);
-        } else {
-            showSuccessModal(`⚠️ ${result.message || 'Aucune notification envoyée.'}`);
-        }
-    } catch (e) {
-        showSuccessModal(`❌ Erreur lors du test : ${e.message}`);
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = "🔔 Tester les rappels de demandes (+7j)";
-        }
-    }
-};
-
-
-window.renderAdminFriterie = async function () {
-    adminCurrentFolder = null;
-    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
-    document.getElementById('nav-friterie').classList.add('active');
-
-    const content = document.getElementById('admin-content');
-    content.innerHTML = `
-        <header style="margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(30,30,30,0.85); backdrop-filter: blur(16px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
-            <h1 style="margin: 0;">Gestion Friterie 🍟</h1>
-            <div style="display:flex; gap:12px;">
-                <button onclick="window.renderAdminFriterie()" class="btn" style="background:rgba(255,255,255,0.05); border:none; color:white; padding:10px 20px; border-radius:12px; font-weight:700;">🔄 Rafraîchir</button>
-                <button onclick="window.adminDeleteAllFritOrdersFromAdmin()" class="btn btn-danger" style="background:#FF3B30; color:white; padding:10px 20px; border-radius:12px; font-weight:800; border:none;">🗑️ TOUT EFFACER</button>
-            </div>
-        </header>
-        <div id="frit-orders-container" style="padding: 20px;">
-            <div style="text-align:center; padding:50px; color:#888;">Chargement des commandes...</div>
-        </div>
-    `;
-
-    try {
-        const response = await fetch(`${config.api.workerUrl}/admin/friterie/orders`, {
-            headers: { 'Authorization': `Bearer ${(await auth.getSession()).access_token}` }
-        });
-        if (!response.ok) throw new Error(await response.text());
-        const orders = await response.json();
-
-        const container = document.getElementById('frit-orders-container');
-        if (orders.length === 0) {
-            container.innerHTML = `<div style="text-align:center; padding:100px; background:rgba(255,255,255,0.03); border-radius:30px; border:2px dashed rgba(255,255,255,0.05);">
-                <div style="font-size:60px; margin-bottom:20px;">🍟</div>
-                <h3 style="color:white; margin-bottom:10px;">Aucune commande</h3>
-                <p style="color:#888;">Les collaborateurs n'ont pas encore commencé à commander.</p>
-            </div>`;
-            return;
-        }
-
-        // Group by user
-        const grouped = {};
-        orders.forEach(o => {
-            let profile = o.profiles;
-            if (Array.isArray(profile)) profile = profile[0];
-            const name = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : `User #${o.user_id.substring(0, 5)}`;
-            if (!grouped[name]) grouped[name] = [];
-            grouped[name].push(o);
-        });
-
-        // Stats summary
-        const totalItems = orders.length;
-        const totalUsers = Object.keys(grouped).length;
-
-        container.innerHTML = `
-            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:20px; margin-bottom:30px;">
-                <div class="glass-panel" style="padding:20px; border-radius:15px; text-align:center;">
-                    <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Commandes Totales</div>
-                    <div style="font-size:32px; font-weight:900; color:white;">${totalItems}</div>
-                </div>
-                <div class="glass-panel" style="padding:20px; border-radius:15px; text-align:center;">
-                    <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Collaborateurs</div>
-                    <div style="font-size:32px; font-weight:900; color:#FFD60A;">${totalUsers}</div>
-                </div>
-                <div class="glass-panel" style="padding:20px; border-radius:15px; text-align:center; cursor:pointer;" onclick="renderAdminNotifications()">
-                    <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Rappel</div>
-                    <div style="font-size:14px; font-weight:600; color:#5856D6; margin-top:10px;">🔔 Envoyer un rappel</div>
-                </div>
-            </div>
-
-            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap:20px;">
-                ${Object.entries(grouped).map(([name, items]) => `
-                    <div class="glass-panel" style="padding:25px; border-radius:25px; border:1px solid rgba(255,255,255,0.05);">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px;">
-                            <h3 style="margin:0; font-size:18px; color:white;">${name}</h3>
-                            <span style="background:rgba(255,214,10,0.1); color:#FFD60A; padding:4px 12px; border-radius:10px; font-size:12px; font-weight:800;">${items.length} article(s)</span>
+                ` : history.map(h => `
+                    <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 18px; padding: 18px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center;">
+                            <div style="font-weight: 800; color: ${textColor}; font-size: 15px; display: flex; align-items: center; gap: 8px;">
+                                ${new Date(h.date).toLocaleDateString('fr-FR')}
+                                <span style="font-size: 11px; opacity: 0.7;">(${h.last_control_type || 'Maint.'})</span>
+                            </div>
+                            <div style="font-size: 11px; color: #34C759; background: rgba(52, 199, 89, 0.1); padding: 4px 10px; border-radius: 10px; font-weight:700;">${h.profiles ? (h.profiles.first_name) : 'Admin'}</div>
                         </div>
-                        <div style="display:flex; flex-direction:column; gap:12px;">
-                            ${items.map(o => {
-            const date = o.created_at ? new Date(o.created_at) : null;
-            const timeStr = date ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
-            return `
-                                    <div style="padding-left:12px; border-left:4px solid #FFD60A; position:relative;">
-                                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                            <span style="font-weight:700; color:white; font-size:15px;">${o.item_name}</span>
-                                            <span style="font-size:10px; color:#555;">${timeStr}</span>
-                                        </div>
-                                        <div style="font-size:13px; color:#888;">Catégorie: ${o.category}</div>
-                                        ${o.details ? `<div style="font-size:13px; color:#aaa;">Style: <b>${o.details}</b></div>` : ''}
-                                        ${o.sauce ? `<div style="font-size:13px; color:#FF9500; font-weight:700;">Sauce: ${o.sauce}</div>` : ''}
-                                    </div>
-                                `;
-        }).join('')}
-                        </div>
+                        <div style="font-size: 14px; color: #8E8E93; line-height: 1.5; font-weight:500;">${window.escapeHTML(h.details || 'Contrôle périodique.')}</div>
+                        ${h.vgp_status ? `<div style="font-size: 12px; margin-top: 8px; font-weight: 700; color: ${h.vgp_status === 'OK' ? '#34C759' : '#FF3B30'}">VGP: ${h.vgp_status} ${h.vgp_observations ? `• ${h.vgp_observations}` : ''}</div>` : ''}
+                        ${h.next_maintenance_date ? `<div style="font-size: 11px; color: #FF9500; margin-top: 10px; font-weight:700; display:flex; align-items:center; gap:4px;">🗓️ Prochaine: ${new Date(h.next_maintenance_date).toLocaleDateString('fr-FR')}</div>` : ''}
                     </div>
                 `).join('')}
             </div>
         `;
     } catch (e) {
-        document.getElementById('frit-orders-container').innerHTML = `<div style="color:#FF3B30; padding:20px;">Erreur: ${e.message}</div>`;
+        container.innerHTML = `<div style="color:red; text-align:center; padding:40px;">Erreur: ${e.message}</div>`;
     }
 };
 
-window.adminDeleteAllFritOrdersFromAdmin = async function () {
-    if (!confirm("⚠️ ACTION ADMINISTRATIVE : Voulez-vous vraiment effacer TOUTES les commandes de TOUT LE MONDE ? cette action est irréversible (prévu pour le nettoyage hebdomadaire).")) return;
-    try {
-        const session = await auth.getSession();
-        const res = await fetch(`${config.api.workerUrl}/admin/friterie/orders`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        if (!res.ok) throw new Error(await res.text());
-        showSuccessModal("Toutes les commandes ont été effacées avec succès.");
-        renderAdminFriterie();
-    } catch (e) {
-        alert("Erreur: " + e.message);
-    }
-};
+window.addMobileMaintenance = async function(machineId) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
 
-window.openMaterialRequestsModal = async function () {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
-    modal.style.zIndex = '10001';
+    modal.style.zIndex = "10001";
     modal.innerHTML = `
-        <div class="modal-box" style="width: 800px; max-height: 80vh; display: flex; flex-direction: column; background: #1c1c1e; border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
-            <div style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02);">
-                <h2 style="margin: 0; color: white; font-size: 18px; font-weight: 800;">Demandes de modification de stock</h2>
-                <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; cursor: pointer; font-size: 20px; opacity: 0.5;">✕</button>
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 92%; max-width: 440px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: modalIn 0.3s cubic-bezier(0.1, 0.8, 0.1, 1);">
+            <h2 style="margin-top: 0; margin-bottom: 24px; color: ${textColor}; font-size: 20px; font-weight: 800;">Nouvelle Intervention</h2>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 8px; font-weight: 600;">Type de contrôle</label>
+                <div style="display: flex; gap: 8px;">
+                    ${['Maintenance', 'VGP', 'Remise en service'].map(type => `
+                        <div class="control-type-pill" onclick="window.setControlType('${type}')" data-type="${type}" style="flex: 1; text-align: center; padding: 10px; border-radius: 12px; background: ${inputBg}; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">${type}</div>
+                    `).join('')}
+                </div>
+                <input type="hidden" id="mob-control-type" value="Maintenance">
             </div>
-            <div id="requests-list-container" style="padding: 24px; overflow-y: auto; flex: 1;">
-                <div style="text-align: center; padding: 40px; color: #8E8E93;">Chargement des demandes...</div>
+
+            <!-- VGP Specific Section -->
+            <div id="mob-vgp-section" style="display: none; margin-bottom: 20px; padding: 16px; background: rgba(52, 199, 89, 0.05); border: 1px solid rgba(52, 199, 89, 0.1); border-radius: 16px;">
+                <label style="display: block; font-size: 13px; color: #34C759; margin-bottom: 12px; font-weight: 700;">Résultat de la VGP</label>
+                <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                    <div id="vgp-ok-btn" onclick="window.setVgpStatus('OK')" style="flex:1; padding: 12px; border-radius: 12px; background: rgba(52, 199, 89, 0.1); border: 2px solid transparent; color: #34C759; text-align: center; font-weight: 800; font-size:13px;">CONFORME</div>
+                    <div id="vgp-ko-btn" onclick="window.setVgpStatus('KO')" style="flex:1; padding: 12px; border-radius: 12px; background: rgba(255, 59, 48, 0.1); border: 2px solid transparent; color: #FF3B30; text-align: center; font-weight: 800; font-size:13px;">A REPARER</div>
+                </div>
+                <input type="hidden" id="mob-vgp-status" value="">
+                <input type="text" id="mob-vgp-obs" placeholder="Observations VGP..." style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${bg}; color: ${textColor}; font-size: 14px; border: 1px solid ${border};">
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 8px; font-weight: 600;">Notes additionnelles</label>
+                <textarea id="mob-maint-details" style="width: 100%; height: 80px; padding: 14px; border: none; border-radius: 16px; background: ${inputBg}; color: ${textColor}; font-size: 15px; resize: none; font-family: inherit;" placeholder="Notes..."></textarea>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 10px; font-weight: 600;">Echéance validité (en mois)</label>
+                <div style="background: ${inputBg}; padding: 16px; border-radius: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                        <span id="mob-maint-val" style="font-weight: 800; color: var(--primary); font-size: 18px;">12 mois</span>
+                        <div id="mob-maint-date-preview" style="font-size: 12px; color: #8E8E93; font-weight: 700;">Expire le: <strong>-</strong></div>
+                    </div>
+                    <input type="range" id="mob-maint-slider" min="1" max="24" value="12" style="width: 100%; accent-color: var(--primary);">
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1; height: 52px; border-radius: 16px; font-weight: 700;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="mob-save-maint-btn" class="btn-primary" style="flex: 1; height: 52px; border-radius: 16px; background: #34C759; border: none; color: white; font-weight: 800;">Valider</button>
             </div>
         </div>
+        <style>
+            .control-type-pill.active { background: var(--primary) !important; color: white !important; }
+            @keyframes modalIn { from { transform: scale(0.9) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+        </style>
     `;
     document.body.appendChild(modal);
 
-    try {
-        const requests = await api.getMaterialStockRequests();
-        const container = document.getElementById('requests-list-container');
-        
-        if (requests.length === 0) {
-            container.innerHTML = `<div style="text-align: center; padding: 60px; color: #8E8E93;">Aucune demande en attente 🌟</div>`;
-            return;
-        }
+    window.setControlType = (type) => {
+        document.getElementById('mob-control-type').value = type;
+        document.querySelectorAll('.control-type-pill').forEach(p => {
+            p.classList.toggle('active', p.dataset.type === type);
+        });
+        document.getElementById('mob-vgp-section').style.display = (type === 'VGP') ? 'block' : 'none';
+    };
 
-        container.innerHTML = `
-            <table style="width: 100%; border-collapse: collapse; color: white;">
-                <thead>
-                    <tr style="text-align: left; border-bottom: 2px solid rgba(255,255,255,0.05); color: #8E8E93; font-size: 12px; text-transform: uppercase;">
-                        <th style="padding: 12px;">Matériel</th>
-                        <th style="padding: 12px;">Utilisateur</th>
-                        <th style="padding: 12px;">Modification demandée</th>
-                        <th style="padding: 12px; text-align: right;">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${requests.map(req => `
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                            <td style="padding: 16px 12px;">
-                                <div style="font-weight: 700;">${req.material_stock.designation}</div>
-                                <div style="font-size: 12px; color: #8E8E93;">Actuel: ${req.material_stock.stock_reel} à ${req.material_stock.lieu_de_stockage}</div>
-                            </td>
-                            <td style="padding: 16px 12px;">
-                                ${req.profiles.first_name} ${req.profiles.last_name}
-                            </td>
-                            <td style="padding: 16px 12px;">
-                                <div style="color: #34C759; font-weight: 700;">Stock: ${req.new_stock_reel}</div>
-                                <div style="color: #5856D6; font-weight: 700;">Lieu: ${req.new_lieu_de_stockage}</div>
-                            </td>
-                            <td style="padding: 16px 12px; text-align: right;">
-                                <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                                    <button onclick="handleMaterialRequest('${req.id}', 'approved')" style="background: #34C759; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;">Approuver</button>
-                                    <button onclick="handleMaterialRequest('${req.id}', 'rejected')" style="background: #FF3B30; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;">Refuser</button>
-                                </div>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
-    } catch (e) {
-        document.getElementById('requests-list-container').innerHTML = `<div style="color: red; text-align: center;">Erreur: ${e.message}</div>`;
-    }
+    window.setVgpStatus = (status) => {
+        document.getElementById('mob-vgp-status').value = status;
+        document.getElementById('vgp-ok-btn').style.borderColor = (status === 'OK') ? '#34C759' : 'transparent';
+        document.getElementById('vgp-ko-btn').style.borderColor = (status === 'KO') ? '#FF3B30' : 'transparent';
+    };
+
+    // Par défaut
+    window.setControlType('Maintenance');
+
+    const slider = document.getElementById('mob-maint-slider');
+    const valText = document.getElementById('mob-maint-val');
+    const preview = document.getElementById('mob-maint-date-preview');
+
+    const updatePreview = () => {
+        valText.innerText = `${slider.value} mois`;
+        const date = new Date();
+        date.setMonth(date.getMonth() + parseInt(slider.value));
+        preview.innerHTML = `Expire le : <strong>${date.toLocaleDateString('fr-FR')}</strong>`;
+        return date.toISOString().split('T')[0];
+    };
+
+    slider.oninput = updatePreview;
+    updatePreview();
+
+    document.getElementById('mob-save-maint-btn').onclick = async () => {
+        const type = document.getElementById('mob-control-type').value;
+        const details = document.getElementById('mob-maint-details').value.trim();
+        const nextDate = updatePreview();
+        const vgpStatus = (type === 'VGP') ? document.getElementById('mob-vgp-status').value : null;
+        const vgpObs = (type === 'VGP') ? document.getElementById('mob-vgp-obs').value.trim() : null;
+
+        if (type === 'VGP' && !vgpStatus) return alert("Veuillez indiquer si la VGP est conforme.");
+
+        const btn = document.getElementById('mob-save-maint-btn');
+        btn.disabled = true;
+        btn.innerText = "Validation...";
+
+        try {
+            await api.saveMachineMaintenance(machineId, details, nextDate, vgpStatus, vgpObs, type);
+            modal.remove();
+            window.openMobileMachineDetail(machineId);
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Valider";
+        }
+    };
 };
 
-window.handleMaterialRequest = async function (id, status) {
-    if (!confirm(`Voulez-vous vraiment ${status === 'approved' ? 'approuver' : 'refuser'} cette demande ?`)) return;
-    
+window.openMobileMachineEditModal = async function(id = null) {
+    let existing = null;
+    let families = [];
     try {
-        await api.updateMaterialStockRequestStatus(id, status);
-        showToast(status === 'approved' ? "Demande approuvée et stock mis à jour" : "Demande refusée");
-        document.querySelector('.modal-overlay').remove();
-        window.renderAdminMaterialTracking();
+        const [machines, familiesData] = await Promise.all([
+            api.getMachines(),
+            api.getMachineFamilies()
+        ]);
+        families = familiesData;
+        if (id) existing = machines.find(m => m.id === id);
+    } catch(e) { console.error(e); }
+
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 94%; max-width: 500px; max-height: 90vh; overflow-y: auto; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: modalIn 0.3s cubic-bezier(0.1, 0.8, 0.1, 1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; color: ${textColor}; font-size: 20px; font-weight: 800;">${id ? 'Modifier' : 'Nouveau'} Matériel</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: #8E8E93; font-size: 20px;">✕</button>
+            </div>
+            
+            <div style="margin-bottom: 24px; display: flex; align-items: center; gap: 16px; background: rgba(0,0,0,0.03); padding: 15px; border-radius: 20px;">
+                <div id="mob-m-preview" style="width: 90px; height: 90px; border-radius: 18px; background: ${inputBg}; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px dashed rgba(142, 142, 147, 0.5); position: relative; flex-shrink: 0;">
+                    <img src="${id ? `${config.api.workerUrl}/get/machines_photos/${id}.png?t=${Date.now()}` : ''}" onerror="this.style.display='none'" onload="this.style.display='block'" style="width: 100%; height: 100%; object-fit: cover;">
+                    <span style="font-size: 28px; opacity: 0.2; position: absolute;">📷</span>
+                </div>
+                <div style="flex: 1;">
+                    <p style="font-size: 13px; color: #8E8E93; margin: 0 0 8px 0; font-weight: 600;">Photo du matériel</p>
+                    <button onclick="document.getElementById('mob-m-file').click()" style="width: 100%; height: 40px; border-radius: 12px; background: var(--primary); color: white; border: none; font-size: 13px; font-weight: 700;">Prendre / Choisir</button>
+                    <input type="file" id="mob-m-file" accept="image/*" style="display: none;" onchange="
+                        const reader = new FileReader();
+                        reader.onload = (e) => { 
+                            const img = document.querySelector('#mob-m-preview img');
+                            img.src = e.target.result;
+                            img.style.display = 'block';
+                        };
+                        reader.readAsDataURL(this.files[0]);
+                    ">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight: 700; text-transform: uppercase;">Identification</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <input type="text" id="mob-m-id" value="${existing?.machine_id || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 16px; font-weight: 700;" placeholder="ID (ex: MI_123)">
+                    <input type="text" id="mob-m-sn" value="${existing?.serial_number || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 16px; font-weight: 700;" placeholder="N° de Série">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight: 700; text-transform: uppercase;">Désignation & Famille</label>
+                <input type="text" id="mob-m-name" value="${existing?.name || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px; margin-bottom: 12px;" placeholder="Nom (ex: Mini-pelle 3T)">
+                <select id="mob-m-family" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px; appearance: none;">
+                    <option value="">-- Choisir une famille --</option>
+                    ${families.map(f => `<option value="${f.name}" ${existing?.family === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
+                </select>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight: 700; text-transform: uppercase;">Marque & Attribution</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <input type="text" id="mob-m-brand" value="${existing?.brand || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px;" placeholder="Marque (ex: JCB)">
+                    <input type="text" id="mob-m-assigned" value="${existing?.assigned_to || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px;" placeholder="Attribué à...">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 10px; font-weight: 700; text-transform: uppercase;">Périodicité de maintenance</label>
+                <div style="background: rgba(0,0,0,0.03); padding: 15px; border-radius: 16px;">
+                    <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span id="mob-edit-period-val" style="font-weight: 800; color: var(--primary);">${existing?.periodicity || 12} mois</span>
+                    </div>
+                    <input type="range" id="mob-m-period" min="1" max="24" value="${existing?.periodicity || 12}" style="width: 100%; accent-color: var(--primary);" oninput="document.getElementById('mob-edit-period-val').innerText = this.value + ' mois'">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(0,0,0,0.03); border-radius: 14px;">
+                <span style="font-size: 14px; font-weight: 700; color: ${textColor};">Matériel actif</span>
+                <div style="position: relative; display: inline-block; width: 60px; height: 34px;">
+                    <input type="checkbox" id="mob-m-active" ${existing?.status_active !== false ? 'checked' : ''} style="opacity: 0; width: 0; height: 0;">
+                    <span onclick="this.previousElementSibling.click(); this.classList.toggle('checked')" class="toggle-slider ${existing?.status_active !== false ? 'checked' : ''}" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px;"></span>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 10px;">
+                <button class="btn-secondary" style="flex: 1; height: 52px; border-radius: 16px; font-weight: 700;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="mob-save-m-btn" class="btn-primary" style="flex: 1; height: 52px; border-radius: 16px; background: var(--primary); border: none; color: white; font-weight: 800;">Enregistrer</button>
+            </div>
+            
+            ${id ? `
+            <div style="text-align: center; margin-top: 24px;">
+                <button onclick="window.deleteAdminMachineMobile('${id}')" style="background: none; border: none; color: #FF3B30; font-size: 13px; font-weight: 700; text-decoration: underline;">Supprimer ce matériel</button>
+            </div>
+            ` : ''}
+        </div>
+        <style>
+            .toggle-slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+            .toggle-slider.checked { background-color: #34C759; }
+            .toggle-slider.checked:before { transform: translateX(26px); }
+        </style>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('mob-save-m-btn').onclick = async () => {
+        const data = {
+            id: id,
+            machine_id: document.getElementById('mob-m-id').value.trim(),
+            name: document.getElementById('mob-m-name').value.trim(),
+            serial_number: document.getElementById('mob-m-sn').value.trim(),
+            brand: document.getElementById('mob-m-brand').value.trim(),
+            family: document.getElementById('mob-m-family').value,
+            assigned_to: document.getElementById('mob-m-assigned').value.trim(),
+            periodicity: parseInt(document.getElementById('mob-m-period').value),
+            status_active: document.getElementById('mob-m-active').checked
+        };
+
+        if (!data.machine_id) return alert("L'identifiant est obligatoire.");
+
+        const btn = document.getElementById('mob-save-m-btn');
+        btn.disabled = true;
+        btn.innerText = "Patientez...";
+
+        try {
+            const saved = await api.saveMachine(data);
+            const photoInput = document.getElementById('mob-m-file');
+            if (photoInput.files.length > 0) {
+                btn.innerText = "Upload photo...";
+                // Web worker endpoint for mobile too
+                await api.uploadMachinePhoto(saved.id || id, photoInput.files[0]);
+            }
+            modal.remove();
+            if (id) window.openMobileMachineDetail(id);
+            else window.renderMobileParc();
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
+};
+
+window.deleteAdminMachineMobile = async function(id) {
+    if (!confirm("Attention : cette action supprimera définitivement le matériel et son historique. Continuer ?")) return;
+    try {
+        await api.deleteMachine(id);
+        const modal = document.querySelector('.modal-overlay');
+        if (modal) modal.remove();
+        window.renderMobileParc();
     } catch (e) {
         alert("Erreur: " + e.message);
     }
 };
 
-initDashboard();
+// Start Push Notifications
+if (typeof initPushNotifications === "function") {
+    initPushNotifications();
+}
+
 
