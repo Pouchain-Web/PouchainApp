@@ -7451,6 +7451,9 @@ window.renderAdminMaterialTracking = async function () {
                     <button class="btn-primary" onclick="window.openEditMaterialModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
                         <span style="font-size: 18px;">+</span> Ajouter Matériel
                     </button>
+                    <button onclick="window.exportMaterialToExcel()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(52, 199, 89, 0.1); border: 1px solid rgba(52, 199, 89, 0.2); display: flex; align-items: center; gap: 8px; color: #34C759; font-weight: 700; cursor: pointer; transition: all 0.2s;" title="Exporter vers Excel (CSV)">
+                        <span style="font-size: 16px;">📊</span> Exporter
+                    </button>
                     <button onclick="window.renderAdminMaterialTracking()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                     </button>
@@ -7464,9 +7467,9 @@ window.renderAdminMaterialTracking = async function () {
                     <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 10px; background: rgba(255, 59, 48, 0.1); padding: 0 16px; border-radius: 12px; height: 48px; border: 1px solid rgba(255, 59, 48, 0.2); cursor: pointer;" onclick="document.getElementById('material-filter-missing').click()">
+                <div style="display: flex; align-items: center; gap: 10px; background: rgba(255, 59, 48, 0.1); padding: 0 16px; border-radius: 12px; height: 48px; border: 1px solid rgba(255, 59, 48, 0.2); cursor: pointer;" onclick="if(event.target.id !== 'material-filter-missing') { const cb = document.getElementById('material-filter-missing'); cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }">
                     <input type="checkbox" id="material-filter-missing" style="width: 18px; height: 18px; accent-color: #FF3B30; cursor: pointer;">
-                    <span style="color: #FF3B30; font-size: 14px; font-weight: 700;">Manquants</span>
+                    <span style="color: #FF3B30; font-size: 14px; font-weight: 700; pointer-events: none;">Manquants</span>
                 </div>
 
                 <div style="position: relative; min-width: 200px;">
@@ -7541,13 +7544,22 @@ window.renderAdminMaterialTracking = async function () {
 
                 return `
                     <div class="material-card" onclick="window.openEditMaterialModal('${item.id}')" style="background: rgba(45, 45, 50, 0.4); backdrop-filter: blur(20px); border: 1px solid ${isMissing ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255,255,255,0.05)'}; border-radius: 24px; padding: 24px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; gap: 16px; position: relative; overflow: hidden;">
-                        <!-- Header: Designation & Stock -->
+                        
+                        <!-- Header: Info & Stock -->
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
-                            <div style="flex: 1;">
-                                <div style="font-weight: 800; color: white; font-size: 16px; line-height: 1.3; margin-bottom: 6px;">${item.designation || 'Sans nom'}</div>
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <span style="font-size: 10px; color: #5856D6; background: rgba(88, 86, 214, 0.1); padding: 4px 8px; border-radius: 6px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(88, 86, 214, 0.15);">${item.type || 'MATÉRIEL'}</span>
-                                    ${item.qr_ref ? `<span style="font-size: 10px; color: #FF9500; background: rgba(255, 149, 0, 0.1); padding: 4px 8px; border-radius: 6px; font-weight: 800; font-family: monospace; letter-spacing: 0.5px; border: 1px solid rgba(255, 149, 0, 0.15);">${item.qr_ref}</span>` : ''}
+                            <div style="display: flex; gap: 15px; flex: 1;">
+                                <div style="width: 60px; height: 60px; border-radius: 14px; background: ${item.photo_url ? '#000' : 'rgba(255,255,255,0.03)'}; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+                                    ${item.photo_url ? 
+                                        `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : 
+                                        `<span style="font-size: 24px;">${item.type === 'Électroportatif' ? '🔌' : '🛠️'}</span>`
+                                    }
+                                </div>
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 800; color: white; font-size: 15px; line-height: 1.3; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${item.designation || 'Sans nom'}</div>
+                                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                        <span style="font-size: 9px; color: #5856D6; background: rgba(88, 86, 214, 0.1); padding: 3px 6px; border-radius: 5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(88, 86, 214, 0.15);">${item.type || 'MATÉRIEL'}</span>
+                                        ${item.qr_ref ? `<span style="font-size: 9px; color: #FF9500; background: rgba(255, 149, 0, 0.1); padding: 3px 6px; border-radius: 5px; font-weight: 800; font-family: monospace; letter-spacing: 0.5px; border: 1px solid rgba(255, 149, 0, 0.15);">${item.qr_ref}</span>` : ''}
+                                    </div>
                                 </div>
                             </div>
                             <div style="display: flex; flex-direction: column; align-items: flex-end;">
@@ -7619,6 +7631,7 @@ window.renderAdminMaterialTracking = async function () {
         searchInput.oninput = handleFilter;
         locationFilter.onchange = handleFilter;
         missingFilter.onchange = handleFilter;
+        missingFilter.onclick = (e) => { e.stopPropagation(); handleFilter(); };
 
         // Save stock for modal
         window._currentStock = stock;
@@ -7662,6 +7675,15 @@ window.openEditMaterialModal = async function (id = null) {
                     <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #FF9500; text-transform: uppercase; font-weight: 700;">📱 QR Code — ${item.qr_ref}</h3>
                     <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
                         <canvas id="qr-canvas-modal" style="border-radius: 8px; background: white; padding: 8px;"></canvas>
+                        
+                        ${item.photo_url ? `
+                            <div style="width: 140px; height: 140px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: #000; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; group;" onclick="window.open('${config.api.workerUrl}/get/${item.photo_url}', '_blank')">
+                                <img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">
+                                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: white; font-size: 9px; padding: 4px; text-align: center; font-weight: 700;">PHOTO ACTUELLE</div>
+                                <button type="button" onclick="event.stopPropagation(); if(confirm('Supprimer la photo ?')) window.deleteMaterialPhoto('${item.id}')" style="position: absolute; top: 5px; right: 5px; background: #FF3B30; color: white; border: none; width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">&times;</button>
+                            </div>
+                        ` : ''}
+
                         <div style="flex: 1;">
                             <div style="font-family: monospace; font-size: 22px; color: #FF9500; font-weight: 900; margin-bottom: 8px;">${item.qr_ref}</div>
                             <div style="font-size: 12px; color: #8E8E93; margin-bottom: 16px;">Scannez ce QR code pour accéder directement à cette fiche matériel.</div>
@@ -8074,15 +8096,101 @@ window.loadMaterialHistory = async function (materialId, containerId) {
                 userName = `${log.profiles.first_name || ''} ${log.profiles.last_name || ''}`.trim() || 'Utilisateur inconnu';
             }
             return `
-                <div style="padding: 12px; border-left: 3px solid #5856D6; background: rgba(88, 86, 214, 0.05); border-radius: 0 10px 10px 0; margin-bottom: 8px;">
-                    <div style="font-size: 11px; color: #8E8E93; font-weight: 600;">${date} • ${userName}</div>
-                    <div style="font-size: 13px; color: ${textColor}; font-weight: 500; margin-top: 4px;">${log.details}</div>
+                <div style="padding: 12px; border-left: 3px solid #5856D6; background: rgba(88, 86, 214, 0.05); border-radius: 0 10px 10px 0; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 11px; color: #8E8E93; font-weight: 600;">${date} • ${userName}</div>
+                        <div style="font-size: 13px; color: ${textColor}; font-weight: 500; margin-top: 4px;">${log.details}</div>
+                    </div>
+                    <button onclick="window.deleteLog('${log.id}', '${materialId}', '${containerId}')" style="background: none; border: none; color: #FF3B30; opacity: 0.5; cursor: pointer; font-size: 16px; padding: 0 5px;" title="Supprimer ce log">🗑️</button>
                 </div>
             `;
         }).join('');
     } catch (e) {
         container.innerHTML = `<div style="color: red; font-size: 12px;">Erreur historique: ${e.message}</div>`;
     }
+};
+
+window.deleteLog = async function (logId, materialId, containerId) {
+    if (!confirm("Supprimer ce log de l'historique ?")) return;
+    try {
+        await api.deleteMaterialLog(logId);
+        window.loadMaterialHistory(materialId, containerId);
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.deleteMaterialPhoto = async function (id) {
+    try {
+        const item = window._currentStock ? window._currentStock.find(s => s.id === id) : null;
+        const photoKey = item ? item.photo_url : null;
+
+        // 1. Delete from R2 if key exists
+        if (photoKey) {
+            try {
+                await api.deleteFile(photoKey);
+            } catch (err) {
+                console.warn("Failed to delete from R2, but continuing to clear DB:", err);
+            }
+        }
+
+        // 2. Clear photo_url in DB
+        await api.updateMaterialStock(id, { photo_url: null });
+        
+        // Update local data immediately
+        if (item) item.photo_url = null;
+
+        window.showToast("Photo supprimée avec succès");
+        
+        // Refresh the modal correctly
+        const modal = document.querySelector('.modal-overlay');
+        if (modal) {
+            modal.remove();
+            window.openEditMaterialModal(id);
+        }
+        window.renderAdminMaterialTracking();
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.exportMaterialToExcel = function () {
+    const stock = window._currentStock;
+    if (!stock || stock.length === 0) return alert("Aucune donnée à exporter");
+
+    // CSV Header
+    const headers = ["Désignation", "Catégorie", "Caractéristiques", "Référence Fournisseur", "Fournisseur", "Stock Réel", "Stock Souhaité", "Lieu de Stockage", "Réf QR"];
+    
+    // CSV Content
+    const rows = stock.map(item => [
+        item.designation || "",
+        item.type || "",
+        (item.caracteristiques || "").replace(/\n/g, " "),
+        item.reference_fournisseur || "",
+        item.fournisseur || "",
+        item.stock_reel || 0,
+        item.nb_souhaite || 0,
+        item.lieu_de_stockage || "",
+        item.qr_ref || ""
+    ]);
+
+    // Escape CSV values
+    const csvContent = [headers, ...rows].map(row => 
+        row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(";")
+    ).join("\n");
+
+    // Create Blob and Download (UTF-8 with BOM for Excel compatibility)
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    const dateStr = new Date().toISOString().split('T')[0];
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", `inventaire_ats_pouchain_${dateStr}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 };
 
 window.renderBuildingSchematic = async function (buildingId, highlightMachineId = null) {
@@ -9540,8 +9648,37 @@ window.openMaterialRequestsModal = async function () {
                                 ${req.profiles.first_name} ${req.profiles.last_name}
                             </td>
                             <td style="padding: 16px 12px;">
-                                <div style="color: #34C759; font-weight: 700;">Stock: ${req.new_stock_reel}</div>
-                                <div style="color: #5856D6; font-weight: 700;">Lieu: ${req.new_lieu_de_stockage}</div>
+                                ${req.new_designation && req.new_designation !== req.material_stock.designation ? 
+                                    `<div style="color: #34C759; font-weight: 800; background: rgba(52,199,89,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📝 Nom : ${req.material_stock.designation} ➔ <span style="font-size: 1.1em;">${req.new_designation}</span></div>` : ''
+                                }
+                                ${req.new_reference_fournisseur && req.new_reference_fournisseur !== req.material_stock.reference_fournisseur ? 
+                                    `<div style="color: #007AFF; font-weight: 800; background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">🔢 Réf : ${req.material_stock.reference_fournisseur || '—'} ➔ <span style="font-size: 1.1em;">${req.new_reference_fournisseur}</span></div>` : ''
+                                }
+                                ${req.new_type && req.new_type !== req.material_stock.type ? 
+                                    `<div style="color: #AF52DE; font-weight: 800; background: rgba(175,82,222,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📁 Cat : ${req.material_stock.type || '—'} ➔ <span style="font-size: 1.1em;">${req.new_type}</span></div>` : ''
+                                }
+                                ${req.new_stock_reel !== req.material_stock.stock_reel ? 
+                                    `<div style="color: #FF9500; font-weight: 800; background: rgba(255,149,0,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📦 Stock : ${req.material_stock.stock_reel} ➔ <span style="font-size: 1.1em;">${req.new_stock_reel}</span></div>` : 
+                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Stock : ${req.new_stock_reel} (inchangé)</div>`
+                                }
+                                ${req.new_lieu_de_stockage !== req.material_stock.lieu_de_stockage ? 
+                                    `<div style="color: #5856D6; font-weight: 800; background: rgba(88,86,214,0.1); padding: 4px 8px; border-radius: 6px;">📍 Lieu : ${req.material_stock.lieu_de_stockage || '—'} ➔ <span style="font-size: 1.1em;">${req.new_lieu_de_stockage}</span></div>` : 
+                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Lieu : ${req.new_lieu_de_stockage} (inchangé)</div>`
+                                }
+                                ${req.new_photo_url ? 
+                                    `<div style="margin-top: 10px; background: rgba(88,86,214,0.1); border-radius: 12px; padding: 10px; border: 1px solid rgba(88,86,214,0.2);">
+                                        <div style="font-size: 11px; color: #5856D6; margin-bottom: 6px; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
+                                            <span>📸 Nouvelle Photo</span>
+                                            <span style="background: #5856D6; color: white; padding: 1px 4px; border-radius: 4px; font-size: 9px;">DÉTECTÉE</span>
+                                        </div>
+                                        <div style="width: 100%; height: 120px; background: #000; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                                            <img src="${config.api.workerUrl}/get/${req.new_photo_url.replace(/^\/+/, '')}" 
+                                                 style="width: 100%; height: 100%; object-fit: contain; cursor: pointer;" 
+                                                 onclick="window.open('${config.api.workerUrl}/get/${req.new_photo_url.replace(/^\/+/, '')}', '_blank')"
+                                                 onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=color:#FF3B30;font-size:11px;padding:10px;text-align:center;>⚠️ Erreur de chargement<br><small style=opacity:0.7;>${req.new_photo_url}</small></div>'">
+                                        </div>
+                                     </div>` : ''
+                                }
                             </td>
                             <td style="padding: 16px 12px; text-align: right;">
                                 <div style="display: flex; gap: 8px; justify-content: flex-end;">

@@ -1156,5 +1156,25 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async deleteFile(key) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/photo?key=${encodeURIComponent(key)}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialLog(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

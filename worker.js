@@ -245,6 +245,8 @@ export default {
                         !obj.key.startsWith('buildings/') &&
                         !obj.key.startsWith('machines/') &&
                         !obj.key.startsWith('machines_photos/') &&
+                        !obj.key.startsWith('material_photos/') &&
+                        !obj.key.startsWith('material_requests_photos/') &&
                         !obj.key.startsWith('autre/') &&
                         !obj.key.startsWith('app_dist/') &&
                         !obj.key.startsWith('app_updates/') &&
@@ -1942,6 +1944,36 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // --- ROUTE: MATERIAL PHOTO UPLOAD / DELETE (Admin/Mobile) ---
+            if (url.pathname === "/admin/material/photo") {
+                if (method === "POST") {
+                    const formData = await request.formData();
+                    const file = formData.get("file");
+                    const materialId = formData.get("materialId");
+                    const isRequest = formData.get("isRequest") === "true";
+
+                    if (!file || !materialId) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+
+                    const key = isRequest 
+                        ? `material_requests_photos/${materialId}_${Date.now()}.png`
+                        : `material_photos/${materialId}.png`;
+
+                    await env.MY_BUCKET.put(key, file, {
+                        httpMetadata: { contentType: file.type || "image/png" }
+                    });
+
+                    return new Response(JSON.stringify({ success: true, key }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const key = url.searchParams.get("key");
+                    if (!key) return new Response("Missing key", { status: 400, headers: corsHeaders });
+                    
+                    await env.MY_BUCKET.delete(key);
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
             // --- ROUTE: MACHINE FAMILIES ---
             if (method === "GET" && url.pathname === "/admin/machine-families") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -2297,6 +2329,18 @@ export default {
                     if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                     return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
                 }
+
+                if (method === "DELETE") {
+                    const id = url.searchParams.get("id");
+                    if (!id) return new Response("Missing ID", { status: 400, headers: corsHeaders });
+                    
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_logs?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
             }
 
             // --- MATERIAL STOCK REQUESTS (Approvals) ---
@@ -2305,7 +2349,7 @@ export default {
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
                 if (method === "GET") {
-                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?status=eq.pending&select=*,material_stock(designation,stock_reel,lieu_de_stockage),profiles(first_name,last_name)&order=created_at.desc`, {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?status=eq.pending&select=*,new_photo_url,material_stock(designation,stock_reel,lieu_de_stockage,reference_fournisseur,type),profiles(first_name,last_name)&order=created_at.desc`, {
                         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                     });
                     return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2321,6 +2365,10 @@ export default {
                             user_id: user.id,
                             new_stock_reel: body.new_stock_reel,
                             new_lieu_de_stockage: body.new_lieu_de_stockage,
+                            new_designation: body.new_designation || null,
+                            new_reference_fournisseur: body.new_reference_fournisseur || null,
+                            new_type: body.new_type || null,
+                            new_photo_url: body.new_photo_url || null,
                             status: 'pending',
                             created_at: new Date().toISOString()
                         })
@@ -2341,13 +2389,19 @@ export default {
                         if (reqData && reqData.length > 0) {
                             const req = reqData[0];
                             // 2. Update the material stock
+                            const materialUpdate = {
+                                stock_reel: req.new_stock_reel,
+                                lieu_de_stockage: req.new_lieu_de_stockage
+                            };
+                            if (req.new_designation) materialUpdate.designation = req.new_designation;
+                            if (req.new_reference_fournisseur) materialUpdate.reference_fournisseur = req.new_reference_fournisseur;
+                            if (req.new_type) materialUpdate.type = req.new_type;
+                            if (req.new_photo_url) materialUpdate.photo_url = req.new_photo_url;
+
                             await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${req.material_id}`, {
                                 method: "PATCH",
                                 headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                    stock_reel: req.new_stock_reel,
-                                    lieu_de_stockage: req.new_lieu_de_stockage
-                                })
+                                body: JSON.stringify(materialUpdate)
                             });
                             // 3. Add a log
                             await fetch(`${supabaseUrl}/rest/v1/material_stock_logs`, {
