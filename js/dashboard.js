@@ -7879,6 +7879,7 @@ window.openQrExportModal = async function () {
             <div style="margin-bottom: 20px;">
                 <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:10px; font-weight:700; text-transform:uppercase;">Taille des QR codes sur le PDF</label>
                 <select id="qr-size-select" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:12px; color:white; padding:12px; font-size:15px; outline:none;">
+                    <option value="30">Mini (30×30 mm)</option>
                     <option value="60">Petit (60×60 mm) — 6 par page (2×3)</option>
                     <option value="80" selected>Moyen (80×80 mm) — 4 par page (2×2)</option>
                     <option value="100">Grand (100×100 mm) — 2 par page (1×2)</option>
@@ -7919,22 +7920,59 @@ window.exportAllQrPdf = async function (btn) {
     const origText = btn.innerText;
     btn.innerText = '⏳ Génération du PDF...';
 
+    // Load Logo
+    const logoImg = new Image();
+    logoImg.src = 'logo-pouchain.svg';
+    await new Promise(r => logoImg.onload = r);
+
     const sizeMm = parseInt(document.getElementById('qr-size-select').value) || 80;
-    const pxPerMm = 3.78; // ~96 DPI
+    const pxPerMm = 11.81; // 300 DPI (300 / 25.4)
+    
+    // Space allocations
+    const logoHMm = sizeMm < 40 ? 6 : 12;
+    const nameHMm = sizeMm < 40 ? 8 : 12;
+    const refHMm = sizeMm < 40 ? 5 : 8;
+    const paddingMm = 2;
+
     const qrPx = Math.round(sizeMm * pxPerMm);
-    const labelH = Math.round(20 * pxPerMm);
+    const logoPx = Math.round(logoHMm * pxPerMm);
+    const namePx = Math.round(nameHMm * pxPerMm);
+    const refPx = Math.round(refHMm * pxPerMm);
+    const padPx = Math.round(paddingMm * pxPerMm);
+
     const cellW = qrPx;
-    const cellH = qrPx + labelH;
-    const marginMm = 10;
+    const cellH = logoPx + namePx + qrPx + refPx + (padPx * 2);
+
+    const marginMm = sizeMm < 40 ? 5 : 10;
     const margin = Math.round(marginMm * pxPerMm);
     const pageW = Math.round(210 * pxPerMm); // A4 width
     const pageH = Math.round(297 * pxPerMm); // A4 height
-    const cols = Math.floor((pageW - margin * 2) / (cellW + margin));
-    const rows = Math.floor((pageH - margin * 2) / (cellH + margin));
+    
+    const cols = Math.floor((pageW - margin) / (cellW + margin)) || 1;
+    const rows = Math.floor((pageH - margin) / (cellH + margin)) || 1;
     const perPage = cols * rows;
     const totalPages = Math.ceil(stock.length / perPage);
 
     const pages = [];
+
+    // Helper for text wrapping
+    const wrapText = (ctx, text, x, y, maxWidth, lineHeight) => {
+        const words = (text || '').split(' ');
+        let line = '';
+        let currentY = y;
+        for (let n = 0; n < words.length; n++) {
+            let testLine = line + words[n] + ' ';
+            let metrics = ctx.measureText(testLine);
+            if (metrics.width > maxWidth && n > 0) {
+                ctx.fillText(line, x, currentY);
+                line = words[n] + ' ';
+                currentY += lineHeight;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, x, currentY);
+    };
 
     for (let page = 0; page < totalPages; page++) {
         const canvas = document.createElement('canvas');
@@ -7955,26 +7993,40 @@ window.exportAllQrPdf = async function (btn) {
             const x = margin + col * (cellW + margin);
             const y = margin + row * (cellH + margin);
 
-            // Generate QR
+            // Draw Cell Border
+            ctx.strokeStyle = '#eeeeee';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, cellW, cellH);
+
+            // 1. Draw Logo
+            const logoAspect = logoImg.width / logoImg.height;
+            let drawLogoW = cellW * 0.8;
+            let drawLogoH = drawLogoW / logoAspect;
+            if (drawLogoH > logoPx) {
+                drawLogoH = logoPx;
+                drawLogoW = drawLogoH * logoAspect;
+            }
+            ctx.drawImage(logoImg, x + (cellW - drawLogoW) / 2, y + padPx, drawLogoW, drawLogoH);
+
+            // 2. Draw Name (Above QR)
+            ctx.fillStyle = '#000000';
+            const fontSizeNamePx = Math.max(1.5, sizeMm * 0.08) * pxPerMm;
+            ctx.font = `700 ${Math.round(fontSizeNamePx)}px sans-serif`;
+            ctx.textAlign = 'center';
+            wrapText(ctx, item.designation, x + cellW / 2, y + logoPx + padPx + fontSizeNamePx, cellW - (2 * pxPerMm), fontSizeNamePx * 1.1);
+
+            // 3. Draw QR Code
             const qrCanvas = document.createElement('canvas');
             const qrUrl = `${config.api.workerUrl}/material?ref=${item.qr_ref}`;
-            await QRCode.toCanvas(qrCanvas, qrUrl, { width: qrPx - 8, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+            await QRCode.toCanvas(qrCanvas, qrUrl, { width: qrPx - (2 * pxPerMm), margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+            ctx.drawImage(qrCanvas, x + (1 * pxPerMm), y + logoPx + namePx + padPx);
 
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(x, y, cellW, cellH);
-            ctx.strokeStyle = '#e0e0e0';
-            ctx.strokeRect(x, y, cellW, cellH);
-            ctx.drawImage(qrCanvas, x + 4, y + 4);
-
-            // Label
+            // 4. Draw Ref (Bottom)
             ctx.fillStyle = '#000000';
-            ctx.font = `bold ${Math.max(10, Math.round(sizeMm * 0.15))}px monospace`;
+            const fontSizeRefPx = Math.max(2, sizeMm * 0.1) * pxPerMm;
+            ctx.font = `bold ${Math.round(fontSizeRefPx)}px monospace`;
             ctx.textAlign = 'center';
-            ctx.fillText(item.qr_ref, x + cellW / 2, y + qrPx + 14);
-            ctx.font = `${Math.max(8, Math.round(sizeMm * 0.1))}px sans-serif`;
-            ctx.fillStyle = '#666666';
-            const shortName = (item.designation || '').substring(0, 25);
-            ctx.fillText(shortName, x + cellW / 2, y + qrPx + 28);
+            ctx.fillText(item.qr_ref, x + cellW / 2, y + logoPx + namePx + qrPx + padPx + fontSizeRefPx);
         }
 
         // Footer
