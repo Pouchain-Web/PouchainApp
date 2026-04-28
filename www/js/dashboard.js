@@ -2,6 +2,26 @@
 import { auth } from './auth.js';
 import { api } from './api.js';
 import config from './config.js';
+import { updater } from './updater.js';
+
+// --- MISE À JOUR IN-APP ---
+(async () => {
+    try {
+        console.log("[Dashboard] Initialisation de l'updater...");
+        const isUpdating = await updater.init();
+        if (isUpdating) {
+            console.log("[Dashboard] Blocage pour mise à jour.");
+            return;
+        }
+        console.log("[Dashboard] Pas de mise à jour, lancement du dashboard.");
+        initDashboard();
+    } catch (e) {
+        console.error("[Dashboard] ERREUR CRITIQUE UPDATER:", e);
+        alert("ERREUR CRITIQUE AU LANCEMENT: " + e.message);
+        // On lance quand même le dashboard en cas d'erreur de l'updater pour ne pas bloquer l'app
+        initDashboard();
+    }
+})();
 
 // Utilitaires de sécurité
 window.escapeHTML = function (str) {
@@ -15,6 +35,144 @@ window.escapeHTML = function (str) {
 };
 
 // Controller Logic
+/**
+ * Conversion utility for VAPID Public Key
+ */
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+/**
+ * Initialize Push Notifications for Mobile (PWA & Native APK)
+ */
+async function initPushNotifications() {
+    // 1. Logic for NATIVE APK (Capacitor)
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+        console.log("Capacitor Native Platform detected. Using Native Push.");
+        try {
+            const { PushNotifications } = window.Capacitor.Plugins;
+            if (!PushNotifications) {
+                console.error("Capacitor PushNotifications plugin not found.");
+                return;
+            }
+
+            let permStatus = await PushNotifications.checkPermissions();
+            if (permStatus.receive === 'prompt') {
+                permStatus = await PushNotifications.requestPermissions();
+            }
+
+            if (permStatus.receive !== 'granted') {
+                console.warn('Native Push permission denied.');
+                return;
+            }
+
+            // 1. Listeners (Register BEFORE register() to catch all events)
+            await PushNotifications.addListener('registration', async (token) => {
+                console.log('Native Push Registration success, token:', token.value);
+                const subObj = { token: token.value, type: 'capacitor' };
+                try {
+                    await api.subscribePush(subObj);
+                    console.log("Appareil enregistré dans la base de données.");
+                } catch (e) {
+                    console.error("Erreur enregistrement serveur:", e.message);
+                }
+            });
+
+            await PushNotifications.addListener('registrationError', (error) => {
+                console.error('Native Push Registration error:', error);
+            });
+
+            await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+                console.log("Foreground notification received:", notification);
+            });
+
+            await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+                console.log("Action de notification effectuée:", notification);
+                const data = notification.notification.data;
+                if (data && data.url) {
+                    // Si l'URL est externe ou un schéma d'app (://), on l'ouvre
+                    if (data.url.startsWith('http') || data.url.includes('://')) {
+                        console.log("Opening external URL from notification:", data.url);
+                        window.open(data.url, '_blank');
+                    } else if (data.url && data.url.includes('.html')) {
+                        // Navigation interne seulement si on n'est pas déjà sur la page
+                        if (!window.location.href.includes(data.url)) {
+                            window.location.href = data.url;
+                        }
+                    }
+                }
+            });
+
+            // 2. Channel Creation
+            try {
+                await PushNotifications.createChannel({
+                    id: 'pouchain_notifications',
+                    name: 'Pouchain App Notifications',
+                    description: 'Alertes et rappels de pointage KIZEO',
+                    importance: 5,
+                    visibility: 1,
+                    vibration: true
+                });
+            } catch (ce) {
+                console.error("Channel creation error:", ce);
+            }
+
+            // 3. Register with FCM
+            await PushNotifications.register();
+
+            return; // Native logic handled
+        } catch (err) {
+            console.error("Native Push Init Error:", err);
+            // Fallback to web push if possible (though unlikely to work if native fails)
+        }
+    }
+
+    // 2. Logic for WEB / PWA (Standard Web Push)
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push mapping non supporté sur ce navigateur.');
+        return;
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.getRegistration() || await navigator.serviceWorker.register('sw.js');
+        console.log('Service Worker ready:', registration);
+
+        let permission = Notification.permission;
+        if (permission !== 'granted') {
+            const confirmed = confirm("🔔 Pour recevoir les rappels de pointage KIZEO et les messages des administrateurs, souhaitez-vous activer les notifications sur cet appareil ?");
+            if (!confirmed) return;
+            permission = await Notification.requestPermission();
+        }
+
+        if (permission !== 'granted') return;
+
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+            const subscribeOptions = {
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(config.vapidPublicKey)
+            };
+            subscription = await registration.pushManager.subscribe(subscribeOptions);
+        }
+
+        await api.subscribePush(subscription);
+        console.log('Web Push subscription verified on backend.');
+    } catch (error) {
+        console.error('Error during web push initialization:', error);
+    }
+}
+
 async function initDashboard() {
     // 1. Check Auth
     const session = await auth.getSession();
@@ -80,6 +238,20 @@ async function initDashboard() {
                 window.Capacitor.Plugins.App.exitApp();
             }
         });
+
+        // Deep link : app déjà ouverte et on reçoit pouchainapp://material?ref=XXX
+        window.Capacitor.Plugins.App.addListener('appUrlOpen', (event) => {
+            const match = (event.url || '').match(/[?&]ref=([^&]+)/);
+            if (match) openMaterialByRef(decodeURIComponent(match[1]));
+        });
+
+        // Deep link : app lancée directement depuis le lien
+        window.Capacitor.Plugins.App.getLaunchUrl().then((result) => {
+            if (result && result.url) {
+                const match = result.url.match(/[?&]ref=([^&]+)/);
+                if (match) openMaterialByRef(decodeURIComponent(match[1]));
+            }
+        });
     }
 
     // 3. Render View
@@ -88,12 +260,19 @@ async function initDashboard() {
     } else {
         await renderMobileView();
     }
+
+    // 4. Initialisation des notifications Push
+    initPushNotifications();
 }
 
 // Global utility for opening files
 window.openFile = function (key) {
     if (!key) return;
-    const url = `${config.api.workerUrl}/get/${key}`;
+
+    // Properly encode key segments (for spaces, #, %, etc.)
+    const encodedKey = key.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    const url = `${config.api.workerUrl}/get/${encodedKey}`;
+
     const ext = key.split('.').pop().toLowerCase();
     const isViewable = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'mp4', 'mov'].includes(ext);
 
@@ -104,19 +283,28 @@ window.openFile = function (key) {
     }
 };
 
-window.viewMobileFile = function(key, url, ext) {
+window.viewMobileFile = function (key, url, ext) {
     const filename = key.split('/').pop();
     const modal = document.createElement('div');
-    modal.className = 'file-viewer-overlay modal-overlay'; // Add modal-overlay for hardware back button support
+    modal.className = 'file-viewer-overlay modal-overlay';
     modal.id = 'active-file-viewer';
-    
+    modal.style.zIndex = '1000000';
+
     let renderHtml = '';
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-        renderHtml = `<img src="${url}" alt="${filename}">`;
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+        renderHtml = `<img src="${url}" alt="${filename}" style="width:100%; height:auto; max-height:100%; object-fit: contain;">`;
     } else if (ext === 'pdf') {
-        renderHtml = `<iframe src="${url}"></iframe>`;
+        // Fallback for Android: Use Google Docs Viewer to ensure direct viewing without download
+        const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+        renderHtml = `
+            <iframe src="${googleViewerUrl}" style="width:100%; height:100%; border:none; background:#fff;"></iframe>
+        `;
     } else if (['mp4', 'mov'].includes(ext)) {
-        renderHtml = `<video src="${url}" controls autoplay></video>`;
+        renderHtml = `<video src="${url}" controls autoplay style="width:100%; max-height:100%;"></video>`;
+    } else {
+        // For other files, try to open in a new window (which triggers the system browser)
+        window.open(url, '_blank');
+        return;
     }
 
     modal.innerHTML = `
@@ -124,7 +312,7 @@ window.viewMobileFile = function(key, url, ext) {
             <span class="viewer-title">${filename}</span>
             <button class="close-viewer-btn" onclick="this.closest('.file-viewer-overlay').remove()">×</button>
         </div>
-        <div class="viewer-body">
+        <div class="viewer-body" style="background:#000; overflow:hidden;">
             ${renderHtml}
         </div>
     `;
@@ -190,15 +378,17 @@ async function renderMobileView() {
             .close-viewer-btn { background: #38383A; color: #fff; border: none; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; }
             .viewer-body {
                 flex: 1;
+                width: 100%;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 overflow: hidden;
                 position: relative;
+                background: #111;
             }
             .viewer-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
             .viewer-body video { width: 100%; max-height: 100%; }
-            .viewer-body iframe { width: 100%; height: 100%; border: none; background: #fff; }
+            .viewer-body object { width: 100%; height: 100%; border: none; display: block; background: #fff; }
         `;
         document.head.appendChild(style);
     }
@@ -301,6 +491,10 @@ async function renderMobileView() {
             window.renderMobileVehiclesList(mobileVehicleCache);
             return;
         }
+        if (mobileCurrentPath === 'parc_detail') {
+            window.renderMobileParc();
+            return;
+        }
         if (mobileCurrentPath && mobileCurrentPath.includes('/')) {
             // Go up one level
             const parts = mobileCurrentPath.split('/');
@@ -339,10 +533,10 @@ async function renderMobileView() {
                     .select('preferences')
                     .eq('id', session.user.id)
                     .single();
-                
+
                 let currentPreferences = (profile && profile.preferences) || {};
                 if (typeof currentPreferences === 'string') currentPreferences = JSON.parse(currentPreferences);
-                
+
                 // Set initial theme
                 const isDarkMode = currentPreferences.mobile_dark_mode === true;
                 applyMobileTheme(isDarkMode);
@@ -353,7 +547,7 @@ async function renderMobileView() {
                     themeBtn.onclick = async () => {
                         const isNewDark = document.documentElement.getAttribute('data-theme') !== 'dark';
                         applyMobileTheme(isNewDark);
-                        
+
                         // Re-render if in planning
                         if (mobileCurrentPath === 'planning') {
                             const dateInput = document.querySelector('input[type="date"]');
@@ -395,11 +589,11 @@ async function renderMobileView() {
                 const bg = dk ? '#1C1C1E' : '#ffffff';
                 const textColor = dk ? '#ffffff' : '#1c1c1e';
                 const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
-                
+
                 const modal = document.createElement('div');
                 modal.className = 'modal-overlay';
                 modal.style.zIndex = "10000";
-                
+
                 modal.innerHTML = `
                     <div id="missing-info-alert" class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
                         <div style="font-size: 40px; margin-bottom: 16px;">⚠️</div>
@@ -408,6 +602,7 @@ async function renderMobileView() {
                             Votre véhicule (<strong>${window.escapeHTML(assignedVehicle.plate_number)}</strong>) requiert la mise à jour des informations suivantes :
                             <ul style="text-align: left; margin-top: 12px; color: ${textColor}; padding-left: 20px;">
                                 ${missing.map(m => `<li>${m}</li>`).join('')}
+                                ${!assignedVehicle.last_ct_date ? `<li>📅 Contrôle Technique</li>` : ''}
                             </ul>
                         </div>
                         <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -424,6 +619,10 @@ async function renderMobileView() {
                             <input type="date" id="mi-date" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" value="${assignedVehicle.next_maintenance_date || ''}">
                         </div>
                         <div style="margin-bottom: 16px;">
+                            <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Dernier Contrôle Technique</label>
+                            <input type="date" id="mi-ct" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" value="${assignedVehicle.last_ct_date || ''}">
+                        </div>
+                        <div style="margin-bottom: 16px;">
                             <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 6px;">Prochain entretien (km)</label>
                             <input type="number" id="mi-km" style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${inputBg}; color: ${textColor};" placeholder="Ex: 50000" value="${assignedVehicle.next_maintenance_km || ''}">
                         </div>
@@ -438,7 +637,7 @@ async function renderMobileView() {
                         
                         <div style="display: flex; gap: 12px;">
                             <button class="btn-secondary" style="flex: 1;" onclick="document.getElementById('missing-info-form').classList.add('hidden'); document.getElementById('missing-info-alert').classList.remove('hidden');">Retour</button>
-                            <button id="submit-mi-btn" class="btn-primary" style="flex: 1; background: #2da140;">Enregistrer</button>
+                            <button id="mi-save" class="btn-primary" style="flex: 1; background: #2da140;">Enregistrer</button>
                         </div>
                     </div>
                 `;
@@ -449,33 +648,44 @@ async function renderMobileView() {
                     document.getElementById('missing-info-form').classList.remove('hidden');
                 };
 
-                document.getElementById('submit-mi-btn').onclick = async () => {
-                    const btn = document.getElementById('submit-mi-btn');
-                    btn.disabled = true;
-                    btn.innerText = "En cours...";
+                const saveBtn = document.getElementById('mi-save');
+                saveBtn.onclick = async () => {
+                    const maintenanceDate = document.getElementById('mi-date').value;
+                    const ctDate = document.getElementById('mi-ct').value;
+                    const maintenanceKm = document.getElementById('mi-km').value;
+                    const toll = document.getElementById('mi-toll').value;
+                    const dkv = document.getElementById('mi-dkv').value;
+
+                    saveBtn.disabled = true;
+                    saveBtn.innerText = "Enregistrement...";
+
                     try {
                         const payload = {
                             id: assignedVehicle.id,
-                            next_maintenance_date: document.getElementById('mi-date').value || null,
-                            next_maintenance_km: document.getElementById('mi-km').value || null,
-                            toll_card: document.getElementById('mi-toll').value || null,
-                            dkv_card: document.getElementById('mi-dkv').value || null
+                            next_maintenance_date: maintenanceDate || null,
+                            last_ct_date: ctDate || null,
+                            next_maintenance_km: maintenanceKm ? parseInt(maintenanceKm) : null,
+                            toll_card: toll || null,
+                            dkv_card: dkv || null
                         };
+
                         const response = await fetch(`${config.api.workerUrl}/my-vehicle`, {
-                            method: "PATCH",
+                            method: 'PATCH',
                             headers: {
-                                "Content-Type": "application/json",
-                                'Authorization': `Bearer ${session.access_token}`
+                                'Content-Type': 'application/json',
+                                ...(await auth.getAuthHeaders())
                             },
                             body: JSON.stringify(payload)
                         });
+
                         if (!response.ok) throw new Error(await response.text());
-                        
+
                         modal.remove();
+                        window.location.reload();
                     } catch (e) {
                         alert("Erreur: " + e.message);
-                        btn.disabled = false;
-                        btn.innerText = "Enregistrer";
+                        saveBtn.disabled = false;
+                        saveBtn.innerText = "Enregistrer";
                     }
                 };
             }
@@ -504,7 +714,7 @@ function handleMobileSearch(query) {
     // Hide others
     categoriesView.classList.add('hidden');
     docListView.classList.add('hidden');
-        searchView.classList.remove('hidden');
+    searchView.classList.remove('hidden');
 
     // Filter — exclude internal config files (.keep, .meta_color_*)
     const isInternalFile = (key) => {
@@ -547,7 +757,7 @@ function generateMobileCategories(files, myVehicle = null) {
         const parts = file.key.split('/');
         if (parts.length > 1) {
             const folder = parts[0];
-            if (folder.toLowerCase() === 'archive') return; 
+            if (folder.toLowerCase() === 'archive') return;
             if (!categories.has(folder)) {
                 categories.set(folder, { files: [], color: null, emoji: '📁', order: 999, row: 1 });
             }
@@ -565,7 +775,7 @@ function generateMobileCategories(files, myVehicle = null) {
                 catData.files.push(file);
             }
         } else {
-            if (file.key.toLowerCase().includes('archive')) return; 
+            if (file.key.toLowerCase().includes('archive')) return;
             uncategorized.push(file);
         }
     });
@@ -596,12 +806,6 @@ function generateMobileCategories(files, myVehicle = null) {
     if (uncategorized.length > 0) {
         const card = document.createElement('div');
         card.className = 'category-card';
-        card.innerHTML = `
-            <div class="category-icon" style="background-color: rgba(255, 255, 255, 0.2)">📄</div>
-            <div class="category-title">Autres</div>
-        `;
-        card.onclick = () => showMobileRootFiles(uncategorized);
-        grid.appendChild(card);
     }
 
     // Add Special App Cards
@@ -621,6 +825,14 @@ function generateMobileCategories(files, myVehicle = null) {
     `;
     matosCard.onclick = () => renderMobileMaterialRequests();
 
+    const matosStockCard = document.createElement('div');
+    matosStockCard.className = 'category-card';
+    matosStockCard.innerHTML = `
+        <div class="category-icon" style="background-color: #5856D6;">🛠️</div>
+        <div class="category-title" style="font-weight:bold;">Suivi matériel ATS</div>
+    `;
+    matosStockCard.onclick = () => renderMobileMaterialTracking();
+
     if (myVehicle && (myVehicle.assigned || (myVehicle.common && myVehicle.common.length > 0))) {
         const autoCard = document.createElement('div');
         autoCard.className = 'category-card';
@@ -631,20 +843,446 @@ function generateMobileCategories(files, myVehicle = null) {
         autoCard.onclick = () => window.renderMobileVehiclesList(myVehicle);
         grid.prepend(autoCard);
     }
-    
-    const mapCard = document.createElement('div');
-    mapCard.className = 'category-card';
-    mapCard.innerHTML = `
-        <div class="category-icon" style="background-color: #5856D6;">🗺️</div>
-        <div class="category-title" style="font-weight:bold;">Carte</div>
-    `;
-    mapCard.onclick = () => renderMobileMap();
 
-    grid.prepend(mapCard);
-    if (typeof autoCard !== 'undefined') grid.prepend(autoCard);
+
+
+    const fritCard = document.createElement('div');
+    fritCard.className = 'category-card';
+    fritCard.innerHTML = `
+        <div class="category-icon" style="background-color: #FFD60A;">🍟</div>
+        <div class="category-title" style="font-weight:bold;">Friterie</div>
+    `;
+    fritCard.onclick = () => renderMobileFriterie();
+
+    const parcCard = document.createElement('div');
+    parcCard.className = 'category-card';
+    parcCard.innerHTML = `
+        <div class="category-icon" style="background-color: #AF52DE;">🚜</div>
+        <div class="category-title" style="font-weight:bold;">Parc / Maint.</div>
+    `;
+    parcCard.onclick = () => window.renderMobileParc();
+
+
+    grid.prepend(parcCard);
+    grid.prepend(fritCard);
+    grid.prepend(matosStockCard);
     grid.prepend(matosCard);
     grid.prepend(planningCard);
 }
+
+
+window.renderMobileFriterie = async function () {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Friterie 🍟";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    mobileCurrentPath = "friterie";
+
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    const deleteAllBtn = `
+        <button class="btn-primary" onclick="adminDeleteAllFritOrders()" style="width: 100%; height: 50px; background: #FF3B30; color: #fff; font-size: 14px; margin-top: 12px; border-radius: 12px; font-weight:600; border:none; display:flex; align-items:center; justify-content:center; gap:8px;">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            Tout effacer
+        </button>
+    `;
+
+    container.innerHTML = `
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 100px;">
+            <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 20px; padding: 20px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                <div style="font-size: 40px; margin-bottom: 12px;">🇧🇪</div>
+                <h2 style="margin: 0; color: ${textColor}; font-size: 20px;">Friterie Pouchain</h2>
+                <p style="color: #8E8E93; font-size: 14px; margin: 8px 0 20px 0;">Faites votre commande hebdomadaire une belle frite belge !</p>
+                <button class="btn-primary" onclick="openNewFritOrderModal()" style="width: 100%; height: 54px; background: #FFD60A; color: #000; font-size: 16px; font-weight:800; border-radius: 15px; border:none; box-shadow: 0 4px 12px rgba(255, 214, 10, 0.3);">
+                    + Ajouter à ma commande
+                </button>
+                <button class="btn-secondary" onclick="renderColleaguesFritOrders()" style="width: 100%; height: 50px; background: rgba(142, 142, 147, 0.12); border: 1px solid ${subtleBorder}; color: ${textColor}; font-size: 14px; margin-top: 12px; border-radius: 12px; font-weight:600;">
+                    👁️ Voir la commande de tout le monde
+                </button>
+                <a href="tel:0608811644" style="text-decoration:none; width: 100%; height: 50px; background: rgba(52, 199, 89, 0.12); border: 1px solid rgba(52, 199, 89, 0.2); color: #34C759; font-size: 14px; margin-top: 12px; border-radius: 12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    📞 Appeler la friterie
+                </a>
+                <button class="btn-secondary" onclick="window.open('${config.api.workerUrl}/get/archives/Menu_le_temps_une_frite.jpg', '_blank')" style="width: 100%; height: 50px; background: rgba(88, 86, 214, 0.1); border: 1px solid rgba(88, 86, 214, 0.2); color: #5856D6; font-size: 14px; margin-top: 12px; border-radius: 12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    📋 Voir la carte (Menu)
+                </button>
+                ${deleteAllBtn}
+            </div>
+
+            <div id="active-frit-orders" style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="color: #8E8E93; font-size: 13px; font-weight: 600; text-transform: uppercase; padding-left: 8px;">Ma commande actuelle</div>
+                <div id="frit-order-list" style="color: #8E8E93; text-align: center; padding: 20px;">Chargement...</div>
+            </div>
+        </div>
+    `;
+
+    // Fetch and show current orders
+    try {
+        const response = await fetch(`${config.api.workerUrl}/friterie/order`, {
+            headers: { 'Authorization': `Bearer ${(await auth.getSession()).access_token}` }
+        });
+        const orders = response.ok ? await response.json() : [];
+        const orderList = document.getElementById('frit-order-list');
+
+        if (!orders || orders.length === 0) {
+            orderList.innerHTML = `<div style="background: ${cardBg}; border-radius: 15px; padding: 30px; border: 1px dashed ${subtleBorder}; color: #8E8E93; font-style: italic;">Aucun article dans votre commande</div>`;
+        } else {
+            orderList.innerHTML = orders.map(o => `
+                <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 16px; padding: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: start; position: relative;">
+                    <div style="text-align: left;">
+                        <div style="color: ${textColor}; font-weight: 700; font-size: 15px;">${o.item_name}</div>
+                        <div style="color: #8E8E93; font-size: 12px; margin-top: 4px;">
+                            ${o.details ? `<span>${o.details}</span>` : ''}
+                            ${o.sauce ? `<span style="display:block; color: #FF9500; font-weight:600;">Sauce: ${o.sauce}</span>` : ''}
+                        </div>
+                    </div>
+                    <button onclick="deleteFritOrderItem(${o.id})" style="background: rgba(255, 59, 48, 0.1); color: #FF3B30; border: none; padding: 8px; border-radius: 10px;">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+    } catch (e) {
+        document.getElementById('frit-order-list').innerHTML = `Erreur: ${e.message}`;
+    }
+}
+
+window.renderColleaguesFritOrders = async function () {
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    container.innerHTML = `
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 100px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                <h3 style="margin: 0; color: ${textColor};">Commande de tout le monde</h3>
+                <button onclick="renderMobileFriterie()" style="background: rgba(142,142,147,0.2); border:none; padding: 8px 15px; border-radius: 10px; color: ${textColor}; font-size: 13px; font-weight:600;">Retour</button>
+            </div>
+            <div id="colleagues-order-list" style="text-align: center; color: #8E8E93; padding: 20px;">Chargement du récapitulatif...</div>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`${config.api.workerUrl}/friterie/all-orders`, {
+            headers: { 'Authorization': `Bearer ${(await auth.getSession()).access_token}` }
+        });
+        const orders = response.ok ? await response.json() : [];
+        const orderList = document.getElementById('colleagues-order-list');
+
+        if (!orders || orders.length === 0) {
+            orderList.innerHTML = `<div style="background: ${cardBg}; border-radius: 15px; padding: 40px; border: 1px dashed ${subtleBorder}; color: #8E8E93; font-style: italic;">Personne n'a encore commandé pour le moment.</div>`;
+            return;
+        }
+
+        // Group by user
+        const grouped = {};
+        const session = await auth.getSession();
+        const currentUserId = session?.user?.id;
+
+        orders.forEach(o => {
+            let profile = o.profiles;
+            // Handle both object and array response from Supabase Join
+            if (Array.isArray(profile)) profile = profile[0];
+
+            let userName = 'Inconnu';
+            if (profile && (profile.first_name || profile.last_name)) {
+                userName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+            } else if (o.user_id === currentUserId) {
+                userName = "Moi (Ma commande)";
+            } else {
+                userName = "Utilisateur #" + (o.user_id ? o.user_id.substring(0, 5) : '???');
+            }
+
+            if (!grouped[userName]) grouped[userName] = [];
+            grouped[userName].push(o);
+        });
+
+        let html = '';
+        // Put "Moi" at the top
+        const userNames = Object.keys(grouped).sort((a, b) => {
+            if (a === "Moi (Ma commande)") return -1;
+            if (b === "Moi (Ma commande)") return 1;
+            return a.localeCompare(b);
+        });
+
+        userNames.forEach(name => {
+            const userOrders = grouped[name];
+            html += `
+                <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 18px; padding: 16px; margin-bottom: 15px; text-align: left; box-shadow: 0 4px 10px rgba(0,0,0,0.02);">
+                    <div style="color: ${textColor}; font-weight: 800; font-size: 16px; margin-bottom: 12px; border-bottom: 1px solid ${subtleBorder}; padding-bottom: 8px; display:flex; align-items:center; gap:8px;">
+                        <span style="background: #FFD60A; color: #000; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items:center; justify-content:center; font-size: 14px;">${name.charAt(0)}</span>
+                        ${name}
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        ${userOrders.map(o => {
+                            const date = o.created_at ? new Date(o.created_at) : null;
+                            const timeStr = date ? `à ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : '';
+                            return `
+                                <div style="padding-left: 10px; border-left: 3px solid #FFD60A; position: relative;">
+                                    <div style="color: ${textColor}; font-size: 14px; font-weight: 600;">
+                                        ${o.item_name} ${o.details ? `<span style="font-weight:400; color:#8E8E93;">(${o.details})</span>` : ''}
+                                        <span style="font-size: 11px; color: #8E8E93; font-weight: 400; float: right;">${timeStr}</span>
+                                    </div>
+                                    ${o.sauce ? `<div style="color: #FF9500; font-size: 12px; font-weight: 600; margin-top: 2px;">Sauce: ${o.sauce}</div>` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+
+        orderList.innerHTML = html;
+        orderList.style.textAlign = 'initial';
+
+    } catch (e) {
+        document.getElementById('colleagues-order-list').innerHTML = `Erreur: ${e.message}`;
+    }
+}
+
+window.openNewFritOrderModal = function () {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#FFFFFF';
+    const textColor = dk ? '#FFFFFF' : '#1C1C1E';
+    const inputBg = dk ? '#2C2C2E' : '#F2F2F7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '10000';
+
+    const sauces = [
+        "Mayonnaise", "Ketchup", "Moutarde", "Hannibal", "Burger", "Ailoli",
+        "Brazil", "Barbecue belge", "Picalili", "Andalouse", "Américaine",
+        "Hot mammouth", "Samurai"
+    ];
+
+    const burgers = [
+        "Le Bicky", "Le classic", "Le Ch'ti", "Le montagnard", "Le biquette", "Le Crunchy", "Le burger du moment"
+    ];
+
+    const viandes = [
+        "Fricadelle", "Boulette", "Poulycroc", "Mexicanos", "Cervelas",
+        "Nugget (X4)", "Nugget (X6)", "Tender X3", "Cheese Cracks",
+        "Brochette de poulet", "Steak"
+    ];
+
+    modal.innerHTML = `
+        <div class="modal-box" style="width: 90%; max-width: 450px; background: ${bg}; border-radius: 28px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); overflow-y: auto; max-height: 85vh;">
+            <h2 style="margin: 0 0 20px 0; font-size: 22px; color: ${textColor}; text-align: center;">Que voulez-vous ? 🍟</h2>
+            
+            <div id="frit-selection-area" style="display: flex; flex-direction: column; gap: 16px;">
+                <!-- Catégorie Principal -->
+                <div>
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Catégorie</label>
+                    <select id="fo-cat" style="width:100%; height:50px; border-radius:12px; background:${inputBg}; color:${textColor}; border:none; padding:0 15px; font-size:16px;" onchange="updateFritChoices()">
+                        <option value="burger">🍔 Burgers</option>
+                        <option value="viande">🍗 Viandes</option>
+                        <option value="frite">🍟 Frites</option>
+                        <option value="sauce">🥫 Sauces Seules</option>
+                    </select>
+                </div>
+
+                <!-- Sous-Choix (Burger ou Viande spécifique) -->
+                <div id="sub-item-container">
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Choix</label>
+                    <select id="fo-item" style="width:100%; height:50px; border-radius:12px; background:${inputBg}; color:${textColor}; border:none; padding:0 15px; font-size:16px;" onchange="updateFritSubOptions()">
+                        <!-- Dynamic -->
+                    </select>
+                </div>
+
+                <!-- Options Spécifiques (Mitraillette/Sandwich/Type) -->
+                <div id="options-container">
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Préparation</label>
+                    <div style="display:flex; gap:10px;" id="option-buttons-group">
+                        <!-- Buttons added here -->
+                    </div>
+                </div>
+
+                <!-- Sauce Selection -->
+                <div id="sauce-container">
+                    <label style="display:block; font-size:14px; font-weight:600; color:#8E8E93; margin-bottom: 8px;">Sauce</label>
+                    <select id="fo-sauce" style="width:100%; height:50px; border-radius:12px; background:${inputBg}; color:${textColor}; border:none; padding:0 15px; font-size:16px;">
+                        <option value="">Pas de sauce</option>
+                        ${sauces.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 30px;">
+                <button class="btn-secondary" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="submit-fo-btn" class="btn-primary" style="flex:1; background: #FFD60A; color:#000; font-weight:800;">Ajouter</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    let selectedOption = null;
+
+    window.updateFritChoices = function () {
+        const cat = document.getElementById('fo-cat').value;
+        const subItem = document.getElementById('fo-item');
+        const optContainer = document.getElementById('options-container');
+        const sauceContainer = document.getElementById('sauce-container');
+        const btnGroup = document.getElementById('option-buttons-group');
+
+        btnGroup.innerHTML = '';
+        selectedOption = null;
+
+        if (cat === 'burger') {
+            subItem.innerHTML = burgers.map(b => `<option value="${b}">${b}</option>`).join('');
+            optContainer.style.display = 'block';
+            sauceContainer.style.display = 'block';
+            addOptionButton("Burger", "Burger");
+            addOptionButton("Mitraillette (pain frites)", "Mitraillette");
+        } else if (cat === 'viande') {
+            subItem.innerHTML = viandes.map(v => `<option value="${v}">${v}</option>`).join('');
+            optContainer.style.display = 'block';
+            sauceContainer.style.display = 'block';
+            updateFritSubOptions(); // Check for steak
+        } else if (cat === 'frite') {
+            subItem.innerHTML = '<option value="Moyennes frites">Moyennes frites</option><option value="Grande frites">Grande frites</option>';
+            optContainer.style.display = 'none';
+            sauceContainer.style.display = 'block';
+        } else if (cat === 'sauce') {
+            subItem.innerHTML = sauces.map(s => `<option value="${s}">${s}</option>`).join('');
+            optContainer.style.display = 'none';
+            sauceContainer.style.display = 'none';
+        }
+    };
+
+    window.updateFritSubOptions = function () {
+        const cat = document.getElementById('fo-cat').value;
+        const item = document.getElementById('fo-item').value;
+        const btnGroup = document.getElementById('option-buttons-group');
+        const optContainer = document.getElementById('options-container');
+
+        if (cat === 'viande') {
+            btnGroup.innerHTML = '';
+            optContainer.style.display = 'block';
+            if (item !== 'Steak') {
+                addOptionButton("Seul", "Seul");
+            }
+            addOptionButton("Sandwich", "Sandwich");
+            addOptionButton("Mitraillette (pain frites)", "Mitraillette");
+        }
+    };
+
+    function addOptionButton(label, value) {
+        const btn = document.createElement('button');
+        btn.innerText = label;
+        btn.style.flex = "1";
+        btn.style.height = "44px";
+        btn.style.borderRadius = "12px";
+        btn.style.border = `1px solid ${dk ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`;
+        btn.style.background = dk ? 'rgba(255,255,255,0.05)' : '#fff';
+        btn.style.color = textColor;
+        btn.style.fontSize = "14px";
+        btn.onclick = () => {
+            Array.from(btn.parentNode.children).forEach(b => {
+                b.style.background = dk ? 'rgba(255,255,255,0.05)' : '#fff';
+                b.style.borderColor = dk ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+                b.style.color = textColor;
+            });
+            btn.style.background = '#FFD60A';
+            btn.style.borderColor = '#FFD60A';
+            btn.style.color = '#000';
+            selectedOption = value;
+        };
+        document.getElementById('option-buttons-group').appendChild(btn);
+    }
+
+    // Init
+    updateFritChoices();
+
+    document.getElementById('submit-fo-btn').onclick = async () => {
+        const cat = document.getElementById('fo-cat').value;
+        const item = document.getElementById('fo-item').value;
+        const sauce = document.getElementById('fo-sauce').value;
+        const btn = document.getElementById('submit-fo-btn');
+
+        if ((cat === 'burger' || cat === 'viande') && !selectedOption) {
+            alert("Veuillez choisir un mode (Burger/Mitraillette/Seul/...)");
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = "Ajout...";
+
+        try {
+            const session = await auth.getSession();
+            const res = await fetch(`${config.api.workerUrl}/friterie/order`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({
+                    item_name: item,
+                    category: cat,
+                    details: selectedOption || '',
+                    sauce: sauce
+                })
+            });
+            if (!res.ok) throw new Error(await res.text());
+
+            modal.remove();
+            renderMobileFriterie(); // Refresh
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Ajouter";
+        }
+    };
+};
+
+window.deleteFritOrderItem = async function (id) {
+    if (!confirm("Supprimer cet article de votre commande ?")) return;
+    try {
+        const session = await auth.getSession();
+        const res = await fetch(`${config.api.workerUrl}/friterie/order`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        renderMobileFriterie(); // Refresh
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+window.adminDeleteAllFritOrders = async function () {
+    if (!confirm("⚠️ ACTION ADMINISTRATIVE : Voulez-vous vraiment effacer TOUTES les commandes de TOUT LE MONDE ? cette action est irréversible (prévu pour le nettoyage hebdomadaire).")) return;
+    
+    try {
+        const session = await auth.getSession();
+        const res = await fetch(`${config.api.workerUrl}/admin/friterie/orders`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+        if (!res.ok) throw new Error(await res.text());
+        alert("Toutes les commandes ont été effacées.");
+        renderMobileFriterie();
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
 
 window.renderMobileMaterialRequests = async function () {
     document.getElementById('categories-view').classList.add('hidden');
@@ -665,7 +1303,7 @@ window.renderMobileMaterialRequests = async function () {
         const session = await auth.getSession();
         const requests = await api.getMaterialRequests(session.user.id);
         const categories = await api.getMaterialCategories();
-        
+
         const dk = document.documentElement.getAttribute('data-theme') === 'dark';
         const cardBg = dk ? '#1C1C1E' : '#fff';
         const textColor = dk ? '#FFFFFF' : '#1c1c1e';
@@ -690,14 +1328,14 @@ window.renderMobileMaterialRequests = async function () {
             };
 
             const sortedKeys = ['requested', 'ordered'];
-            
+
             sortedKeys.forEach(status => {
                 const groupRequests = requests.filter(r => r.status === status);
                 if (groupRequests.length > 0) {
                     html += `<h3 style="color: ${groups[status].color}; font-size: 14px; text-transform: uppercase; margin: 20px 0 10px 4px; display: flex; align-items: center; gap: 8px;">
                                 ${groups[status].icon} ${groups[status].label}
                             </h3>`;
-                    
+
                     groupRequests.forEach(req => {
                         html += `
                             <div style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
@@ -725,9 +1363,9 @@ window.renderMobileMaterialRequests = async function () {
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
             modal.style.zIndex = "10000";
-            
+
             let categoryOptions = categories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-            
+
             modal.innerHTML = `
                 <div class="modal-box" style="padding: 24px; border-radius: 28px; width: 90%; max-width: 400px;">
                     <h2 style="margin-top: 0; margin-bottom: 20px; color: ${_textColor};">Nouvelle demande</h2>
@@ -799,7 +1437,7 @@ window.renderMobileMaterialRequests = async function () {
                         const safeFileName = selectedFile.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
                         const fileName = `${timestamp}_${safeFileName}`;
                         const renamedFile = new File([selectedFile], fileName, { type: selectedFile.type });
-                        
+
                         await api.uploadFile(renamedFile, 'material_requests/');
                         image_path = 'material_requests/' + fileName;
                     }
@@ -862,14 +1500,14 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
             const monday = new Date(d.setDate(diff));
             const sunday = new Date(monday);
             sunday.setDate(monday.getDate() + 6);
-            
+
             const startDate = monday.toISOString().split('T')[0];
             const endDate = sunday.toISOString().split('T')[0];
             weekRange = { startDate, endDate };
             tasks = await api.getTasks({ startDate, endDate });
         }
         const displayDate = new Date(dateStr).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-        
+
         // Dark mode detection for inline styles
         const dk = document.documentElement.getAttribute('data-theme') === 'dark';
         const bg = dk ? '#000000' : '#f8f9fa';
@@ -905,10 +1543,10 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
                     <div style="margin-bottom: 12px; background: ${cardBg}; padding: 10px; border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,${dk ? '0.2' : '0.04'}); display: flex; align-items: center; gap: 8px;">
                         <button onclick="changeMobileDay('${dateStr}', -1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">◀</button>
                         <div style="flex:1; position: relative; text-align:center;">
-                            ${mode === 'day' 
-                                ? `<input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 15px; color: ${textColor}; padding: 0;" value="${dateStr}" onchange="renderMobilePlanning(this.value, 'day')">`
-                                : `<div style="font-weight:800; font-size:14px; color:${textColor};">${new Date(weekRange.startDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})} - ${new Date(weekRange.endDate).toLocaleDateString('fr-FR', {day:'numeric', month:'short'})}</div>`
-                            }
+                            ${mode === 'day'
+                ? `<input type="date" class="form-input" style="width:100%; border:none; background:transparent; font-weight:bold; text-align:center; font-size: 15px; color: ${textColor}; padding: 0;" value="${dateStr}" onchange="renderMobilePlanning(this.value, 'day')">`
+                : `<div style="font-weight:800; font-size:14px; color:${textColor};">${new Date(weekRange.startDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} - ${new Date(weekRange.endDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</div>`
+            }
                         </div>
                         <button onclick="changeMobileDay('${dateStr}', 1)" style="border:none; background: ${btnBg}; color: ${textColor}; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; display: flex; align-items:center; justify-content:center;">▶</button>
                     </div>
@@ -932,6 +1570,18 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
         } else {
             if (mode === 'day') {
                 html += `<div class="timeline" style="position: relative; padding-left: 20px; border-left: 3px solid ${timelineBorder}; margin-left: 10px;">`;
+                // Tri automatique: 1. Non faites en haut, 2. Toute la journée en haut, 3. Chronologique
+                tasks.sort((a, b) => {
+                    const doneA = a.done === 'true' ? 1 : 0;
+                    const doneB = b.done === 'true' ? 1 : 0;
+                    if (doneA !== doneB) return doneA - doneB;
+
+                    const isAllDayA = (a.start_time.indexOf('00:00') === 0 && a.end_time.indexOf('00:00') === 0);
+                    const isAllDayB = (b.start_time.indexOf('00:00') === 0 && b.end_time.indexOf('00:00') === 0);
+                    if (isAllDayA !== isAllDayB) return isAllDayA ? -1 : 1;
+
+                    return a.start_time.localeCompare(b.start_time);
+                });
                 tasks.forEach(t => { html += renderMobileTaskCard(t, dateStr, mode, dk, cardBg, textColor, subtleBorder, timelineBorder, chipBg, doneCardBg, doneBorder, normalBorder, dotBorderColor); });
                 html += `</div>`;
             } else {
@@ -944,9 +1594,21 @@ window.renderMobilePlanning = async function (dateStr = new Date().toISOString()
 
                 Object.keys(grouped).sort().forEach(date => {
                     const dayTasks = grouped[date];
+                    // Tri automatique: 1. Non faites en haut, 2. Toute la journée en haut, 3. Chronologique
+                    dayTasks.sort((a, b) => {
+                        const doneA = a.done === 'true' ? 1 : 0;
+                        const doneB = b.done === 'true' ? 1 : 0;
+                        if (doneA !== doneB) return doneA - doneB;
+
+                        const isAllDayA = (a.start_time.indexOf('00:00') === 0 && a.end_time.indexOf('00:00') === 0);
+                        const isAllDayB = (b.start_time.indexOf('00:00') === 0 && b.end_time.indexOf('00:00') === 0);
+                        if (isAllDayA !== isAllDayB) return isAllDayA ? -1 : 1;
+
+                        return a.start_time.localeCompare(b.start_time);
+                    });
                     const d = new Date(date + 'T12:00:00');
                     const dayLabel = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-                    
+
                     html += `<div style="margin-bottom: 32px;">
                                 <div style="font-weight: 800; font-size: 14px; text-transform: uppercase; color: ${dk ? '#8E8E93' : '#666'}; margin-bottom: 12px; padding-left: 4px; display: flex; align-items: center; gap: 8px;">
                                     <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary);"></div>
@@ -1044,11 +1706,27 @@ function showMobileRootFiles(docs) {
     renderMobileList("Autres", [], docs);
 }
 
-function openMobileFolder(folderPath) {
+async function openMobileFolder(folderPath) {
     mobileCurrentPath = folderPath;
     const title = folderPath.split('/').pop();
 
-    // Filter files and subfolders
+    // 1. Immediate Render from Cache (Fast)
+    renderFromCache(folderPath, title);
+
+    // 2. Background Refresh from API (ensure latest data)
+    try {
+        const freshFiles = await api.listFiles();
+        mobileFilesCache = freshFiles;
+        // Re-render only if the user is still on this folder
+        if (mobileCurrentPath === folderPath) {
+            renderFromCache(folderPath, title);
+        }
+    } catch (e) {
+        console.warn("Background refresh failed:", e);
+    }
+}
+
+function renderFromCache(folderPath, title) {
     const currentPrefix = folderPath + '/';
     const subfolders = new Set();
     const files = [];
@@ -1381,7 +2059,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     }
 
     if (window.planningRefreshInterval) clearInterval(window.planningRefreshInterval);
-    
+
     // Auto-refresh logic
     window.lastAutoSortTime = window.lastAutoSortTime || Date.now();
     window.planningRefreshInterval = setInterval(async () => {
@@ -1418,7 +2096,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     if (navItem) navItem.classList.add('active');
     const existingContainer = document.getElementById('planning-v2-container') || document.getElementById('integrated-planning-container');
     const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-v2-container');
-    
+
     if (!existingContainer && !isRefresh) {
         content.innerHTML = `<div style="display:flex; justify-content:center; padding: 40px;"><div class="loader" style="border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div></div>`;
     }
@@ -1454,7 +2132,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         }
 
         const tasksByUserDate = {};
-        
+
         // --- Ghost Users Logic ---
         // If archived tasks exist for users no longer in the DB, we add them dynamically
         const currentIds = new Set(users.map(u => u.id));
@@ -1685,10 +2363,10 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                             Collaborateur
                         </div>
                         ${weekDays.map(d => {
-                            const isToday = d === new Date().toISOString().split('T')[0];
-                            const todayStyle = isToday ? 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);' : 'background: inherit;';
-                            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
-                        }).join('')}
+            const isToday = d === new Date().toISOString().split('T')[0];
+            const todayStyle = isToday ? 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);' : 'background: inherit;';
+            return `<div class="p-head" style="padding: 10px; font-weight:bold; text-align:center; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid; border-right: 1px solid; ${todayStyle}">${formatShortDate(d)}</div>`;
+        }).join('')}
         `;
 
         let rowsHTML = '';
@@ -1724,7 +2402,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     const taskDesc = t.title.includes(':::DESC:::') ? t.title.split(':::DESC:::')[1] : '';
                     const isAllDay = (t.start_time.indexOf('00:00') === 0 && t.end_time.indexOf('00:00') === 0);
                     const isDone = t.done === 'true' || t.done === true;
-                    
+
                     // Store task data for click handler
                     const taskDataEscaped = JSON.stringify(t).replace(/"/g, '&quot;');
 
@@ -1755,7 +2433,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     </div>
                 </div>
         `;
-        
+
         const finalContent = headerHTML + gridHTML + rowsHTML;
 
         // --- Fullscreen V2 (Planning 75% + Slideshow 25%) injection point ---
@@ -1769,7 +2447,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                         ${finalContent}
                     </div>
                 `;
-                return; 
+                return;
             }
         }
 
@@ -1778,7 +2456,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         try {
             const saved = localStorage.getItem('planning_fs_config');
             if (saved) fsConfig = JSON.parse(saved);
-        } catch (e) {}
+        } catch (e) { }
 
         const slideshowConfigHTML = `
             <div id="integrated-fs-config" style="display: flex; align-items: center; gap: 40px; width: 100%;">
@@ -1799,15 +2477,15 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
                 <div id="fs-files-mini-grid" style="flex: 1; display: flex; gap: 10px; overflow-x: auto; padding: 5px; scrollbar-width: thin;">
                     ${fsConfig.files.map((f, i) => {
-                            const isPdf = f.toLowerCase().endsWith('.pdf');
-                            const url = `${config.api.workerUrl}/get/${f}`;
-                        return `
+            const isPdf = f.toLowerCase().endsWith('.pdf');
+            const url = `${config.api.workerUrl}/get/${f}`;
+            return `
                             <div style="position: relative; height: 60px; aspect-ratio: 16/10; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
                                 ${isPdf ? `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; background: #1a1a1a; font-size: 14px;">📕</div>` : `<img src="${url}" loading="lazy" style="width:100%; height:100%; object-fit: cover;">`}
                                 <button onclick="removeFSFile(${i})" style="position:absolute; top:2px; right:2px; background: rgba(220,38,38,0.9); border:none; color:white; width:18px; height:18px; border-radius:4px; cursor:pointer; font-size:9px;">✕</button>
                             </div>
                         `;
-                    }).join('')}
+        }).join('')}
                     ${fsConfig.files.length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
                 </div>
             </div>
@@ -1855,17 +2533,17 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     }
 };
 
-window.openPlanningExportModal = async function() {
+window.openPlanningExportModal = async function () {
     try {
         const users = await api.listUsers();
-        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
+        users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100008';
-        
+
         const today = new Date().toISOString().split('T')[0];
-        
+
         modal.innerHTML = `
             <div class="modal-box glass-panel" style="width: 550px; padding: 40px; animation: modalPop 0.3s ease-out;">
                 <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white; display: flex; align-items: center; gap: 12px;">
@@ -1913,7 +2591,7 @@ window.openPlanningExportModal = async function() {
             const cbs = document.querySelectorAll('.export-user-cb');
             const btn = document.getElementById('toggle-all-btn');
             const anyChecked = Array.from(cbs).some(cb => cb.checked);
-            
+
             cbs.forEach(cb => cb.checked = !anyChecked);
             btn.innerText = !anyChecked ? "Tout déselectionner" : "Tout sélectionner";
         };
@@ -1933,7 +2611,7 @@ window.openPlanningExportModal = async function() {
             try {
                 const tasks = await api.getAdminTasks(start, end);
                 const filteredTasks = tasks.filter(t => selectedUserIds.includes(t.user_id));
-                
+
                 // Create CSV
                 const headers = ["Date", "Employé", "Début", "Fin", "Tâche", "Statut"];
                 const userMap = {};
@@ -1962,7 +2640,7 @@ window.openPlanningExportModal = async function() {
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                
+
                 modal.remove();
             } catch (e) {
                 alert("Erreur lors de l'export: " + e.message);
@@ -1976,7 +2654,7 @@ window.openPlanningExportModal = async function() {
     }
 };
 
-window.showConfirmModal = function(title, message, callback) {
+window.showConfirmModal = function (title, message, callback) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '100007';
@@ -1991,7 +2669,7 @@ window.showConfirmModal = function(title, message, callback) {
         </div>
     `;
     document.body.appendChild(overlay);
-    
+
     document.getElementById('confirm-cancel').onclick = () => overlay.remove();
     document.getElementById('confirm-ok').onclick = () => {
         overlay.remove();
@@ -1999,7 +2677,7 @@ window.showConfirmModal = function(title, message, callback) {
     };
 };
 
-window.showInfoModal = function(title, message) {
+window.showInfoModal = function (title, message) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '100006';
@@ -2047,12 +2725,12 @@ window.autoSortPlanningUsers = async function (weekStartStr) {
             taskCount[u.id] = 0;
             userTasks[u.id] = [];
         });
-        tasks.forEach(t => { 
-            taskCount[t.user_id] = (taskCount[t.user_id] || 0) + 1; 
-            if(!userTasks[t.user_id]) userTasks[t.user_id] = [];
+        tasks.forEach(t => {
+            taskCount[t.user_id] = (taskCount[t.user_id] || 0) + 1;
+            if (!userTasks[t.user_id]) userTasks[t.user_id] = [];
             userTasks[t.user_id].push(t);
         });
-        
+
         // Helper to check if tasks are only AT or RECUP
         const isOnlyInactif = (uid) => {
             const uT = userTasks[uid] || [];
@@ -2070,20 +2748,20 @@ window.autoSortPlanningUsers = async function (weekStartStr) {
         users.sort((a, b) => {
             const aT = userTasks[a.id] || [];
             const bT = userTasks[b.id] || [];
-            
+
             const aInactif = isOnlyInactif(a.id);
             const bInactif = isOnlyInactif(b.id);
-            
+
             let aScore = 0;
             if (aT.length === 0) aScore = 1;
             else if (aInactif) aScore = 2;
-            
+
             let bScore = 0;
             if (bT.length === 0) bScore = 1;
             else if (bInactif) bScore = 2;
-            
+
             if (aScore !== bScore) return aScore - bScore;
-            
+
             // If same score, sort by count DESC
             return bT.length - aT.length;
         });
@@ -2138,9 +2816,9 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 // --- Fullscreen V2 Logic (Split Screen) ---
-window.togglePlanningFullscreenV2 = function() {
+window.togglePlanningFullscreenV2 = function () {
     let v2 = document.getElementById('planning-v2-container');
-    
+
     // If opening
     if (!v2) {
         v2 = document.createElement('div');
@@ -2157,7 +2835,7 @@ window.togglePlanningFullscreenV2 = function() {
         document.body.appendChild(v2);
         v2.classList.add('active');
         v2.requestFullscreen().catch(e => console.warn("FS failed", e));
-        
+
         startSlideshow();
         renderAdminPlanning(window.currentPlanningMonday, true); // Render grid into p-v2-main
     } else {
@@ -2165,9 +2843,9 @@ window.togglePlanningFullscreenV2 = function() {
         v2.classList.remove('active');
         stopSlideshow();
         if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
+            document.exitFullscreen().catch(() => { });
         }
-        
+
         setTimeout(() => {
             if (v2 && v2.parentNode) v2.parentNode.removeChild(v2);
             renderAdminPlanning(window.currentPlanningMonday);
@@ -2178,14 +2856,14 @@ window.togglePlanningFullscreenV2 = function() {
 let slideInterval = null;
 function startSlideshow() {
     if (slideInterval) clearInterval(slideInterval);
-    
+
     const configStr = localStorage.getItem('planning_fs_config');
     let fsConfig = { timer: 10, files: [] };
     try {
         if (configStr) fsConfig = JSON.parse(saved);
-    } catch(e) {
+    } catch (e) {
         // Fallback to reading the one we just saved if local storage parse fails
-        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch(e2) {}
+        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch (e2) { }
     }
 
     const img = document.getElementById('p-v2-slideshow');
@@ -2247,7 +2925,7 @@ function stopSlideshow() {
     slideInterval = null;
 }
 
-window.handleFSDirectUpload = async function(input) {
+window.handleFSDirectUpload = async function (input) {
     if (!input.files || input.files.length === 0) return;
 
     const btn = document.querySelector('button[onclick*="fs-upload-input"]');
@@ -2257,7 +2935,7 @@ window.handleFSDirectUpload = async function(input) {
 
     try {
         const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
-        
+
         for (const file of input.files) {
             // The API returns the full key (path + filename)
             const res = await api.uploadFile(file, 'fullscreen_slides/');
@@ -2268,13 +2946,13 @@ window.handleFSDirectUpload = async function(input) {
 
         localStorage.setItem('planning_fs_config', JSON.stringify(config));
         showSuccessModal(`${input.files.length} fichier(s) ajouté(s) au diaporama.`);
-        
+
         // Sync live V2
         if (document.getElementById('planning-v2-container')) {
             stopSlideshow();
             startSlideshow();
         }
-        
+
         renderAdminPlanning(window.currentPlanningMonday);
     } catch (e) {
         alert("Erreur lors du téléchargement : " + e.message);
@@ -2285,7 +2963,7 @@ window.handleFSDirectUpload = async function(input) {
     }
 };
 
-window.openFSDocPicker = async function() {
+window.openFSDocPicker = async function () {
     const allFiles = await api.listFiles();
     const images = allFiles.filter(f => {
         const ext = f.key.split('.').pop().toLowerCase();
@@ -2338,55 +3016,55 @@ window.openFSDocPicker = async function() {
     };
 };
 
-window.addSelectedFSDocs = function() {
+window.addSelectedFSDocs = function () {
     const selected = Array.from(document.querySelectorAll('.fs-pick-cb:checked')).map(cb => cb.value);
     const configStr = localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}';
     const fsConfig = JSON.parse(configStr);
-    
+
     fsConfig.files = [...new Set([...fsConfig.files, ...selected])];
     localStorage.setItem('planning_fs_config', JSON.stringify(fsConfig));
-    
+
     const overlay = document.querySelector('.modal-overlay');
     if (overlay) overlay.remove();
-    
+
     showSuccessModal(`${selected.length} document(s) ajouté(s).`);
-    
+
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-    
+
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
 
-window.removeFSFile = function(index) {
+window.removeFSFile = function (index) {
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.files.splice(index, 1);
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    
+
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-    
+
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
-window.saveFSConfig = function(silent = false) {
+window.saveFSConfig = function (silent = false) {
     const timer = parseInt(document.getElementById('fs-timer').value) || 10;
     const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
     config.timer = timer;
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    
+
     // Sync live V2
     if (document.getElementById('planning-v2-container')) {
         stopSlideshow();
         startSlideshow();
     }
-    
+
     if (!silent) showSuccessModal("Configuration enregistrée !");
 };
 
@@ -2405,7 +3083,7 @@ window.toggleAdminTaskStatus = async function (taskId, currentStatusLegacy, curr
     // Optimistic UI Update
     const btn = event ? event.target.closest('button') : null;
     const taskEl = event ? event.target.closest('.p-task') : null;
-    
+
     // Check current state from DOM if available, otherwise use legacy param
     const currentStatus = taskEl ? (taskEl.getAttribute('data-task-done') === 'true') : !!currentStatusLegacy;
     const nextStatus = !currentStatus;
@@ -2436,7 +3114,7 @@ window.toggleAdminTaskStatus = async function (taskId, currentStatusLegacy, curr
 
     try {
         await api.updateTaskAdmin(taskId, nextStatus);
-        
+
         // Refresh only in fullscreen mode
         const isFS = !!document.fullscreenElement;
         if (isFS) renderAdminPlanning(currentWeekStartStr);
@@ -2572,7 +3250,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
 
     try {
         const users = await api.listUsers();
-        
+
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.id = 'edit-task-modal';
@@ -2627,7 +3305,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
             const newDesc = document.getElementById('edit-task-desc').value;
             const newDate = document.getElementById('edit-task-date').value;
             const hasTime = document.getElementById('edit-task-has-time').checked;
-            
+
             let startTime = "00:00:00";
             let endTime = "00:00:00";
             if (hasTime) {
@@ -3092,7 +3770,7 @@ async function refreshAdminData() {
             api.listFiles(),
             api.getVehicles()
         ]);
-        
+
         adminFilesCache = files;
         if (window.updateVehicleSidebarBadge) window.updateVehicleSidebarBadge(vehicles);
 
@@ -4647,7 +5325,7 @@ window.renderAdminMaterialRequests = async function () {
         // Process archives: Fetch content of each CSV and parse it
         let historyConfirmed = [];
         let historyRefused = [];
-        
+
         try {
             console.log("Chargement de l'historique R2...", archivedFiles);
             const archiveContents = await Promise.all(
@@ -4656,13 +5334,13 @@ window.renderAdminMaterialRequests = async function () {
                         const r = await fetch(`${config.api.workerUrl}/get/${f.key}?t=${Date.now()}`);
                         if (!r.ok) return null;
                         return await r.text();
-                    } catch(e) { 
+                    } catch (e) {
                         console.error(`Echec fetch archive ${f.key}:`, e);
-                        return null; 
+                        return null;
                     }
                 })
             );
-            
+
             archiveContents.forEach(csv => {
                 if (!csv) return;
                 const lines = csv.split('\n').filter(l => l.trim());
@@ -4704,11 +5382,11 @@ window.renderAdminMaterialRequests = async function () {
                     else if (status === 'refused') historyRefused.push(item);
                 });
             });
-            
+
             // Sort history by date desc
-            historyConfirmed.sort((a,b) => new Date(b.date) - new Date(a.date));
-            historyRefused.sort((a,b) => new Date(b.date) - new Date(a.date));
-            
+            historyConfirmed.sort((a, b) => new Date(b.date) - new Date(a.date));
+            historyRefused.sort((a, b) => new Date(b.date) - new Date(a.date));
+
         } catch (err) {
             console.error("Erreur générale archives:", err);
         }
@@ -4775,7 +5453,7 @@ window.renderAdminMaterialRequests = async function () {
                 catRequests.forEach(req => {
                     const userName = [req.profiles?.first_name, req.profiles?.last_name].filter(Boolean).join(' ') || 'Inconnu';
                     const statusInfo = groups[req.status] || { label: req.status, color: '#fff' };
-                    
+
                     html += `
                         <tr>
                             <td><div style="font-weight: 600;">${userName}</div></td>
@@ -4872,7 +5550,7 @@ window.renderAdminMaterialRequests = async function () {
                 ${renderHistoryTable(historyRefused, 'Demandes Refusées', '#FF3B30')}
             </section>
         `;
-        
+
         html += `</div>`; // Close material-admin-container
 
         content.innerHTML = html;
@@ -4892,7 +5570,7 @@ window.renderAdminMaterialRequests = async function () {
             try {
                 const profile = await auth.getCurrentProfile();
                 const adminName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : 'Admin';
-                
+
                 // Now we just update status, deletion happens during archiving
                 await api.updateMaterialRequestStatus(id, status, adminName);
                 renderAdminMaterialRequests();
@@ -4954,16 +5632,16 @@ window.renderAdminMaterialRequests = async function () {
         window.openAdminAlertConfigModal = () => {
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
-            
+
             const currentAlertUsers = new Set(configData.alert_users || []);
-            
+
             modal.innerHTML = `
                 <div class="modal-box glass-panel" style="width: 550px; padding: 40px;">
                     <h2 style="margin-top: 0; margin-bottom: 24px; font-weight: 800; color: white;">Configuration des alertes Planning</h2>
                     <p style="color: #aaa; font-size: 14px; margin-bottom: 24px;">Sélectionnez les personnes qui recevront une tâche "Check besoin de matériel" sur leur planning dès qu'une demande est faite.</p>
                     
                     <div style="max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 20px; padding: 16px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.05);">
-                        ${allUsers.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || '')).map(u => `
+                        ${allUsers.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || '')).map(u => `
                             <label style="display: flex; align-items: center; gap: 16px; padding: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; border-radius: 12px; margin-bottom: 4px;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
                                 <input type="checkbox" class="alert-user-cb" value="${u.id}" ${currentAlertUsers.has(u.id) ? 'checked' : ''} style="width: 20px; height: 20px; accent-color: var(--primary);">
                                 <div style="display:flex; flex-direction:column;">
@@ -4985,7 +5663,7 @@ window.renderAdminMaterialRequests = async function () {
             window.saveAlertConfig = async () => {
                 const cbs = document.querySelectorAll('.alert-user-cb:checked');
                 const selectedIds = Array.from(cbs).map(cb => cb.value);
-                
+
                 try {
                     await api.saveMaterialConfig(selectedIds);
                     modal.remove();
@@ -5002,7 +5680,7 @@ window.renderAdminMaterialRequests = async function () {
 };
 
 // --- VEHICLE MANAGEMENT (Admin) ---
-window.renderAdminVehicles = async function() {
+window.renderAdminVehicles = async function () {
     adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     document.getElementById('nav-vehicles').classList.add('active');
@@ -5038,6 +5716,7 @@ window.renderAdminVehicles = async function() {
                             <th>Kilométrage</th>
                             <th>Affectation</th>
                             <th>Entretien</th>
+                            <th>Contrôle Tech.</th>
                             <th style="text-align: right; width: 170px;">Actions</th>
                         </tr>
                     </thead>
@@ -5045,22 +5724,22 @@ window.renderAdminVehicles = async function() {
         `;
 
         if (vehicles.length === 0) {
-            html += `<tr><td colspan="6" style="text-align:center; padding: 40px; color: #888;">Aucun véhicule enregistré</td></tr>`;
+            html += `<tr><td colspan="7" style="text-align:center; padding: 40px; color: #888;">Aucun véhicule enregistré</td></tr>`;
         } else {
             vehicles.forEach(v => {
                 const userName = v.profiles ? `${v.profiles.first_name} ${v.profiles.last_name}`.trim() : '<span style="color:#666">Non affecté</span>';
-                
+
                 // Alert logic
                 let maintenanceAlert = false;
                 let maintenanceCritical = false;
                 let maintenanceLabel = "OK";
-                
+
                 if (v.next_maintenance_km) {
                     const diff = v.next_maintenance_km - v.last_mileage;
                     if (diff <= 0) { maintenanceCritical = true; maintenanceLabel = "Dépassé (km)"; }
                     else if (diff <= 2000) { maintenanceAlert = true; maintenanceLabel = "Bientôt (km)"; }
                 }
-                
+
                 if (v.next_maintenance_date && !maintenanceCritical) {
                     const today = new Date();
                     const target = new Date(v.next_maintenance_date);
@@ -5068,6 +5747,27 @@ window.renderAdminVehicles = async function() {
                     if (diffDays <= 0) { maintenanceCritical = true; maintenanceLabel = "Dépassé (date)"; }
                     else if (diffDays <= 30) { maintenanceAlert = true; maintenanceLabel = "Bientôt (date)"; }
                 }
+
+                // CT Alert Logic
+                let ctAlert = false;
+                let ctCritical = false;
+                let ctLabel = "À jour";
+                let ctIcon = '✅';
+
+                if (v.last_ct_date) {
+                    const today = new Date();
+                    const lastCt = new Date(v.last_ct_date);
+                    const interval = v.ct_interval_months || 12;
+                    const target = new Date(lastCt.setMonth(lastCt.getMonth() + interval));
+                    const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+
+                    if (diffDays <= 0) { ctCritical = true; ctLabel = "Expiré"; ctIcon = '🔴'; }
+                    else if (diffDays <= 60) { ctAlert = true; ctLabel = "Bientôt"; ctIcon = '⚠️'; }
+                } else {
+                    ctAlert = true; ctLabel = "Non renseigné"; ctIcon = '❓';
+                }
+
+                const ctStyle = ctCritical ? 'background: #FF3B30; color: white;' : (ctAlert ? 'background: #FF9500; color: white;' : 'background: rgba(52, 199, 89, 0.1); color: #34C759;');
 
                 const maintenanceStyle = maintenanceCritical ? 'background: #FF3B30; color: white;' : (maintenanceAlert ? 'background: #FF9500; color: white;' : 'background: rgba(52, 199, 89, 0.1); color: #34C759;');
                 const maintenanceIcon = maintenanceCritical ? '🔴' : (maintenanceAlert ? '⚠️' : '✅');
@@ -5092,6 +5792,11 @@ window.renderAdminVehicles = async function() {
                         <td>
                             <div style="${maintenanceStyle} padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px;">
                                 <span>${maintenanceIcon}</span> ${maintenanceLabel}
+                            </div>
+                        </td>
+                        <td>
+                            <div style="${ctStyle} padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px;">
+                                <span>${ctIcon}</span> ${ctLabel}
                             </div>
                         </td>
                         <td style="text-align: right;">
@@ -5129,7 +5834,7 @@ window.renderAdminVehicles = async function() {
     }
 };
 
-window.openDkvManagementModal = async function() {
+window.openDkvManagementModal = async function () {
     const renderDkvList = async (container) => {
         try {
             const cards = await api.getDkvCards();
@@ -5183,26 +5888,26 @@ window.openDkvManagementModal = async function() {
     window.handleAddDkvCard = async () => {
         const cardNumber = document.getElementById('new-dkv-number').value.trim();
         const description = document.getElementById('new-dkv-desc').value.trim();
-        if(!cardNumber) return alert("N° de carte obligatoire");
-        
+        if (!cardNumber) return alert("N° de carte obligatoire");
+
         try {
             await api.saveDkvCard({ card_number: cardNumber, description });
             document.getElementById('new-dkv-number').value = '';
             document.getElementById('new-dkv-desc').value = '';
             renderDkvList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 
     window.handleDeleteDkvCard = async (id) => {
-        if(!confirm("Supprimer cette carte ?")) return;
+        if (!confirm("Supprimer cette carte ?")) return;
         try {
             await api.deleteDkvCard(id);
             renderDkvList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 };
 
-window.openTollManagementModal = async function() {
+window.openTollManagementModal = async function () {
     const renderTollList = async (container) => {
         try {
             const cards = await api.getTollCards();
@@ -5256,34 +5961,34 @@ window.openTollManagementModal = async function() {
     window.handleAddTollCard = async () => {
         const cardNumber = document.getElementById('new-toll-number').value.trim();
         const description = document.getElementById('new-toll-desc').value.trim();
-        if(!cardNumber) return alert("N° de badge obligatoire");
-        
+        if (!cardNumber) return alert("N° de badge obligatoire");
+
         try {
             await api.saveTollCard({ card_number: cardNumber, description });
             document.getElementById('new-toll-number').value = '';
             document.getElementById('new-toll-desc').value = '';
             renderTollList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 
     window.handleDeleteTollCard = async (id) => {
-        if(!confirm("Supprimer ce badge ?")) return;
+        if (!confirm("Supprimer ce badge ?")) return;
         try {
             await api.deleteTollCard(id);
             renderTollList(listContainer);
-        } catch(e) { alert(e.message); }
+        } catch (e) { alert(e.message); }
     };
 };
 
-window.openAddVehicleModal = async function(vehicleId = null) {
+window.openAddVehicleModal = async function (vehicleId = null) {
     try {
         const [users, dkvCards, tollCards] = await Promise.all([
             api.listUsers(),
             api.getDkvCards(),
             api.getTollCards()
         ]);
-        users.sort((a,b) => (a.first_name || '').localeCompare(b.first_name || ''));
-        
+        users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
+
         let existing = null;
         if (vehicleId) {
             const vehicles = await api.getVehicles();
@@ -5293,7 +5998,7 @@ window.openAddVehicleModal = async function(vehicleId = null) {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100009';
-        
+
         modal.innerHTML = `
             <div class="modal-box glass-panel" style="width: 500px; padding: 32px; animation: modalPop 0.3s ease-out;">
                 <h2 style="margin-top: 0; margin-bottom: 24px;">${existing ? 'Modifier le véhicule' : 'Ajouter un véhicule'}</h2>
@@ -5352,6 +6057,18 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                     </div>
                 </div>
 
+                <h3 style="font-size: 14px; text-transform: uppercase; color: #888; letter-spacing: 1px; margin-bottom: 16px;">Contrôle Technique</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+                    <div>
+                        <label class="form-label">Dernier CT</label>
+                        <input type="date" id="v-ct-date" class="form-input" value="${existing?.last_ct_date || ''}">
+                    </div>
+                    <div>
+                        <label class="form-label">Intervalle (mois)</label>
+                        <input type="number" id="v-ct-interval" class="form-input" value="${existing?.ct_interval_months || 12}" placeholder="Par défaut: 12">
+                    </div>
+                </div>
+
                 <div style="margin-bottom: 24px;">
                     <label class="form-label">Photo du véhicule (PNG recommandé)</label>
                     <div style="display: flex; align-items: center; gap: 16px;">
@@ -5380,7 +6097,9 @@ window.openAddVehicleModal = async function(vehicleId = null) {
                 dkv_card: document.getElementById('v-dkv').value,
                 toll_card: document.getElementById('v-toll').value,
                 next_maintenance_km: document.getElementById('v-m-km').value ? parseInt(document.getElementById('v-m-km').value) : null,
-                next_maintenance_date: document.getElementById('v-m-date').value || null
+                next_maintenance_date: document.getElementById('v-m-date').value || null,
+                last_ct_date: document.getElementById('v-ct-date').value || null,
+                ct_interval_months: document.getElementById('v-ct-interval').value ? parseInt(document.getElementById('v-ct-interval').value) : 12
             };
 
             if (!data.plate_number) return alert("L'immatriculation est obligatoire.");
@@ -5390,7 +6109,7 @@ window.openAddVehicleModal = async function(vehicleId = null) {
 
             try {
                 const savedVehicle = await api.saveVehicle(data);
-                
+
                 // Photo upload
                 const photoInput = document.getElementById('v-photo');
                 if (photoInput.files.length > 0) {
@@ -5411,7 +6130,7 @@ window.openAddVehicleModal = async function(vehicleId = null) {
     }
 };
 
-window.deleteAdminVehicle = async function(id) {
+window.deleteAdminVehicle = async function (id) {
     if (!confirm("Voulez-vous vraiment supprimer ce véhicule ?")) return;
     try {
         await api.deleteVehicle(id);
@@ -5422,7 +6141,7 @@ window.deleteAdminVehicle = async function(id) {
 };
 
 // Global badge update for admin sidebar
-window.updateMaterialBadge = async function() {
+window.updateMaterialBadge = async function () {
     try {
         const requests = await api.getMaterialRequests();
         const pendingCount = requests.filter(r => r.status === 'requested').length;
@@ -5441,7 +6160,7 @@ window.updateMaterialBadge = async function() {
 };
 
 // --- MOBILE VEHICLES LIST ---
-window.renderMobileVehiclesList = async function(myVehicleData) {
+window.renderMobileVehiclesList = async function (myVehicleData) {
     document.getElementById('categories-view').classList.add('hidden');
     document.getElementById('search-results-view').classList.add('hidden');
     const searchContainer = document.querySelector('.mobile-search-container');
@@ -5500,7 +6219,7 @@ window.renderMobileVehiclesList = async function(myVehicleData) {
 };
 
 // --- MOBILE VEHICLE APP ---
-window.renderMobileVehicleApp = async function(vehicle) {
+window.renderMobileVehicleApp = async function (vehicle) {
     document.getElementById('categories-view').classList.add('hidden');
     document.getElementById('search-results-view').classList.add('hidden');
     const searchContainer = document.querySelector('.mobile-search-container');
@@ -5536,6 +6255,28 @@ window.renderMobileVehicleApp = async function(vehicle) {
                     <div style="padding: 20px; display: flex; gap: 12px; align-items: center; background: rgba(52, 199, 89, 0.1);">
                         <span style="background: white; color: black; padding: 4px 12px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 16px;">${vehicle.plate_number}</span>
                     </div>
+                </div>
+
+                <!-- Contrôle Technique Card -->
+                <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">Contrôle Technique</div>
+                        <div style="font-size: 18px; font-weight: 800; color: ${textColor};">
+                            ${(() => {
+                if (!vehicle.last_ct_date) return '<span style="color:#FF9500;">Non renseigné</span>';
+                const today = new Date();
+                const lastCt = new Date(vehicle.last_ct_date);
+                const interval = vehicle.ct_interval_months || 12;
+                const nextCt = new Date(lastCt.setMonth(lastCt.getMonth() + interval));
+                const diffDays = Math.ceil((nextCt - today) / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= 0) return `<span style="color:#FF3B30;">Expiré depuis ${Math.abs(diffDays)}j</span>`;
+                if (diffDays <= 60) return `<span style="color:#FF9500;">Expire dans ${diffDays}j</span>`;
+                return `<span style="color:#34C759;">Valide (${nextCt.toLocaleDateString('fr-FR')})</span>`;
+            })()}
+                        </div>
+                    </div>
+                    <button class="btn-primary" onclick="window.updateMobileCT('${vehicle.id}', '${vehicle.last_ct_date || ''}')" style="padding: 10px 20px; border-radius: 12px; background: #007AFF;">Modifier</button>
                 </div>
 
                 <!-- Mileage Card -->
@@ -5578,7 +6319,7 @@ window.renderMobileVehicleApp = async function(vehicle) {
                             <div style="font-weight: 600; color: ${textColor}; font-size: 14px;">
                                 ${log.type === 'mileage' ? `Mise à jour : ${parseInt(log.value).toLocaleString()} km` : (log.type === 'fuel' ? `Plein : ${log.value} €` : log.description)}
                             </div>
-                            <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</div>
+                            <div style="font-size: 11px; color: #8E8E93;">${new Date(log.created_at).toLocaleDateString('fr-FR')} à ${new Date(log.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>
                         </div>
                     </div>
                 `;
@@ -5593,7 +6334,7 @@ window.renderMobileVehicleApp = async function(vehicle) {
     }
 };
 
-window.mobileAlert = function(title, message) {
+window.mobileAlert = function (title, message) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -5611,7 +6352,7 @@ window.mobileAlert = function(title, message) {
     document.body.appendChild(modal);
 };
 
-window.updateMobileMileage = function(vehicleId, current) {
+window.updateMobileMileage = function (vehicleId, current) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -5657,7 +6398,7 @@ window.updateMobileMileage = function(vehicleId, current) {
             await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'mileage', value: val.toString() });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-            
+
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -5673,7 +6414,79 @@ window.updateMobileMileage = function(vehicleId, current) {
     };
 };
 
-window.reportMobileVehicleIssue = function(vehicleId) {
+window.updateMobileCT = function (vehicleId, current) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 90%; max-width: 400px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h2 style="margin-top: 0; margin-bottom: 20px; color: ${textColor}; font-size: 20px;">Contrôle Technique</h2>
+            
+            <div style="margin-bottom: 24px;">
+                <label style="display: block; font-size: 14px; color: #8E8E93; margin-bottom: 8px;">Date du dernier contrôle</label>
+                <input type="date" id="new-ct-input" style="width: 100%; padding: 16px; border: none; border-radius: 16px; background: ${inputBg}; color: ${textColor}; font-size: 18px;" value="${current || ''}">
+                <p style="font-size: 11px; color: #8E8E93; margin-top: 8px;">Cette date sera utilisée pour calculer le prochain rappel.</p>
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="save-ct-btn" class="btn-primary" style="flex: 1; background: #007AFF;">Enregistrer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('save-ct-btn').onclick = async () => {
+        const val = document.getElementById('new-ct-input').value;
+        if (!val) {
+            window.mobileAlert("Date manquante", "Veuillez sélectionner une date.");
+            return;
+        }
+
+        const btn = document.getElementById('save-ct-btn');
+        btn.disabled = true;
+        btn.innerText = "Envoi...";
+
+        try {
+            await fetch(`${config.api.workerUrl}/my-vehicle`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(await auth.getAuthHeaders())
+                },
+                body: JSON.stringify({ id: vehicleId, last_ct_date: val })
+            });
+
+            await api.submitVehicleLog({
+                vehicle_id: vehicleId,
+                type: 'inspection',
+                description: `Contrôle technique effectué le ${new Date(val).toLocaleDateString('fr-FR')}`
+            });
+
+            const updatedData = await api.getMyVehicle();
+            mobileVehicleCache = updatedData;
+
+            let targetVehicle = null;
+            if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
+            else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
+
+            modal.remove();
+            if (targetVehicle) window.renderMobileVehicleApp(targetVehicle);
+            else window.renderMobileVehiclesList(updatedData);
+        } catch (e) {
+            window.mobileAlert("Erreur", e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
+};
+
+window.reportMobileVehicleIssue = function (vehicleId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -5716,7 +6529,7 @@ window.reportMobileVehicleIssue = function(vehicleId) {
             await api.submitVehicleLog({ vehicle_id: vehicleId, type: 'issue', description: desc });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-            
+
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -5732,7 +6545,7 @@ window.reportMobileVehicleIssue = function(vehicleId) {
     };
 };
 
-window.logMobileFuel = async function(vehicleId, dkvCard) {
+window.logMobileFuel = async function (vehicleId, dkvCard) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#ffffff';
     const textColor = dk ? '#ffffff' : '#1c1c1e';
@@ -5740,7 +6553,7 @@ window.logMobileFuel = async function(vehicleId, dkvCard) {
 
     // Fetch DKV cards for selection if it's a common vehicle OR if we want to allow picking
     let allCards = [];
-    try { allCards = await api.getDkvCards(); } catch(e) {}
+    try { allCards = await api.getDkvCards(); } catch (e) { }
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -5802,16 +6615,16 @@ window.logMobileFuel = async function(vehicleId, dkvCard) {
         const description = `Plein : ${volume} L pour ${amount} € à ${km} km (Carte : ${usedDkv})`;
 
         try {
-            await api.submitVehicleLog({ 
-                vehicle_id: vehicleId, 
-                type: 'fuel', 
-                value: amount, 
+            await api.submitVehicleLog({
+                vehicle_id: vehicleId,
+                type: 'fuel',
+                value: amount,
                 description: description,
                 current_mileage: km
             });
             const updatedData = await api.getMyVehicle();
             mobileVehicleCache = updatedData;
-            
+
             let targetVehicle = null;
             if (updatedData.assigned && updatedData.assigned.id === vehicleId) targetVehicle = updatedData.assigned;
             else if (updatedData.common) targetVehicle = updatedData.common.find(v => v.id === vehicleId);
@@ -5827,10 +6640,10 @@ window.logMobileFuel = async function(vehicleId, dkvCard) {
     };
 };
 
-window.updateVehicleSidebarBadge = function(vehicles) {
+window.updateVehicleSidebarBadge = function (vehicles) {
     let alertCount = 0;
     const today = new Date();
-    
+
     vehicles.forEach(v => {
         let isAlert = false;
         if (v.next_maintenance_km && (v.next_maintenance_km - v.last_mileage <= 2000)) isAlert = true;
@@ -5839,6 +6652,18 @@ window.updateVehicleSidebarBadge = function(vehicles) {
             const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
             if (diffDays <= 30) isAlert = true;
         }
+
+        // CT alert
+        if (v.last_ct_date) {
+            const lastCt = new Date(v.last_ct_date);
+            const interval = v.ct_interval_months || 12;
+            const target = new Date(lastCt.setMonth(lastCt.getMonth() + interval));
+            const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 60) isAlert = true;
+        } else {
+            isAlert = true; // CT missing is an alert
+        }
+
         if (isAlert) alertCount++;
     });
 
@@ -5853,7 +6678,7 @@ window.updateVehicleSidebarBadge = function(vehicles) {
     }
 };
 
-window.openVehicleDetailModal = async function(vehicleId) {
+window.openVehicleDetailModal = async function (vehicleId) {
     try {
         const [vehicles, logs] = await Promise.all([
             api.getVehicles(),
@@ -5869,7 +6694,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
         modal.id = 'vehicle-detail-modal';
         modal.className = 'modal-overlay';
         modal.style.zIndex = '100010';
-        
+
         modal.innerHTML = `
             <div class="modal-box" style="width: 900px; max-width: 95vw; padding: 0; overflow: hidden; display: flex; flex-direction: column; background: #ffffff; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
                 <!-- Header -->
@@ -5905,6 +6730,26 @@ window.openVehicleDetailModal = async function(vehicleId) {
                                 <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Badge Télépéage</div>
                                 <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #1a1a1c; font-weight: 700;">${v.toll_card || '<span style="color:#ccc; font-weight:400;">Non renseigné</span>'}</div>
                             </div>
+                        </div>
+
+                        <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Contrôle Technique</h3>
+                        <div style="padding: 20px; border-radius: 20px; background: #f8f9fa; border: 1px solid #f1f3f5;">
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Dernière inspection</div>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #1a1a1c; font-weight: 700;">${v.last_ct_date ? new Date(v.last_ct_date).toLocaleDateString('fr-FR') : '<span style="color:#ccc; font-weight:400;">Non renseigné</span>'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; color: #888; margin-bottom: 4px; font-weight: 600;">Prochain passage estimé</div>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #34C759; font-weight: 700;">
+                                    ${(() => {
+                if (!v.last_ct_date) return '--';
+                const date = new Date(v.last_ct_date);
+                date.setMonth(date.getMonth() + (v.ct_interval_months || 12));
+                return date.toLocaleDateString('fr-FR');
+            })()}
+                                </div>
+                            </div>
+                        </div>
                         </div>
 
                         <h3 style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 16px; letter-spacing: 1px; font-weight: 700;">Entretien Prévu</h3>
@@ -5986,8 +6831,8 @@ window.openVehicleDetailModal = async function(vehicleId) {
         document.body.appendChild(modal);
 
         // --- Data Processing ---
-        const fuelLogs = logs.filter(l => l.type === 'fuel').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-        const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+        const fuelLogs = logs.filter(l => l.type === 'fuel').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const mileageLogs = logs.filter(l => l.type === 'mileage').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
         let totalEuro = 0, totalLiters = 0, avgCons = 0;
         const fuelDataPoints = fuelLogs.map(l => {
@@ -6022,7 +6867,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
                 vMil.style.display = 'none'; vFue.style.display = 'flex';
                 tFue.style.background = '#fff'; tFue.style.color = '#007AFF'; tFue.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
                 tMil.style.background = 'transparent'; tMil.style.color = '#888'; tMil.style.boxShadow = 'none';
-                
+
                 // Init Fuel Stats if in fuel view
                 document.getElementById('fuel-stats-grid-tabs').innerHTML = `
                     <div style="background: rgba(52, 199, 89, 0.05); padding: 12px; border-radius: 16px; border: 1px solid rgba(52,199,89,0.1); text-align: center;">
@@ -6082,7 +6927,7 @@ window.openVehicleDetailModal = async function(vehicleId) {
 
 // Start
 // Event Modal for Vehicle
-window.openAddVehicleEventModal = function(vehicleId) {
+window.openAddVehicleEventModal = function (vehicleId) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.zIndex = '100020';
@@ -6117,19 +6962,19 @@ window.openAddVehicleEventModal = function(vehicleId) {
         const dateStr = modal.querySelector('#event-date').value;
         const desc = modal.querySelector('#event-desc').value;
         const fileInput = modal.querySelector('#event-file');
-        
+
         if (!desc) return alert("Veuillez saisir une description");
-        
+
         saveBtn.disabled = true;
         saveBtn.innerText = "Téléchargement en cours...";
-        
+
         try {
             let filePath = null;
             if (fileInput.files.length > 0) {
                 const uploadRes = await api.uploadFile(fileInput.files[0], 'fleet/events/');
                 filePath = uploadRes.key;
             }
-            
+
             saveBtn.innerText = "Enregistrement...";
             await api.submitVehicleLog({
                 vehicle_id: vehicleId,
@@ -6138,10 +6983,10 @@ window.openAddVehicleEventModal = function(vehicleId) {
                 event_date: dateStr ? (new Date(dateStr + 'T12:00:00')).toISOString() : new Date().toISOString(),
                 image_path: filePath
             });
-            
+
             modal.remove();
             await window.openVehicleDetailModal(vehicleId);
-        } catch(e) {
+        } catch (e) {
             console.error(e);
             alert("Erreur: " + e.message);
             saveBtn.disabled = false;
@@ -6150,11 +6995,11 @@ window.openAddVehicleEventModal = function(vehicleId) {
     };
 };
 
-window.handleDeleteVehicleLog = async function(id, vehicleId) {
+window.handleDeleteVehicleLog = async function (id, vehicleId) {
     try {
         await api.deleteVehicleLog(id);
         await window.openVehicleDetailModal(vehicleId);
-    } catch(e) {
+    } catch (e) {
         alert("Erreur: " + e.message);
     }
 };
@@ -6164,7 +7009,7 @@ window.handleDeleteVehicleLog = async function(id, vehicleId) {
 window.currentBuilding = null;
 window.machineIcons = [];
 
-window.renderAdminMap = async function() {
+window.renderAdminMap = async function () {
     const content = document.getElementById('admin-content');
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     const navItem = document.getElementById('nav-map');
@@ -6210,7 +7055,7 @@ window.renderAdminMap = async function() {
     } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.renderMobileMap = async function() {
+window.renderMobileMap = async function () {
     window.stopPlacingMachine();
     document.body.classList.remove('hide-main-nav');
     const container = document.getElementById('list-content');
@@ -6264,10 +7109,10 @@ window.renderMobileMap = async function() {
     } catch (e) { container.innerHTML = `<p style="padding:20px;">Erreur: ${e.message}</p>`; }
 };
 
-window.renderBuildingSchematic = async function(buildingId, highlightMachineId = null) {
+window.renderBuildingSchematic = async function (buildingId, highlightMachineId = null) {
     const isMobile = window.innerWidth <= 768;
     const container = isMobile ? document.getElementById('list-content') : document.getElementById('admin-content');
-    
+
     // Si c'est mobile et qu'on cherche une machine, on passe en plein écran horizontal (rotation 90)
     if (isMobile && highlightMachineId) {
         document.body.classList.add('hide-main-nav');
@@ -6276,7 +7121,7 @@ window.renderBuildingSchematic = async function(buildingId, highlightMachineId =
         document.body.classList.remove('hide-main-nav');
         container.classList.remove('landscape-mode');
     }
-    
+
     try {
         const buildings = await api.getBuildings();
         const b = buildings.find(x => x.id === buildingId);
@@ -6334,10 +7179,10 @@ window.renderBuildingSchematic = async function(buildingId, highlightMachineId =
                     pin.className = 'machine-pin' + (m.id === highlightMachineId ? ' pin-searched' : '');
                     pin.style.cssText = `position: absolute; left: ${m.x_pos}%; top: ${m.y_pos}%; width: 32px; height: 32px; margin: -16px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: rgba(255,255,255,0.25); border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.3); cursor: pointer; z-index: ${m.id === highlightMachineId ? 10000 : 100}; transition: all 0.2s ease; backdrop-filter: blur(5px);`;
                     pin.innerHTML = m.emoji || '🔧';
-                    pin.onclick = (ev) => { 
-                        ev.stopPropagation(); 
-                        if(window.isPlacingMachine) return; 
-                        window.renderMachineDetailsUI(m.id); 
+                    pin.onclick = (ev) => {
+                        ev.stopPropagation();
+                        if (window.isPlacingMachine) return;
+                        window.renderMachineDetailsUI(m.id);
                     };
                     sc.appendChild(pin);
                 }
@@ -6347,7 +7192,7 @@ window.renderBuildingSchematic = async function(buildingId, highlightMachineId =
     } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.focusMachineOnSchematic = function(id) {
+window.focusMachineOnSchematic = function (id) {
     const pins = document.querySelectorAll('.machine-pin');
     pins.forEach(p => p.style.background = '#5856D6');
     const target = document.getElementById(`pin-${id}`);
@@ -6355,11 +7200,11 @@ window.focusMachineOnSchematic = function(id) {
         target.style.background = '#FF3B30';
         target.style.transform = 'scale(1.5)';
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => { if(target) target.style.transform = 'scale(1)'; }, 1000);
+        setTimeout(() => { if (target) target.style.transform = 'scale(1)'; }, 1000);
     }
 };
 
-window.openAddBuildingModal = function() {
+window.openAddBuildingModal = function () {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -6387,23 +7232,23 @@ window.openAddBuildingModal = function() {
             await api.saveBuilding({ name, svg_url });
             modal.remove();
             window.renderAdminMap();
-        } catch(e) { alert("Erreur: " + e.message); }
+        } catch (e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.handleDeleteBuilding = async function(id) {
+window.handleDeleteBuilding = async function (id) {
     if (!confirm("Supprimer ce bâtiment ?")) return;
-    try { await api.deleteBuilding(id); window.renderAdminMap(); } catch(e) { alert("Erreur: " + e.message); }
+    try { await api.deleteBuilding(id); window.renderAdminMap(); } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.startPlacingMachine = function(buildingId) {
+window.startPlacingMachine = function (buildingId) {
     window.isPlacingMachine = true;
     document.getElementById('add-m-btn').style.display = 'none';
     document.getElementById('cancel-m-btn').style.display = 'block';
     document.getElementById('placement-hint').style.display = 'block';
 };
 
-window.stopPlacingMachine = function() {
+window.stopPlacingMachine = function () {
     window.isPlacingMachine = false;
     const addBtn = document.getElementById('add-m-btn');
     const cancelBtn = document.getElementById('cancel-m-btn');
@@ -6413,7 +7258,7 @@ window.stopPlacingMachine = function() {
     if (hint) hint.style.display = 'none';
 };
 
-window.openAddMachineModal = function(x, y, buildingId) {
+window.openAddMachineModal = function (x, y, buildingId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -6429,7 +7274,7 @@ window.openAddMachineModal = function(x, y, buildingId) {
             <div style="margin-bottom: 12px;">
                 <label style="display:block; font-size: 12px; margin-bottom: 5px; opacity: 0.7;">Emoji Représentatif</label>
                 <div style="display:flex; gap: 8px; flex-wrap: wrap;" id="emoji-picker">
-                    ${['🔧','🚜','🏭','⛽','⚡','💧','🌪️','📦','🦾','🌡️'].map(e => `<div onclick="window.selectEmoji(this, '${e}')" style="font-size: 24px; padding: 5px; cursor: pointer; border-radius: 8px; border: 2px solid transparent;">${e}</div>`).join('')}
+                    ${['🔧', '🚜', '🏭', '⛽', '⚡', '💧', '🌪️', '📦', '🦾', '🌡️'].map(e => `<div onclick="window.selectEmoji(this, '${e}')" style="font-size: 24px; padding: 5px; cursor: pointer; border-radius: 8px; border: 2px solid transparent;">${e}</div>`).join('')}
                 </div>
                 <input type="hidden" id="new-m-emoji" value="🔧">
             </div>
@@ -6465,11 +7310,11 @@ window.openAddMachineModal = function(x, y, buildingId) {
             window.stopPlacingMachine();
             modal.remove();
             if (buildingId) window.renderBuildingSchematic(buildingId); else window.renderAdminMap();
-        } catch(e) { alert("Erreur: " + e.message); }
+        } catch (e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.renderMachineDetailsUI = async function(machineDbId) {
+window.renderMachineDetailsUI = async function (machineDbId) {
     try {
         const machines = await api.getMachines();
         const machine = machines.find(m => m.id === machineDbId);
@@ -6506,10 +7351,10 @@ window.renderMachineDetailsUI = async function(machineDbId) {
             </div>
         `;
         document.body.appendChild(modal);
-    } catch(e) { alert("Erreur: " + e.message); }
+    } catch (e) { alert("Erreur: " + e.message); }
 };
 
-window.openAddMachineLogModal = function(machineDbId) {
+window.openAddMachineLogModal = function (machineDbId) {
     const dk = document.documentElement.getAttribute('data-theme') === 'dark';
     const bg = dk ? '#1C1C1E' : '#FFFFFF';
     const textColor = dk ? '#FFFFFF' : '#000000';
@@ -6540,18 +7385,18 @@ window.openAddMachineLogModal = function(machineDbId) {
             await api.addMachineLog(machineDbId, actionType, desc);
             document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
             renderMachineDetailsUI(machineDbId);
-        } catch(e) { alert("Erreur: " + e.message); }
+        } catch (e) { alert("Erreur: " + e.message); }
     };
 };
 
-window.handleDeleteMachine = async function(id, buildingId = null) {
+window.handleDeleteMachine = async function (id, buildingId = null) {
     if (!confirm("Supprimer cette machine ?")) return;
     console.log("UI: Starting machine deletion for:", id);
     try {
         await api.deleteMachine(id);
         console.log("UI: Machine deleted successfully, closing modals...");
         document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
-        
+
         console.log("UI: Refreshing view... BuildingId:", buildingId);
         if (buildingId && typeof window.renderBuildingSchematic === "function") {
             window.renderBuildingSchematic(buildingId);
@@ -6560,11 +7405,1073 @@ window.handleDeleteMachine = async function(id, buildingId = null) {
         } else {
             renderAdminMap();
         }
-    } catch(e) { 
+    } catch (e) {
         console.error("UI: Machine deletion FAILED:", e);
-        alert("Erreur: " + e.message); 
+        alert("Erreur: " + e.message);
     }
 };
 
-initDashboard();
+/**
+ * Enhanced Push Diagnostic for User
+ */
+window.debugPushNotifications = async function () {
+    let message = "--- Diagnostic Notifications ---\n\n";
+    try {
+        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+            message += "Plateforme : ANDROID (NATIVE)\n";
+            const { PushNotifications } = window.Capacitor.Plugins;
+            if (!PushNotifications) throw new Error("Le plugin PushNotifications n'est pas chargé.");
 
+            message += "1. Permissions : ";
+            let permStatus = await PushNotifications.checkPermissions();
+            message += `${permStatus.receive}\n`;
+
+            if (permStatus.receive !== 'granted') {
+                message += "-> Demande permission...\n";
+                permStatus = await PushNotifications.requestPermissions();
+                message += `Nouvel état: ${permStatus.receive}\n`;
+            }
+
+            if (permStatus.receive === 'granted') {
+                message += "2. Inscription FCM en cours...\n";
+
+                // On fixe un témoin pour voir si la réponse arrive
+                let tokenReceived = false;
+
+                const registrationListener = await PushNotifications.addListener('registration', (token) => {
+                    tokenReceived = true;
+                    alert("✅ TOKEN REÇU !\n\nVotre jeton Firebase est : \n" + token.value + "\n\n(Ce Token a été envoyé au serveur)");
+                    registrationListener.remove();
+                });
+
+                const errorListener = await PushNotifications.addListener('registrationError', (err) => {
+                    tokenReceived = true;
+                    alert("❌ ERREUR FIREBASE :\n\n" + (err.error || "Problème d'enregistrement. Vérifiez vos clés Firebase."));
+                    errorListener.remove();
+                });
+
+                await PushNotifications.register();
+
+                alert(message + "\nAttente de Firebase pendant 10s...");
+
+                // Timeout au bout de 10s si rien n'est reçu
+                setTimeout(() => {
+                    if (!tokenReceived) {
+                        alert("⏳ Pas de réponse de Firebase au bout de 10s.\n\nVérifiez que :\n- Le téléphone a internet\n- Les services Google Play sont à jour\n- Le fichier google-services.json est le bon.");
+                        registrationListener.remove();
+                        errorListener.remove();
+                    }
+                }, 10000);
+
+                return;
+            } else {
+                throw new Error("Permission refusée.");
+            }
+        }
+
+        // Web Fallback
+        message += "Plateforme : WEB / PWA\n";
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) throw new Error("Service Worker absent.");
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+            await initPushNotifications();
+        } else {
+            await api.subscribePush(sub);
+            alert("✅ Web Push OK.");
+        }
+    } catch (e) {
+        alert(message + "\n❌ ERREUR : " + e.message);
+    }
+};
+
+
+// --- MOBILE : GESTION DU PARC ET MAINTENANCE ---
+window.renderMobileParc = async function () {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Parc Matériel";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    window.mobileCurrentPath = "parc_list";
+
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const border = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    container.innerHTML = `
+        <div style="padding: 16px; padding-bottom: 100px;">
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+                <div style="display: flex; gap: 10px;">
+                    <div style="position: relative; flex: 1;">
+                        <input type="text" id="mobile-parc-search" placeholder="Rechercher (ID, nom, marque)..." 
+                            style="width: 100%; padding: 14px 14px 14px 40px; border-radius: 16px; border: none; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; color: ${textColor}; font-size: 15px;">
+                        <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); opacity: 0.5;">🔍</span>
+                    </div>
+                    <button onclick="window.openMobileMachineEditModal()" style="width: 48px; height: 48px; background: var(--primary,#2da140); border: none; border-radius: 14px; color: white; font-size: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); flex-shrink:0;">+</button>
+                </div>
+                <!-- Filtre Famille Mobile -->
+                <div id="mobile-family-filter-container">
+                    <select id="mobile-parc-family" style="width: 100%; padding: 12px; border-radius: 12px; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; color: ${textColor}; border:none; font-size:14px; appearance:none;">
+                        <option value="">Toutes les familles</option>
+                    </select>
+                </div>
+            </div>
+            <div id="mobile-parc-list">
+                <div style="text-align: center; padding: 40px;"><div class="loader-spinner"></div></div>
+            </div>
+        </div>
+    `;
+
+    try {
+        const [machines, families] = await Promise.all([
+            api.getMachines(),
+            api.getMachineFamilies()
+        ]);
+
+        const listContainer = document.getElementById('mobile-parc-list');
+        const familySelect = document.getElementById('mobile-parc-family');
+
+        // Fill families
+        families.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            opt.innerText = f.name;
+            familySelect.appendChild(opt);
+        });
+
+        const renderList = () => {
+            const filter = document.getElementById('mobile-parc-search').value.toLowerCase();
+            const family = familySelect.value;
+
+            const filtered = machines.filter(m => {
+                const matchesSearch = m.machine_id.toLowerCase().includes(filter) ||
+                    (m.name && m.name.toLowerCase().includes(filter)) ||
+                    (m.description && m.description.toLowerCase().includes(filter)) ||
+                    (m.brand && m.brand.toLowerCase().includes(filter)) ||
+                    (m.serial_number && m.serial_number.toLowerCase().includes(filter));
+                const matchesFamily = !family || m.family === family;
+                return matchesSearch && matchesFamily;
+            });
+
+            if (filtered.length === 0) {
+                listContainer.innerHTML = `<div style="text-align: center; padding: 40px; color: #8E8E93; font-style: italic;">Aucun matériel trouvé</div>`;
+                return;
+            }
+
+            listContainer.innerHTML = filtered.map(m => {
+                const nextDate = m.next_maintenance_date ? new Date(m.next_maintenance_date) : null;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                let statusColor = '#8E8E93';
+                if (nextDate) {
+                    if (nextDate < today) statusColor = '#FF3B30';
+                    else if (nextDate < new Date(today.getTime() + 15 * 24 * 60 * 60 * 1000)) statusColor = '#FF9500';
+                    else statusColor = '#34C759';
+                }
+
+                return `
+                    <div onclick="window.openMobileMachineDetail('${m.id}')" style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 16px; display: flex; align-items: center; gap: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); opacity: ${m.status_active === false ? '0.5' : '1'};">
+                        <div style="width: 54px; height: 54px; background: rgba(0,0,0,0.05); border-radius: 12px; overflow: hidden; border: 1px solid ${border}; flex-shrink: 0;">
+                            <img src="${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.2'; this.style.filter='invert(1)';" style="width: 100%; height: 100%; object-fit: cover;">
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 800; color: ${textColor}; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px;">
+                                ${window.escapeHTML(m.machine_id)}
+                                ${m.vgp_status === 'OK' ? '<span style="color: #34C759; font-size: 10px;">✅ VGP</span>' : (m.vgp_status === 'KO' ? '<span style="color: #FF3B30; font-size: 10px;">⚠️ VGP KO</span>' : '')}
+                            </div>
+                            <div style="font-size: 13px; color: ${textColor}; opacity: 0.8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${window.escapeHTML(m.name || 'Sans nom')}</div>
+                            <div style="font-size: 11px; color: #8E8E93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">
+                                ${m.family ? `📁 ${m.family}` : 'Non classé'} • SN: ${m.serial_number || '--'}
+                            </div>
+                            <div style="font-size: 11px; margin-top: 6px; display: flex; align-items: center; gap: 6px;">
+                                <span style="width: 7px; height: 7px; border-radius: 50%; background: ${statusColor};"></span>
+                                <span style="color: ${statusColor}; font-weight: 700;">Échéance : ${m.next_maintenance_date ? new Date(m.next_maintenance_date).toLocaleDateString('fr-FR') : '--'}</span>
+                            </div>
+                        </div>
+                        <div style="color: #8E8E93; font-size: 18px; opacity: 0.4;">›</div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        renderList();
+        document.getElementById('mobile-parc-search').oninput = renderList;
+        familySelect.onchange = renderList;
+
+    } catch (e) {
+        document.getElementById('mobile-parc-list').innerHTML = `<div style="color:red; text-align:center; padding:20px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.openMobileMachineDetail = async function (id) {
+    window.mobileCurrentPath = "parc_detail";
+    const container = document.getElementById('list-content');
+    container.innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader-spinner"></div></div>`;
+
+    try {
+        const machines = await api.getMachines();
+        const m = machines.find(item => item.id === id);
+        if (!m) return window.renderMobileParc();
+
+        const history = await api.getMachineMaintenanceHistory(m.id);
+        const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+        const cardBg = dk ? '#1C1C1E' : '#fff';
+        const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+        const border = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+        container.innerHTML = `
+            <div style="padding: 16px; padding-bottom: 100px;">
+                <!-- Header Card -->
+                <div style="background: linear-gradient(135deg, #1a1a1c, #2a2a2c); border-radius: 24px; overflow: hidden; margin-bottom: 20px; box-shadow: 0 12px 24px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="width: 100%; height: 180px; position: relative;">
+                         <img src="${config.api.workerUrl}/get/machines_photos/${m.id}.png?t=${Date.now()}" onerror="this.src='https://cdn-icons-png.flaticon.com/512/3202/3202926.png'; this.style.opacity='0.1';" style="width: 100%; height: 100%; object-fit: cover;">
+                         <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(transparent, rgba(0,0,0,0.85));">
+                             <div style="font-size: 24px; font-weight: 800; color: white; line-height:1.1;">${window.escapeHTML(m.name || m.machine_id)}</div>
+                             <div style="font-size: 14px; color: rgba(255,255,255,0.7); margin-top: 6px;"><strong>ID :</strong> ${window.escapeHTML(m.machine_id)}</div>
+                         </div>
+                         <button onclick="window.openMobileMachineEditModal('${m.id}')" style="position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.15); backdrop-filter: blur(8px); border: none; width: 42px; height: 42px; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                         </button>
+                    </div>
+                    <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: rgba(255,255,255,0.03);">
+                        <div style="text-align: center;">
+                            <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight:700; letter-spacing:0.05em;">Marque</div>
+                            <div style="color: white; font-weight: 700; font-size:14px; margin-top:2px;">${window.escapeHTML(m.brand || '--')}</div>
+                        </div>
+                        <div style="text-align: center; border-left: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight:700; letter-spacing:0.05em;">Famille</div>
+                            <div style="color: white; font-weight: 700; font-size:14px; margin-top:2px;">${window.escapeHTML(m.family || '--')}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Grid -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                    <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 18px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                        <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">N° de Série</div>
+                        <div style="font-weight: 800; color: ${textColor}; font-family: monospace;">${window.escapeHTML(m.serial_number || '--')}</div>
+                    </div>
+                    <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 18px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                        <div style="font-size: 10px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Periodicité</div>
+                        <div style="font-weight: 800; color: ${textColor};">${m.periodicity || '--'} mois</div>
+                    </div>
+                </div>
+
+                <!-- Technical Status -->
+                <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 20px; padding: 18px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                        <div>
+                            <div style="font-size: 11px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Dernière VGP</div>
+                            <div style="font-size: 18px; font-weight: 800; color: ${textColor}; margin-top: 2px;">${m.last_vgp_date ? new Date(m.last_vgp_date).toLocaleDateString('fr-FR') : 'Non renseigné'}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 11px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Statut VGP</div>
+                            <div style="margin-top: 4px;">
+                                ${m.vgp_status === 'OK' ? '<span style="background: #34C759; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800;">CONFORME</span>' :
+                (m.vgp_status === 'KO' ? '<span style="background: #FF3B30; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800;">A REPARER</span>' :
+                    '<span style="background: #8E8E93; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 800;">INCONNU</span>')}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding-top: 15px; border-top: 1px solid ${border}; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 11px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">Validité Maint.</div>
+                            <div style="font-size: 18px; font-weight: 800; color: #FF9500; margin-top: 2px;">${m.next_maintenance_date ? new Date(m.next_maintenance_date).toLocaleDateString('fr-FR') : '--'}</div>
+                        </div>
+                        <button class="btn-primary" onclick="window.addMobileMaintenance('${m.id}')" style="padding: 12px 20px; border-radius: 14px; background: #34C759; font-weight: 800; border: none; color: white; box-shadow: 0 4px 10px rgba(52, 199, 89, 0.2);">INTERVENTION</button>
+                    </div>
+                </div>
+
+                <!-- History Section -->
+                <h3 style="font-size: 18px; margin: 0 0 16px 4px; color: ${textColor}; font-weight: 800;">📋 Historique</h3>
+                
+                ${history.length === 0 ? `
+                    <div style="text-align: center; padding: 40px 20px; color: #8E8E93; background: ${cardBg}; border-radius: 20px; border: 1px dashed ${border}; font-size: 14px;">
+                        Aucune maintenance enregistrée.
+                    </div>
+                ` : history.map(h => `
+                    <div style="background: ${cardBg}; border: 1px solid ${border}; border-radius: 18px; padding: 18px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center;">
+                            <div style="font-weight: 800; color: ${textColor}; font-size: 15px; display: flex; align-items: center; gap: 8px;">
+                                ${new Date(h.date).toLocaleDateString('fr-FR')}
+                                <span style="font-size: 11px; opacity: 0.7;">(${h.last_control_type || 'Maint.'})</span>
+                            </div>
+                            <div style="font-size: 11px; color: #34C759; background: rgba(52, 199, 89, 0.1); padding: 4px 10px; border-radius: 10px; font-weight:700;">${h.profiles ? (h.profiles.first_name) : 'Admin'}</div>
+                        </div>
+                        <div style="font-size: 14px; color: #8E8E93; line-height: 1.5; font-weight:500;">${window.escapeHTML(h.details || 'Contrôle périodique.')}</div>
+                        ${h.vgp_status ? `<div style="font-size: 12px; margin-top: 8px; font-weight: 700; color: ${h.vgp_status === 'OK' ? '#34C759' : '#FF3B30'}">VGP: ${h.vgp_status} ${h.vgp_observations ? `• ${h.vgp_observations}` : ''}</div>` : ''}
+                        ${h.next_maintenance_date ? `<div style="font-size: 11px; color: #FF9500; margin-top: 10px; font-weight:700; display:flex; align-items:center; gap:4px;">🗓️ Prochaine: ${new Date(h.next_maintenance_date).toLocaleDateString('fr-FR')}</div>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } catch (e) {
+        container.innerHTML = `<div style="color:red; text-align:center; padding:40px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.addMobileMaintenance = async function (machineId) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 92%; max-width: 440px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: modalIn 0.3s cubic-bezier(0.1, 0.8, 0.1, 1);">
+            <h2 style="margin-top: 0; margin-bottom: 24px; color: ${textColor}; font-size: 20px; font-weight: 800;">Nouvelle Intervention</h2>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 8px; font-weight: 600;">Type de contrôle</label>
+                <div style="display: flex; gap: 8px;">
+                    ${['Maintenance', 'VGP', 'Remise en service'].map(type => `
+                        <div class="control-type-pill" onclick="window.setControlType('${type}')" data-type="${type}" style="flex: 1; text-align: center; padding: 10px; border-radius: 12px; background: ${inputBg}; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">${type}</div>
+                    `).join('')}
+                </div>
+                <input type="hidden" id="mob-control-type" value="Maintenance">
+            </div>
+
+            <!-- VGP Specific Section -->
+            <div id="mob-vgp-section" style="display: none; margin-bottom: 20px; padding: 16px; background: rgba(52, 199, 89, 0.05); border: 1px solid rgba(52, 199, 89, 0.1); border-radius: 16px;">
+                <label style="display: block; font-size: 13px; color: #34C759; margin-bottom: 12px; font-weight: 700;">Résultat de la VGP</label>
+                <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                    <div id="vgp-ok-btn" onclick="window.setVgpStatus('OK')" style="flex:1; padding: 12px; border-radius: 12px; background: rgba(52, 199, 89, 0.1); border: 2px solid transparent; color: #34C759; text-align: center; font-weight: 800; font-size:13px;">CONFORME</div>
+                    <div id="vgp-ko-btn" onclick="window.setVgpStatus('KO')" style="flex:1; padding: 12px; border-radius: 12px; background: rgba(255, 59, 48, 0.1); border: 2px solid transparent; color: #FF3B30; text-align: center; font-weight: 800; font-size:13px;">A REPARER</div>
+                </div>
+                <input type="hidden" id="mob-vgp-status" value="">
+                <input type="text" id="mob-vgp-obs" placeholder="Observations VGP..." style="width: 100%; padding: 12px; border: none; border-radius: 12px; background: ${bg}; color: ${textColor}; font-size: 14px; border: 1px solid ${border};">
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 8px; font-weight: 600;">Notes additionnelles</label>
+                <textarea id="mob-maint-details" style="width: 100%; height: 80px; padding: 14px; border: none; border-radius: 16px; background: ${inputBg}; color: ${textColor}; font-size: 15px; resize: none; font-family: inherit;" placeholder="Notes..."></textarea>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <label style="display: block; font-size: 13px; color: #8E8E93; margin-bottom: 10px; font-weight: 600;">Echéance validité (en mois)</label>
+                <div style="background: ${inputBg}; padding: 16px; border-radius: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                        <span id="mob-maint-val" style="font-weight: 800; color: var(--primary); font-size: 18px;">12 mois</span>
+                        <div id="mob-maint-date-preview" style="font-size: 12px; color: #8E8E93; font-weight: 700;">Expire le: <strong>-</strong></div>
+                    </div>
+                    <input type="range" id="mob-maint-slider" min="1" max="24" value="12" style="width: 100%; accent-color: var(--primary);">
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 12px;">
+                <button class="btn-secondary" style="flex: 1; height: 52px; border-radius: 16px; font-weight: 700;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="mob-save-maint-btn" class="btn-primary" style="flex: 1; height: 52px; border-radius: 16px; background: #34C759; border: none; color: white; font-weight: 800;">Valider</button>
+            </div>
+        </div>
+        <style>
+            .control-type-pill.active { background: var(--primary) !important; color: white !important; }
+            @keyframes modalIn { from { transform: scale(0.9) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+        </style>
+    `;
+    document.body.appendChild(modal);
+
+    window.setControlType = (type) => {
+        document.getElementById('mob-control-type').value = type;
+        document.querySelectorAll('.control-type-pill').forEach(p => {
+            p.classList.toggle('active', p.dataset.type === type);
+        });
+        document.getElementById('mob-vgp-section').style.display = (type === 'VGP') ? 'block' : 'none';
+    };
+
+    window.setVgpStatus = (status) => {
+        document.getElementById('mob-vgp-status').value = status;
+        document.getElementById('vgp-ok-btn').style.borderColor = (status === 'OK') ? '#34C759' : 'transparent';
+        document.getElementById('vgp-ko-btn').style.borderColor = (status === 'KO') ? '#FF3B30' : 'transparent';
+    };
+
+    // Par défaut
+    window.setControlType('Maintenance');
+
+    const slider = document.getElementById('mob-maint-slider');
+    const valText = document.getElementById('mob-maint-val');
+    const preview = document.getElementById('mob-maint-date-preview');
+
+    const updatePreview = () => {
+        valText.innerText = `${slider.value} mois`;
+        const date = new Date();
+        date.setMonth(date.getMonth() + parseInt(slider.value));
+        preview.innerHTML = `Expire le : <strong>${date.toLocaleDateString('fr-FR')}</strong>`;
+        return date.toISOString().split('T')[0];
+    };
+
+    slider.oninput = updatePreview;
+    updatePreview();
+
+    document.getElementById('mob-save-maint-btn').onclick = async () => {
+        const type = document.getElementById('mob-control-type').value;
+        const details = document.getElementById('mob-maint-details').value.trim();
+        const nextDate = updatePreview();
+        const vgpStatus = (type === 'VGP') ? document.getElementById('mob-vgp-status').value : null;
+        const vgpObs = (type === 'VGP') ? document.getElementById('mob-vgp-obs').value.trim() : null;
+
+        if (type === 'VGP' && !vgpStatus) return alert("Veuillez indiquer si la VGP est conforme.");
+
+        const btn = document.getElementById('mob-save-maint-btn');
+        btn.disabled = true;
+        btn.innerText = "Validation...";
+
+        try {
+            await api.saveMachineMaintenance(machineId, details, nextDate, vgpStatus, vgpObs, type);
+            modal.remove();
+            window.openMobileMachineDetail(machineId);
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Valider";
+        }
+    };
+};
+
+window.openMobileMachineEditModal = async function (id = null) {
+    let existing = null;
+    let families = [];
+    try {
+        const [machines, familiesData] = await Promise.all([
+            api.getMachines(),
+            api.getMachineFamilies()
+        ]);
+        families = familiesData;
+        if (id) existing = machines.find(m => m.id === id);
+    } catch (e) { console.error(e); }
+
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#ffffff';
+    const textColor = dk ? '#ffffff' : '#1c1c1e';
+    const inputBg = dk ? '#2C2C2E' : '#f2f2f7';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10001";
+    modal.innerHTML = `
+        <div class="modal-box" style="padding: 24px; border-radius: 28px; background: ${bg}; width: 94%; max-width: 500px; max-height: 90vh; overflow-y: auto; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: modalIn 0.3s cubic-bezier(0.1, 0.8, 0.1, 1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; color: ${textColor}; font-size: 20px; font-weight: 800;">${id ? 'Modifier' : 'Nouveau'} Matériel</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: #8E8E93; font-size: 20px;">✕</button>
+            </div>
+            
+            <div style="margin-bottom: 24px; display: flex; align-items: center; gap: 16px; background: rgba(0,0,0,0.03); padding: 15px; border-radius: 20px;">
+                <div id="mob-m-preview" style="width: 90px; height: 90px; border-radius: 18px; background: ${inputBg}; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px dashed rgba(142, 142, 147, 0.5); position: relative; flex-shrink: 0;">
+                    <img src="${id ? `${config.api.workerUrl}/get/machines_photos/${id}.png?t=${Date.now()}` : ''}" onerror="this.style.display='none'" onload="this.style.display='block'" style="width: 100%; height: 100%; object-fit: cover;">
+                    <span style="font-size: 28px; opacity: 0.2; position: absolute;">📷</span>
+                </div>
+                <div style="flex: 1;">
+                    <p style="font-size: 13px; color: #8E8E93; margin: 0 0 8px 0; font-weight: 600;">Photo du matériel</p>
+                    <button onclick="document.getElementById('mob-m-file').click()" style="width: 100%; height: 40px; border-radius: 12px; background: var(--primary); color: white; border: none; font-size: 13px; font-weight: 700;">Prendre / Choisir</button>
+                    <input type="file" id="mob-m-file" accept="image/*" style="display: none;" onchange="
+                        const reader = new FileReader();
+                        reader.onload = (e) => { 
+                            const img = document.querySelector('#mob-m-preview img');
+                            img.src = e.target.result;
+                            img.style.display = 'block';
+                        };
+                        reader.readAsDataURL(this.files[0]);
+                    ">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight: 700; text-transform: uppercase;">Identification</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <input type="text" id="mob-m-id" value="${existing?.machine_id || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 16px; font-weight: 700;" placeholder="ID (ex: MI_123)">
+                    <input type="text" id="mob-m-sn" value="${existing?.serial_number || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 16px; font-weight: 700;" placeholder="N° de Série">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight: 700; text-transform: uppercase;">Désignation & Famille</label>
+                <input type="text" id="mob-m-name" value="${existing?.name || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px; margin-bottom: 12px;" placeholder="Nom (ex: Mini-pelle 3T)">
+                <select id="mob-m-family" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px; appearance: none;">
+                    <option value="">-- Choisir une famille --</option>
+                    ${families.map(f => `<option value="${f.name}" ${existing?.family === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
+                </select>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 6px; font-weight: 700; text-transform: uppercase;">Marque & Attribution</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <input type="text" id="mob-m-brand" value="${existing?.brand || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px;" placeholder="Marque (ex: JCB)">
+                    <input type="text" id="mob-m-assigned" value="${existing?.assigned_to || ''}" style="width: 100%; padding: 14px; border: none; border-radius: 14px; background: ${inputBg}; color: ${textColor}; font-size: 15px;" placeholder="Attribué à...">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12px; color: #8E8E93; margin-bottom: 10px; font-weight: 700; text-transform: uppercase;">Périodicité de maintenance</label>
+                <div style="background: rgba(0,0,0,0.03); padding: 15px; border-radius: 16px;">
+                    <div style="display:flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span id="mob-edit-period-val" style="font-weight: 800; color: var(--primary);">${existing?.periodicity || 12} mois</span>
+                    </div>
+                    <input type="range" id="mob-m-period" min="1" max="24" value="${existing?.periodicity || 12}" style="width: 100%; accent-color: var(--primary);" oninput="document.getElementById('mob-edit-period-val').innerText = this.value + ' mois'">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(0,0,0,0.03); border-radius: 14px;">
+                <span style="font-size: 14px; font-weight: 700; color: ${textColor};">Matériel actif</span>
+                <div style="position: relative; display: inline-block; width: 60px; height: 34px;">
+                    <input type="checkbox" id="mob-m-active" ${existing?.status_active !== false ? 'checked' : ''} style="opacity: 0; width: 0; height: 0;">
+                    <span onclick="this.previousElementSibling.click(); this.classList.toggle('checked')" class="toggle-slider ${existing?.status_active !== false ? 'checked' : ''}" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px;"></span>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 10px;">
+                <button class="btn-secondary" style="flex: 1; height: 52px; border-radius: 16px; font-weight: 700;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="mob-save-m-btn" class="btn-primary" style="flex: 1; height: 52px; border-radius: 16px; background: var(--primary); border: none; color: white; font-weight: 800;">Enregistrer</button>
+            </div>
+            
+            ${id ? `
+            <div style="text-align: center; margin-top: 24px;">
+                <button onclick="window.deleteAdminMachineMobile('${id}')" style="background: none; border: none; color: #FF3B30; font-size: 13px; font-weight: 700; text-decoration: underline;">Supprimer ce matériel</button>
+            </div>
+            ` : ''}
+        </div>
+        <style>
+            .toggle-slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+            .toggle-slider.checked { background-color: #34C759; }
+            .toggle-slider.checked:before { transform: translateX(26px); }
+        </style>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('mob-save-m-btn').onclick = async () => {
+        const data = {
+            id: id,
+            machine_id: document.getElementById('mob-m-id').value.trim(),
+            name: document.getElementById('mob-m-name').value.trim(),
+            serial_number: document.getElementById('mob-m-sn').value.trim(),
+            brand: document.getElementById('mob-m-brand').value.trim(),
+            family: document.getElementById('mob-m-family').value,
+            assigned_to: document.getElementById('mob-m-assigned').value.trim(),
+            periodicity: parseInt(document.getElementById('mob-m-period').value),
+            status_active: document.getElementById('mob-m-active').checked
+        };
+
+        if (!data.machine_id) return alert("L'identifiant est obligatoire.");
+
+        const btn = document.getElementById('mob-save-m-btn');
+        btn.disabled = true;
+        btn.innerText = "Patientez...";
+
+        try {
+            const saved = await api.saveMachine(data);
+            const photoInput = document.getElementById('mob-m-file');
+            if (photoInput.files.length > 0) {
+                btn.innerText = "Upload photo...";
+                // Web worker endpoint for mobile too
+                await api.uploadMachinePhoto(saved.id || id, photoInput.files[0]);
+            }
+            modal.remove();
+            if (id) window.openMobileMachineDetail(id);
+            else window.renderMobileParc();
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = "Enregistrer";
+        }
+    };
+};
+
+window.deleteAdminMachineMobile = async function (id) {
+    if (!confirm("Attention : cette action supprimera définitivement le matériel et son historique. Continuer ?")) return;
+    try {
+        await api.deleteMachine(id);
+        const modal = document.querySelector('.modal-overlay');
+        if (modal) modal.remove();
+        window.renderMobileParc();
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+// Start Push Notifications
+if (typeof initPushNotifications === "function") {
+    initPushNotifications();
+}
+
+window.renderMobileMaterialTracking = async function () {
+    document.getElementById('categories-view').classList.add('hidden');
+    document.getElementById('search-results-view').classList.add('hidden');
+    const searchContainer = document.querySelector('.mobile-search-container');
+    if (searchContainer) searchContainer.classList.add('hidden');
+    document.getElementById('document-list').classList.remove('hidden');
+
+    document.getElementById('selected-category-title').innerText = "Suivi matériel ATS 🛠️";
+    document.getElementById('mobile-upload-btn').style.display = 'none';
+
+    mobileCurrentPath = "matos_tracking";
+
+    const container = document.getElementById('list-content');
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const cardBg = dk ? '#1C1C1E' : '#fff';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+    const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    container.innerHTML = `
+        <div style="padding: 16px;">
+            <button onclick="openQrScanner()" style="width:100%; padding:14px; border-radius:14px; background:#5856D6; color:white; border:none; font-size:16px; font-weight:800; cursor:pointer; margin-bottom:16px; box-shadow:0 4px 12px rgba(88,86,214,0.3);">
+                📷 Scanner un QR code
+            </button>
+            <div style="margin-bottom: 20px;">
+                <input type="text" id="matos-search" placeholder="Rechercher un matériel..."
+                    style="width: 100%; padding: 14px; border-radius: 12px; border: 1px solid ${subtleBorder}; background: ${cardBg}; color: ${textColor}; font-size: 15px;">
+            </div>
+            <div id="matos-list-container" style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="text-align: center; color: #8E8E93; padding: 40px;">Chargement...</div>
+            </div>
+        </div>
+    `;
+
+    try {
+        const stock = await api.getMaterialStock();
+        const listContainer = document.getElementById('matos-list-container');
+
+        const renderList = (items) => {
+            if (items.length === 0) {
+                listContainer.innerHTML = `<div style="text-align: center; color: #8E8E93; padding: 40px;">Aucun matériel trouvé</div>`;
+                return;
+            }
+            listContainer.innerHTML = items.map(item => `
+                <div class="material-item-card" onclick="openMaterialDetailsModal('${item.id}')" 
+                    style="background: ${cardBg}; border: 1px solid ${subtleBorder}; border-radius: 16px; padding: 16px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                    <div style="background: #F2F2F7; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; overflow: hidden;">
+                        ${item.photo_url ? 
+                            `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : 
+                            (item.type === 'Électroportatif' ? '🔌' : '🛠️')
+                        }
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 800; color: ${textColor}; font-size: 15px;">${item.designation || 'Sans nom'}</div>
+                        ${item.reference_fournisseur ? `<div style="font-size: 11px; color: #8E8E93; margin-top: 2px;">Réf: ${item.reference_fournisseur}</div>` : ''}
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+                            <span style="color: #8E8E93; font-size: 12px;">Qté: <b>${item.stock_reel || 0}</b></span>
+                            ${(item.nb_souhaite || 0) > (item.stock_reel || 0) ? `<span style="color: #FF3B30; font-size: 12px; font-weight: 700;">(manquant: ${item.nb_souhaite - item.stock_reel})</span>` : ''}
+                            <span style="color: #8E8E93; font-size: 12px;">•</span>
+                            <span style="color: #34C759; font-size: 12px; font-weight: 600;">${item.lieu_de_stockage || 'Non localisé'}</span>
+                        </div>
+                    </div>
+                    <div style="color: #8E8E93;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>
+                    </div>
+                </div>
+            `).join('');
+        };
+
+        renderList(stock);
+
+        document.getElementById('matos-search').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = stock.filter(i => 
+                (i.designation || '').toLowerCase().includes(query) || 
+                (i.reference_fournisseur && i.reference_fournisseur.toLowerCase().includes(query)) ||
+                (i.fournisseur && i.fournisseur.toLowerCase().includes(query)) ||
+                (i.lieu_de_stockage && i.lieu_de_stockage.toLowerCase().includes(query))
+            );
+            renderList(filtered);
+        });
+
+    } catch (e) {
+        document.getElementById('matos-list-container').innerHTML = `<div style="color: red; text-align: center;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.openMaterialDetailsModal = async function (id) {
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = dk ? '#1C1C1E' : '#FFFFFF';
+    const textColor = dk ? '#FFFFFF' : '#1C1C1E';
+    const inputBg = dk ? '#2C2C2E' : '#F2F2F7';
+    const subtleBorder = dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '10000';
+    modal.innerHTML = `<div class="modal-box" style="background: ${bg}; padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: 90vh; width: 90%; max-width: 400px; border-radius: 24px;">
+        <div style="padding: 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid ${subtleBorder};">
+            <div style="width: 32px;"></div>
+            <h2 style="margin: 0; color: ${textColor}; font-size: 18px; text-align: center;">Détails Matériel</h2>
+            <button id="edit-mode-btn" style="background: rgba(88, 86, 214, 0.1); color: #5856D6; border: none; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                ✏️
+            </button>
+        </div>
+        <div id="material-details-content" style="padding: 20px; overflow-y: auto; flex: 1;">
+            <div style="text-align: center; padding: 20px;">Chargement...</div>
+        </div>
+    </div>`;
+    document.body.appendChild(modal);
+
+    try {
+        const stock = await api.getMaterialStock();
+        const item = stock.find(i => i.id === id);
+        if (!item) throw new Error("Matériel non trouvé");
+
+        // Extract unique locations for the dropdown
+        const locations = [...new Set(stock.map(s => s.lieu_de_stockage).filter(l => l && l.trim() !== ""))].sort();
+
+        const detailsContent = document.getElementById('material-details-content');
+        detailsContent.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+                <div style="background: ${inputBg}; padding: 16px; border-radius: 16px; display: flex; gap: 16px; align-items: center;">
+                    <div style="background: #F2F2F7; width: 70px; height: 70px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 32px; overflow: hidden; flex-shrink: 0;">
+                        ${item.photo_url ? 
+                            `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : 
+                            (item.type === 'Électroportatif' ? '🔌' : '🛠️')
+                        }
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Matériel</div>
+                        <div style="font-size: 16px; font-weight: 800; color: ${textColor};">${item.designation || 'Sans nom'}</div>
+                    </div>
+                </div>
+
+                <div style="background: ${inputBg}; padding: 16px; border-radius: 16px;">
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        ${item.reference_fournisseur ? `<div style="font-size: 13px; color: #8E8E93;"><span style="font-weight: 700;">Réf:</span> ${item.reference_fournisseur}</div>` : ''}
+                        ${item.fournisseur ? `<div style="font-size: 13px; color: #8E8E93;"><span style="font-weight: 700;">Fournisseur:</span> ${item.fournisseur}</div>` : ''}
+                        ${item.type ? `<div style="font-size: 13px; color: #8E8E93;"><span style="font-weight: 700;">Catégorie:</span> ${item.type}</div>` : ''}
+                    </div>
+                    <div style="font-size: 13px; color: #34C759; margin-top: 12px; font-weight: 700;">Actuel : ${item.stock_reel || 0} unité(s) à ${item.lieu_de_stockage || 'Lieu inconnu'}</div>
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: #8E8E93; margin-bottom: 8px; text-transform: uppercase;">Nouvelle Quantité</label>
+                    <input type="number" id="new-quantity" value="${item.stock_reel || 0}" 
+                        style="width: 100%; padding: 16px; border-radius: 14px; border: 1px solid ${subtleBorder}; background: ${bg}; color: ${textColor}; font-size: 16px; font-weight: 600;">
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: #8E8E93; margin-bottom: 8px; text-transform: uppercase;">Nouvel Emplacement</label>
+                    <select id="new-location-select" style="width: 100%; padding: 16px; border-radius: 14px; border: 1px solid ${subtleBorder}; background: ${bg}; color: ${textColor}; font-size: 16px; font-weight: 600; appearance: none; -webkit-appearance: none;">
+                        <option value="">-- Sélectionner un lieu --</option>
+                        ${locations.map(loc => `<option value="${loc}" ${loc === item.lieu_de_stockage ? 'selected' : ''}>${loc}</option>`).join('')}
+                        <option value="NEW_LOC">+ Autre emplacement...</option>
+                    </select>
+                    <input type="text" id="custom-location" placeholder="Saisir le nouveau lieu..." 
+                        style="width: 100%; padding: 16px; border-radius: 14px; border: 1px solid ${subtleBorder}; background: ${bg}; color: ${textColor}; font-size: 16px; margin-top: 8px; display: none;">
+                </div>
+
+                <button id="submit-request-btn" class="btn-primary" 
+                    style="width: 100%; height: 56px; border-radius: 16px; background: #5856D6; color: white; font-size: 16px; font-weight: 800; border: none; box-shadow: 0 4px 12px rgba(88, 86, 214, 0.3); margin-top: 10px;">
+                    Faire une demande de modification
+                </button>
+
+                <div style="margin-top: 10px;">
+                    <div style="font-size: 13px; font-weight: 700; color: #8E8E93; margin-bottom: 12px; text-transform: uppercase;">Historique</div>
+                    <div id="material-history-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                </div>
+
+                <button class="btn-secondary" style="width: 100%; height: 50px; border-radius: 14px; background: ${inputBg}; color: ${textColor}; border: none; font-weight: 700;" 
+                    onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+            </div>
+        `;
+
+        window.loadMaterialHistory(id, 'material-history-list');
+
+        const editBtn = document.getElementById('edit-mode-btn');
+        let isEditMode = false;
+
+        const toggleEditMode = async () => {
+            isEditMode = !isEditMode;
+            editBtn.style.background = isEditMode ? '#5856D6' : 'rgba(88, 86, 214, 0.1)';
+            editBtn.style.color = isEditMode ? '#FFFFFF' : '#5856D6';
+            
+            if (isEditMode) {
+                const categories = await api.getMaterialCategories();
+                detailsContent.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 16px;">
+                        <div style="background: #FF9500; color: white; padding: 12px; border-radius: 12px; font-size: 13px; font-weight: 600; text-align: center;">
+                            ⚠️ Mode modification intégrale activé. Les changements seront soumis à validation.
+                        </div>
+                        
+                        <div>
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #8E8E93; margin-bottom: 6px; text-transform: uppercase;">Désignation</label>
+                            <input type="text" id="edit-designation" value="${item.designation || ''}" 
+                                style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid ${subtleBorder}; background: ${inputBg}; color: ${textColor}; font-size: 15px;">
+                        </div>
+
+                        <div>
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #8E8E93; margin-bottom: 6px; text-transform: uppercase;">Référence</label>
+                            <input type="text" id="edit-reference" value="${item.reference_fournisseur || ''}" 
+                                style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid ${subtleBorder}; background: ${inputBg}; color: ${textColor}; font-size: 15px;">
+                        </div>
+
+                        <div>
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #8E8E93; margin-bottom: 6px; text-transform: uppercase;">Catégorie</label>
+                            <select id="edit-type" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid ${subtleBorder}; background: ${inputBg}; color: ${textColor}; font-size: 15px;">
+                                ${categories.map(c => `<option value="${c.name}" ${c.name === item.type ? 'selected' : ''}>${c.name}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div style="margin-top: 8px; border-top: 1px solid ${subtleBorder}; padding-top: 16px;">
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #8E8E93; margin-bottom: 6px; text-transform: uppercase;">Photo du matériel</label>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <div id="photo-preview-container" style="width: 80px; height: 80px; border-radius: 12px; border: 2px dashed ${subtleBorder}; display: flex; align-items: center; justify-content: center; overflow: hidden; background: ${bg};">
+                                    ${item.photo_url ? `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : '📷'}
+                                </div>
+                                <button id="take-photo-btn" style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid ${subtleBorder}; background: ${inputBg}; color: ${textColor}; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                    <span>📸 Prendre / Choisir une photo</span>
+                                </button>
+                                <input type="file" id="photo-input" accept="image/*" capture="camera" style="display: none;">
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 8px; border-top: 1px solid ${subtleBorder}; padding-top: 16px;">
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #8E8E93; margin-bottom: 6px; text-transform: uppercase;">Nouvelle Quantité</label>
+                            <input type="number" id="new-quantity" value="${item.stock_reel || 0}" 
+                                style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid ${subtleBorder}; background: ${inputBg}; color: ${textColor}; font-size: 15px;">
+                        </div>
+
+                        <div>
+                            <label style="display: block; font-size: 12px; font-weight: 700; color: #8E8E93; margin-bottom: 6px; text-transform: uppercase;">Nouvel Emplacement</label>
+                            <select id="new-location-select" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid ${subtleBorder}; background: ${inputBg}; color: ${textColor}; font-size: 15px;">
+                                <option value="">-- Sélectionner un lieu --</option>
+                                ${locations.map(loc => `<option value="${loc}" ${loc === item.lieu_de_stockage ? 'selected' : ''}>${loc}</option>`).join('')}
+                                <option value="NEW_LOC">+ Autre emplacement...</option>
+                            </select>
+                            <input type="text" id="custom-location" placeholder="Saisir le nouveau lieu..." 
+                                style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid ${subtleBorder}; background: ${inputBg}; color: ${textColor}; font-size: 15px; margin-top: 8px; display: none;">
+                        </div>
+
+                        <button id="submit-request-btn" class="btn-primary" 
+                            style="width: 100%; height: 50px; border-radius: 12px; background: #5856D6; color: white; font-size: 15px; font-weight: 800; border: none; margin-top: 10px;">
+                            Soumettre toutes les modifications
+                        </button>
+                        
+                        <button class="btn-secondary" style="width: 100%; height: 44px; border-radius: 12px; background: ${inputBg}; color: ${textColor}; border: none; font-weight: 700;" 
+                            onclick="window.openMaterialDetailsModal('${id}')">Annuler</button>
+                    </div>
+                `;
+            } else {
+                window.openMaterialDetailsModal(id);
+            }
+
+            // Re-bind listeners for the new content
+            if (isEditMode) {
+                const locSelect = document.getElementById('new-location-select');
+                const customLocInput = document.getElementById('custom-location');
+                const photoInput = document.getElementById('photo-input');
+                const takePhotoBtn = document.getElementById('take-photo-btn');
+                const previewContainer = document.getElementById('photo-preview-container');
+                let selectedPhotoFile = null;
+
+                takePhotoBtn.onclick = () => photoInput.click();
+                photoInput.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        selectedPhotoFile = file;
+                        const reader = new FileReader();
+                        reader.onload = (re) => {
+                            previewContainer.innerHTML = `<img src="${re.target.result}" style="width: 100%; height: 100%; object-fit: cover;">`;
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                };
+
+                locSelect.addEventListener('change', () => {
+                    customLocInput.style.display = locSelect.value === 'NEW_LOC' ? 'block' : 'none';
+                });
+
+                document.getElementById('submit-request-btn').onclick = async () => {
+                    const newDesignation = document.getElementById('edit-designation').value.trim();
+                    const newReference = document.getElementById('edit-reference').value.trim();
+                    const newType = document.getElementById('edit-type').value;
+                    const newQty = parseFloat(document.getElementById('new-quantity').value);
+                    let newLoc = locSelect.value;
+                    if (newLoc === 'NEW_LOC') newLoc = customLocInput.value.trim();
+
+                    const extraFields = {};
+                    if (newDesignation !== item.designation) extraFields.new_designation = newDesignation;
+                    if (newReference !== item.reference_fournisseur) extraFields.new_reference_fournisseur = newReference;
+                    if (newType !== item.type) extraFields.new_type = newType;
+
+                    if (!selectedPhotoFile && Object.keys(extraFields).length === 0 && newQty === item.stock_reel && newLoc === item.lieu_de_stockage) {
+                        return alert("Aucune modification détectée.");
+                    }
+                    
+                    const btn = document.getElementById('submit-request-btn');
+                    btn.disabled = true;
+                    btn.innerText = "Traitement en cours...";
+
+                    try {
+                        // 1. Upload photo if selected
+                        if (selectedPhotoFile) {
+                            btn.innerText = "Upload photo...";
+                            const uploadRes = await api.uploadMaterialPhoto(id, selectedPhotoFile, true);
+                            extraFields.new_photo_url = uploadRes.key;
+                        }
+
+                        btn.innerText = "Envoi de la demande...";
+                        await api.submitMaterialStockRequest(id, newQty, newLoc, extraFields);
+                        alert("Demande de modification envoyée avec succès !");
+                        modal.remove();
+                    } catch (e) {
+                        alert("Erreur: " + e.message);
+                        btn.disabled = false;
+                        btn.innerText = "Soumettre toutes les modifications";
+                    }
+                };
+            }
+        };
+
+        editBtn.onclick = toggleEditMode;
+
+        const locSelect = document.getElementById('new-location-select');
+        const customLocInput = document.getElementById('custom-location');
+        locSelect.addEventListener('change', () => {
+            customLocInput.style.display = locSelect.value === 'NEW_LOC' ? 'block' : 'none';
+        });
+
+        document.getElementById('submit-request-btn').onclick = async () => {
+            const newQty = parseFloat(document.getElementById('new-quantity').value);
+            let newLoc = locSelect.value;
+            if (newLoc === 'NEW_LOC') newLoc = customLocInput.value.trim();
+
+            if (newQty === item.stock_reel && newLoc === item.lieu_de_stockage) {
+                return alert("Aucune modification détectée.");
+            }
+            if (!newLoc) return alert("Veuillez sélectionner un emplacement.");
+            
+            const btn = document.getElementById('submit-request-btn');
+            btn.disabled = true;
+            btn.innerText = "Envoi en cours...";
+
+            try {
+                await api.submitMaterialStockRequest(id, newQty, newLoc);
+                alert("Demande envoyée aux administrateurs !");
+                modal.remove();
+            } catch (e) {
+                alert("Erreur: " + e.message);
+                btn.disabled = false;
+                btn.innerText = "Faire une demande de modification";
+            }
+        };
+
+    } catch (e) {
+        document.getElementById('material-details-content').innerHTML = `<div style="color: red; text-align: center;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.loadMaterialHistory = async function (materialId, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const dk = document.documentElement.getAttribute('data-theme') === 'dark';
+    const textColor = dk ? '#FFFFFF' : '#1c1c1e';
+
+    try {
+        const logs = await api.getMaterialHistory(materialId);
+        if (!logs || logs.length === 0) {
+            container.innerHTML = `<div style="color: #8E8E93; font-size: 13px; text-align: center; padding: 10px;">Aucun historique disponible</div>`;
+            return;
+        }
+
+        container.innerHTML = logs.map(log => {
+            const date = new Date(log.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            let userName = 'Système';
+            if (log.profiles) {
+                userName = `${log.profiles.first_name || ''} ${log.profiles.last_name || ''}`.trim() || 'Utilisateur inconnu';
+            }
+            return `
+                <div style="padding: 12px; border-left: 3px solid #5856D6; background: rgba(88, 86, 214, 0.05); border-radius: 0 10px 10px 0;">
+                    <div style="font-size: 11px; color: #8E8E93; font-weight: 600;">${date} • ${userName}</div>
+                    <div style="font-size: 13px; color: ${textColor}; font-weight: 500; margin-top: 4px;">${log.details}</div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = `<div style="color: red; font-size: 12px;">Erreur historique: ${e.message}</div>`;
+    }
+};
+
+// Ouvre la fiche d'un matériel à partir de sa référence QR
+async function openMaterialByRef(ref) {
+    try {
+        const stock = await api.getMaterialStock();
+        const item = stock.find(i => i.qr_ref === ref);
+        if (!item) {
+            alert(`Matériel introuvable pour la référence : ${ref}`);
+            return;
+        }
+        await window.renderMobileMaterialTracking();
+        window.openMaterialDetailsModal(item.id);
+    } catch (e) {
+        alert('Erreur lors de la recherche du matériel : ' + e.message);
+    }
+}
+
+// Scanner QR via la caméra arrière
+window.openQrScanner = function () {
+    if (typeof jsQR === 'undefined') {
+        alert('Bibliothèque de scan non chargée.');
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999999;';
+    overlay.innerHTML = `
+        <video id="qr-video" style="width:100%;height:100%;object-fit:cover;" playsinline muted></video>
+        <canvas id="qr-canvas" style="display:none;"></canvas>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);width:240px;height:240px;border:3px solid #5856D6;border-radius:20px;box-shadow:0 0 0 9999px rgba(0,0,0,0.55);pointer-events:none;"></div>
+        <div style="position:absolute;top:calc(50% - 60px - 24px);left:50%;transform:translateX(-50%);color:white;font-size:15px;font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,0.8);white-space:nowrap;">Pointez vers un QR code</div>
+        <button id="qr-close-btn" style="position:absolute;bottom:50px;left:50%;transform:translateX(-50%);padding:14px 48px;background:#FF3B30;color:white;border:none;border-radius:16px;font-size:16px;font-weight:800;">Annuler</button>
+    `;
+    document.body.appendChild(overlay);
+
+    const video = document.getElementById('qr-video');
+    const canvas = document.getElementById('qr-canvas');
+    const ctx = canvas.getContext('2d');
+    let scanning = true;
+    let stream = null;
+
+    const stop = () => {
+        scanning = false;
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        overlay.remove();
+    };
+
+    document.getElementById('qr-close-btn').onclick = stop;
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(s => {
+            stream = s;
+            video.srcObject = s;
+            video.play();
+            requestAnimationFrame(tick);
+        })
+        .catch(err => {
+            stop();
+            alert('Impossible d\'accéder à la caméra : ' + err.message);
+        });
+
+    function tick() {
+        if (!scanning) return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+            if (code) {
+                stop();
+                const match = code.data.match(/[?&]ref=([^&]+)/);
+                if (match) {
+                    openMaterialByRef(decodeURIComponent(match[1]));
+                } else {
+                    alert('QR code non reconnu : ' + code.data);
+                }
+                return;
+            }
+        }
+        requestAnimationFrame(tick);
+    }
+};

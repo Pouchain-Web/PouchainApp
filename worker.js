@@ -12,6 +12,8 @@ export default {
         const url = new URL(request.url);
         const method = request.method;
 
+        console.log(`[REQUEST] ${method} ${url.pathname}`);
+
         // CORS Headers
         const corsHeaders = {
             "Access-Control-Allow-Origin": "*",
@@ -26,67 +28,238 @@ export default {
 
         // Safety check for R2 binding
         if (!env.MY_BUCKET) {
-            return new Response("Erreur de configuration: R2 Bucket (MY_BUCKET) non trouvé dans le Worker.", { 
-                status: 500, 
-                headers: { ...corsHeaders, "Content-Type": "text/plain" } 
+            return new Response("Erreur de configuration: R2 Bucket (MY_BUCKET) non trouvÃ© dans le Worker.", {
+                status: 500,
+                headers: { ...corsHeaders, "Content-Type": "text/plain" }
             });
         }
 
-        // 2. Security Check
-        // If you want "public" view for files, allow GET without secret.
         const user = await getUser(request, env);
+        const userRole = await getUserRole(user, env);
 
-        // Check Auth (Skip for basic GET if you want public links)
-        if (!url.pathname.startsWith('/get/')) {
+        // Check Auth : Allow public access ONLY for /get/ files and /update/check
+        const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check') || url.pathname.includes('/update/apk-check') || url.pathname.startsWith('/material');
+
+        // --- ROUTE: MATERIAL QR DEEP LINK (Public) ---
+        if (method === "GET" && url.pathname === '/material') {
+            const ref = url.searchParams.get('ref');
+            if (!ref) return new Response('Missing ref parameter', { status: 400, headers: corsHeaders });
+            
+            const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pouchain App - Matériel ${ref}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: white; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .card { background: rgba(28,28,30,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 40px; text-align: center; max-width: 400px; width: 100%; backdrop-filter: blur(20px); }
+        .icon { font-size: 64px; margin-bottom: 20px; }
+        h1 { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+        .ref { font-family: monospace; font-size: 20px; color: #5856D6; background: rgba(88,86,214,0.1); padding: 8px 16px; border-radius: 12px; display: inline-block; margin: 16px 0; font-weight: 700; border: 1px solid rgba(88,86,214,0.2); }
+        p { color: #8E8E93; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+        .btn { display: block; width: 100%; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 700; border: none; cursor: pointer; text-decoration: none; margin-bottom: 12px; transition: 0.2s; }
+        .btn-primary { background: #5856D6; color: white; }
+        .btn-secondary { background: rgba(255,255,255,0.05); color: white; border: 1px solid rgba(255,255,255,0.1); }
+        .spinner { border: 3px solid rgba(255,255,255,0.1); border-top-color: #5856D6; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">📦</div>
+        <h1>Pouchain App</h1>
+        <div class="ref">${ref}</div>
+        <p>Ouverture de la fiche matériel...</p>
+        <div class="spinner" id="spinner"></div>
+        <a href="pouchainapp://material?ref=${ref}" class="btn btn-primary" id="open-btn" style="display:none;">Ouvrir dans l'application</a>
+        <p id="fallback" style="display:none; color: #FF9500; font-size: 12px;">Si l'application ne s'ouvre pas, installez Pouchain App depuis le Play Store.</p>
+    </div>
+    <script>
+        // Try to open the app via custom scheme
+        const ref = '${ref}';
+        const appUrl = 'pouchainapp://material?ref=' + ref;
+        
+        // Try intent for Android
+        const intentUrl = 'intent://material?ref=' + ref + '#Intent;scheme=pouchainapp;package=com.pouchain.app;end';
+        
+        // Try custom scheme first
+        window.location.href = appUrl;
+        
+        // After 2 seconds, show manual button
+        setTimeout(() => {
+            document.getElementById('spinner').style.display = 'none';
+            document.getElementById('open-btn').style.display = 'block';
+            document.getElementById('fallback').style.display = 'block';
+        }, 2000);
+    </script>
+</body>
+</html>`;
+            return new Response(html, { headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
+        }
+
+        if (!isPublicPath) {
             if (!user) {
                 return new Response("Unauthorized", { status: 401, headers: corsHeaders });
             }
 
-            // Check Admin for /admin/ routes
+            // Visitor Protection: Block all mutations with custom message
+            if (method !== "GET" && userRole === 'visiteur') {
+                return new Response("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !", {
+                    status: 403,
+                    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" }
+                });
+            }
+
+            // Check Admin/Visitor for /admin/ routes
             if (url.pathname.startsWith('/admin/')) {
-                // EXCEPTION: allow GET on vehicles/logs/cards for non-admins to pick their car / see logs / select DKV
-                const isAdminRead = method === "GET" && (
-                    url.pathname.endsWith("/admin/vehicles") || 
+                // EXCEPTION: grant access to all authenticated users for "Cartes et Parc" and "Maint." apps
+                const isParcOrMaintPath =
+                    url.pathname.includes("/admin/machines") ||
+                    url.pathname.includes("/admin/machine-families") ||
+                    url.pathname.includes("/admin/buildings");
+
+                // EXCEPTION: allow GET on vehicles/logs/cards for non-admins
+                const isVehicleRead = method === "GET" && (
+                    url.pathname.endsWith("/admin/vehicles") ||
                     url.pathname.endsWith("/admin/vehicle/all-logs") ||
                     url.pathname.endsWith("/admin/dkv-cards") ||
-                    url.pathname.endsWith("/admin/toll-cards") ||
-                    url.pathname.endsWith("/admin/machines") ||
-                    url.pathname.endsWith("/admin/machines/logs")
+                    url.pathname.endsWith("/admin/toll-cards")
                 );
-                
-                if (!isAdminRead) {
-                    const admin = await isAdmin(user, env);
-                    if (!admin) {
-                        return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
-                    }
+
+                // EXCEPTION: allow all users to see material stock and submit requests
+                const isMaterialAllowed = (method === "GET" && url.pathname.includes("/admin/material/stock")) ||
+                                          (method === "POST" && url.pathname.endsWith("/admin/material/stock/requests"));
+
+                const isVisitorAllowed = method === "GET" && userRole === 'visiteur';
+
+                if (!isParcOrMaintPath && !isVehicleRead && !isMaterialAllowed && userRole !== 'admin' && !isVisitorAllowed) {
+                    return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
                 }
             }
         }
 
         try {
+            // --- ROUTE: CHECK FOR APK UPDATE ---
+            if (url.pathname.includes("/update/apk-check")) {
+                const currentVersion = url.searchParams.get('current_version') || "0.0";
+                const listing = await env.MY_BUCKET.list({ prefix: 'app_dist/' });
+                let latestVersion = "0.0";
+                let latestFile = null;
+
+                for (const obj of listing.objects) {
+                    const match = obj.key.match(/PouchainApp[Vv](\d+[\.\d]*)\.apk$/i);
+                    if (match) {
+                        const ver = match[1];
+                        if (compareVersions(ver, latestVersion) > 0) {
+                            latestVersion = ver;
+                            latestFile = obj;
+                        }
+                    }
+                }
+
+                const isNewer = compareVersions(latestVersion, currentVersion) > 0;
+                return new Response(JSON.stringify({
+                    updateAvailable: isNewer,
+                    newVersion: latestVersion,
+                    url: latestFile ? `${url.origin}/get/${latestFile.key}` : null
+                }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache" }
+                });
+            }
+
+            // --- ROUTE: CHECK FOR UPDATES (Auto-Detect zip files with version in name) ---
+            if (url.pathname.includes("/update/check")) {
+                const currentVersion = url.searchParams.get('current_version') || "0.0.0";
+
+                // Scan the WHOLE bucket (recursive search for safety)
+                const listing = await env.MY_BUCKET.list();
+                let latestVersion = "0.0.0";
+                let latestVersionFile = null;
+                let latestTimestamp = 0;
+
+                console.log(`[Updater] Scanning ${listing.objects.length} files...`);
+
+                for (const obj of listing.objects) {
+                    // Match files like V1.0.2.zip or v1.0.2.zip
+                    const match = obj.key.match(/[Vv](\d+\.\d+\.\d+)\.zip$/);
+                    if (match) {
+                        const ver = match[1];
+                        const uploadTime = new Date(obj.uploaded).getTime();
+
+                        const cmp = compareVersions(ver, latestVersion);
+
+                        // We take the HIGHEST version. If versions are equal, take the newest upload.
+                        if (cmp > 0 || (cmp === 0 && uploadTime > latestTimestamp)) {
+                            latestVersion = ver;
+                            latestTimestamp = uploadTime;
+                            latestVersionFile = obj;
+                            console.log(`[Updater] Higher candidate found: ${obj.key} (v${ver})`);
+                        }
+                    }
+                }
+
+                const isNewer = compareVersions(latestVersion, currentVersion) > 0;
+                console.log(`[Updater] Result: Last Version found: ${latestVersion}. Current App: ${currentVersion}. Update required? ${isNewer}`);
+
+                return new Response(JSON.stringify({
+                    updateAvailable: isNewer,
+                    newVersion: latestVersion,
+                    url: latestVersionFile ? `${url.origin}/get/${latestVersionFile.key}` : null,
+                    mandatory: true
+                }), {
+                    headers: {
+                        ...corsHeaders,
+                        "Content-Type": "application/json",
+                        "Cache-Control": "no-store, no-cache, must-revalidate"
+                    }
+                });
+            }
+
             // --- ROUTE: LIST FILES ---
             if (method === "GET" && url.pathname.endsWith("/list")) { // /list or /api/list
                 const userId = url.searchParams.get('userId');
+                const includeHidden = url.searchParams.get('includeHidden') === 'true';
 
-                // 1. List from R2
-                const listing = await env.MY_BUCKET.list();
-                // Hide internal folders from listing
-                let objects = listing.objects.filter(obj => 
-                    !obj.key.startsWith('material_requests/') && 
-                    !obj.key.startsWith('fleet/') &&
-                    !obj.key.startsWith('vehicles/') &&
-                    !obj.key.startsWith('archives/') &&
-                    !obj.key.startsWith('fullscreen_slides/') &&
-                    !obj.key.startsWith('buildings/') &&
-                    !obj.key.startsWith('machines/') &&
-                    !obj.key.startsWith('app_dist/')
-                );
+                // 1. List ALL from R2 (with pagination)
+                let objects = [];
+                let truncated = true;
+                let cursor = undefined;
+
+                while (truncated) {
+                    const listing = await env.MY_BUCKET.list({ cursor });
+                    objects.push(...listing.objects);
+                    truncated = listing.truncated;
+                    cursor = listing.cursor;
+                }
+
+                // Hide internal folders from listing UNLESS explicitly asked
+                if (!includeHidden) {
+                    objects = objects.filter(obj =>
+                        !obj.key.startsWith('material_requests/') &&
+                        !obj.key.startsWith('fleet/') &&
+                        !obj.key.startsWith('vehicles/') &&
+                        !obj.key.startsWith('archives/') &&
+                        !obj.key.startsWith('fullscreen_slides/') &&
+                        !obj.key.startsWith('buildings/') &&
+                        !obj.key.startsWith('machines/') &&
+                        !obj.key.startsWith('machines_photos/') &&
+                        !obj.key.startsWith('material_photos/') &&
+                        !obj.key.startsWith('material_requests_photos/') &&
+                        !obj.key.startsWith('autre/') &&
+                        !obj.key.startsWith('app_dist/') &&
+                        !obj.key.startsWith('app_updates/') &&
+                        !obj.key.endsWith('.json') &&
+                        !obj.key.startsWith('.meta_')
+                    );
+                }
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
                 // 2. Admin desktop (no userId param) bypasses access control and sees everything.
-                //    Mobile view always passes userId — access control is enforced for everyone there,
+                //    Mobile view always passes userId â€” access control is enforced for everyone there,
                 //    even if the caller is an admin.
                 const callerIsAdmin = !userId && user ? await isAdmin(user, env) : false;
 
@@ -256,7 +429,10 @@ export default {
 
                 const headers = new Headers(corsHeaders);
                 object.writeHttpMetadata(headers);
-                
+
+                // FORCE INLINE to prevent unwanted download prompts and allow direct viewing
+                headers.set("Content-Disposition", "inline");
+
                 // FORCE CONTENT TYPE if missing or generic to ensure browser rendering
                 const ext = key.split('.').pop().toLowerCase();
                 const mimeTypes = {
@@ -267,7 +443,8 @@ export default {
                     'webp': 'image/webp',
                     'pdf': 'application/pdf',
                     'svg': 'image/svg+xml',
-                    'apk': 'application/vnd.android.package-archive'
+                    'apk': 'application/vnd.android.package-archive',
+                    'zip': 'application/zip'
                 };
 
                 if (!headers.has("Content-Type") || headers.get("Content-Type") === "application/octet-stream") {
@@ -739,7 +916,7 @@ export default {
                 const startDate = searchParams.get('start_date');
                 const endDate = searchParams.get('end_date');
                 const dateParam = searchParams.get('date');
-                
+
                 const today = new Date().toISOString().split('T')[0];
 
                 let queryUrl = `${supabaseUrl}/rest/v1/tasks?select=*`;
@@ -754,7 +931,7 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!response.ok) return new Response(await response.text(), { status: response.status, headers: corsHeaders });
-                
+
                 let results = await response.json();
 
                 // FALLBACK: If 0 results in Supabase for a past week, search and parse R2 archives
@@ -771,7 +948,7 @@ export default {
                                 if (lines.length < 2) continue;
                                 const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, ''));
                                 const dateIdx = headers.indexOf('date');
-                                
+
                                 for (let i = 1; i < lines.length; i++) {
                                     if (!lines[i]) continue;
                                     const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
@@ -780,7 +957,7 @@ export default {
                                         const rowDate = cleanRow[dateIdx];
                                         if (rowDate >= startDate && rowDate <= (endDate || startDate)) {
                                             const task = {};
-                                            headers.forEach((h, idx) => { if(h) task[h] = cleanRow[idx]; });
+                                            headers.forEach((h, idx) => { if (h) task[h] = cleanRow[idx]; });
                                             results.push(task);
                                         }
                                     }
@@ -789,12 +966,12 @@ export default {
                             }
                         }
                     } catch (e) {
-                         console.error("Archive retrieval fallback failed", e);
+                        console.error("Archive retrieval fallback failed", e);
                     }
                 }
 
-                return new Response(JSON.stringify(results), { 
-                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                return new Response(JSON.stringify(results), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
                 });
             }
 
@@ -822,6 +999,20 @@ export default {
                     },
                     body: JSON.stringify(payload)
                 });
+
+                if (updateRes.ok && !id) {
+                    // NEW TASK ALERT
+                    try {
+                        const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1&select=auto_planning`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        const configData = await configRes.json();
+                        if (configData[0]?.auto_planning !== false) {
+                            await sendPushNotification(env, user_id, `📅 Nouvelle tâche : ${title} (${date})`);
+                        }
+                    } catch (e) { console.error("Auto notif planning failed", e); }
+                }
+
                 if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
                 return new Response(JSON.stringify({ message: "Task saved" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
@@ -848,14 +1039,33 @@ export default {
             if (method === "POST" && url.pathname.endsWith("/admin/tasks/archive")) {
                 try {
                     const result = await performArchiving(env);
-                    return new Response(JSON.stringify({ 
-                        message: result.count > 0 ? "Archived successfuly into yearly files." : "Nothing to archive.", 
+                    return new Response(JSON.stringify({
+                        message: result.count > 0 ? "Archived successfuly into yearly files." : "Nothing to archive.",
                         count: result.count,
                         details: result.details
                     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
                 } catch (e) {
                     return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
                 }
+            }
+
+            // --- ROUTE: PLANNING (Closed Days) ---
+            if (method === "GET" && url.pathname.endsWith("/planning/closed-days")) {
+                let closedDays = [];
+                try {
+                    const obj = await env.MY_BUCKET.get("planning_closed_days.json");
+                    if (obj) {
+                        closedDays = await obj.json();
+                    }
+                } catch (e) { }
+                return new Response(JSON.stringify(closedDays), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname.endsWith("/admin/planning/closed-days")) {
+                const body = await request.json();
+                if (!Array.isArray(body)) return new Response("Invalid array", { status: 400, headers: corsHeaders });
+                await env.MY_BUCKET.put("planning_closed_days.json", JSON.stringify(body), { httpMetadata: { contentType: "application/json" } });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: PLANNING (User Mobile) ---
@@ -961,6 +1171,45 @@ export default {
                 return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            if (method === "GET" && url.pathname === "/admin/material/requests/archived") {
+                const list = await env.MY_BUCKET.list({ prefix: "archives/material_requests/" });
+                return new Response(JSON.stringify(list.objects), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/admin/material/requests/archived") {
+                const { id, key } = await request.json();
+                const obj = await env.MY_BUCKET.get(key);
+                if (obj) {
+                    let csv = await obj.text();
+                    const lines = csv.split('\n');
+                    const newCsv = lines.filter(l => !l.startsWith('"' + id + '"')).join('\n');
+                    await env.MY_BUCKET.put(key, newCsv, { httpMetadata: { contentType: "text/csv" } });
+                }
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "GET" && url.pathname === "/admin/material/config") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/material/config") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const body = await request.json();
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1`, {
+                    method: "PATCH",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             if (method === "PATCH" && url.pathname === "/admin/material/requests") {
                 const body = await request.json();
                 const { id, status, adminName } = body;
@@ -968,70 +1217,71 @@ export default {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                if (status === 'received' || status === 'refused') {
-                    // Archive immediately
-                    const fetchRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}&select=*,profiles(first_name,last_name)`, {
+                // 1. Fetch current data
+                const fetchRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}&select=*,profiles(first_name,last_name)`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                const data = await fetchRes.json();
+                const r = data[0];
+                if (!r) return new Response("Not found", { status: 404, headers: corsHeaders });
+
+                // 2. Notify User First
+                try {
+                    const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1&select=auto_material`, {
                         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                     });
-                    if (fetchRes.ok) {
-                        const data = await fetchRes.json();
-                        if (data && data[0]) {
-                            const r = data[0];
-                            const year = new Date().getFullYear();
-                            const key = `archives/material_requests/${year}.csv`;
-                            
-                            let csvContent = "";
-                            try {
-                                const obj = await env.MY_BUCKET.get(key);
-                                if (obj) csvContent = await obj.text();
-                            } catch(e) {}
-
-                            if (!csvContent) {
-                                csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path,handled_by\n";
-                            }
-
-                            const escapeCsv = (val) => {
-                                if (val === null || val === undefined) return '""';
-                                return `"${String(val).replace(/"/g, '""')}"`;
-                            };
-
-                            const line = [
-                                escapeCsv(r.id),
-                                escapeCsv(r.user_id),
-                                escapeCsv(r.profiles ? `${r.profiles.first_name} ${r.profiles.last_name}` : 'Inconnu'),
-                                escapeCsv(r.category),
-                                escapeCsv(r.material_name),
-                                escapeCsv(r.quantity),
-                                escapeCsv(r.comment),
-                                escapeCsv(status),
-                                escapeCsv(r.created_at),
-                                escapeCsv(r.image_path),
-                                escapeCsv(adminName || 'Admin')
-                            ].join(',');
-
-                            csvContent += line + "\n";
-
-                            await env.MY_BUCKET.put(key, csvContent, { httpMetadata: { contentType: "text/csv" } });
-
-                            // Now delete from Supabase
-                            await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}`, {
-                                method: "DELETE",
-                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                            });
-
-                            return new Response(JSON.stringify({ success: true, archived: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-                        }
+                    const configData = await configRes.json();
+                    if (configData[0]?.auto_material !== false) {
+                        let label = status;
+                        if (status === 'confirmed') label = 'Confirmée ✅';
+                        if (status === 'ordered') label = 'Commandée 📦';
+                        if (status === 'refused') label = 'Refusée ❌';
+                        if (status === 'received') label = 'Reçue ✅';
+                        await sendPushNotification(env, r.user_id, `🧰 Matériel : Votre demande pour "${r.material_name}" est maintenant ${label}.`);
                     }
-                }
+                } catch (e) { console.error("Auto material notif failed", e); }
 
-                // Default: just update status
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}`, {
-                    method: "PATCH",
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ status, updated_at: new Date().toISOString() })
-                });
-                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                // 3. Action based on status
+                if (status === 'received' || status === 'refused') {
+                    const year = new Date().getFullYear();
+                    const key = `archives/material_requests/${year}.csv`;
+                    let csvContent = "";
+                    try {
+                        const obj = await env.MY_BUCKET.get(key);
+                        if (obj) csvContent = await obj.text();
+                    } catch (e) { }
+                    if (!csvContent) {
+                        csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path,handled_by\n";
+                    }
+                    const escapeCsv = (val) => {
+                        if (val === null || val === undefined) return '""';
+                        let str = String(val).replace(/"/g, '""');
+                        str = str.replace(/\r?\n/g, '  '); // Replace newlines with indent/spaces
+                        return '"' + str + '"';
+                    };
+                    const line = [
+                        escapeCsv(r.id), escapeCsv(r.user_id),
+                        escapeCsv(r.profiles ? (r.profiles.first_name + " " + r.profiles.last_name) : 'Inconnu'),
+                        escapeCsv(r.category), escapeCsv(r.material_name), escapeCsv(r.quantity), escapeCsv(r.comment),
+                        escapeCsv(status), escapeCsv(r.created_at), escapeCsv(r.image_path), escapeCsv(adminName || 'Admin')
+                    ].join(',');
+                    csvContent += line + "\n";
+                    await env.MY_BUCKET.put(key, csvContent, { httpMetadata: { contentType: "text/csv" } });
+
+                    await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    return new Response(JSON.stringify({ success: true, archived: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                } else {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}`, {
+                        method: "PATCH",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ status, updated_at: new Date().toISOString() })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
             }
 
             if (method === "DELETE" && url.pathname === "/admin/material/requests") {
@@ -1041,7 +1291,6 @@ export default {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                // 1. Fetch image path before delete
                 const checkRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}&select=image_path`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -1050,13 +1299,10 @@ export default {
                     if (data && data[0] && data[0].image_path) {
                         try {
                             await env.MY_BUCKET.delete(data[0].image_path);
-                        } catch (e) {
-                            console.error("R2 Delete Error:", e);
-                        }
+                        } catch (e) { console.error("R2 Delete Error:", e); }
                     }
                 }
 
-                // 2. Delete from Supabase
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}`, {
                     method: "DELETE",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
@@ -1065,56 +1311,157 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
-            // --- ROUTE: MATERIAL CATEGORIES (Public for Authenticated Users) ---
-            if (method === "GET" && url.pathname === "/material/categories") {
+            // --- ROUTE: MATERIAL STOCK (Admin) ---
+            if (url.pathname.endsWith("/admin/material/stock")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?select=*&order=designation.asc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST" || method === "PATCH") {
+                    const body = await request.json();
+                    const { id, ...data } = body;
+
+                    let query = `${supabaseUrl}/rest/v1/material_stock`;
+                    let fetchMethod = "POST";
+                    let headers = {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "return=representation"
+                    };
+
+                    if (id || method === "PATCH") {
+                        if (id) {
+                            query += `?id=eq.${id}`;
+                            fetchMethod = "PATCH";
+                        } else {
+                            return new Response("Missing ID for update", { status: 400, headers: corsHeaders });
+                        }
+                    } else {
+                        // Auto-generate qr_ref for new materials
+                        const marketCode = '01'; // ATS
+                        const existingRes = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=like.PCH${marketCode}*&select=qr_ref&order=qr_ref.desc&limit=1`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        let nextNum = 1;
+                        if (existingRes.ok) {
+                            const existing = await existingRes.json();
+                            if (existing.length > 0 && existing[0].qr_ref) {
+                                nextNum = parseInt(existing[0].qr_ref.slice(-4)) + 1;
+                            }
+                        }
+                        data.qr_ref = `PCH${marketCode}${String(nextNum).padStart(4, '0')}`;
+                        headers["Prefer"] += ",resolution=merge-duplicates";
+                    }
+
+                    const res = await fetch(query, {
+                        method: fetchMethod,
+                        headers: headers,
+                        body: JSON.stringify(data)
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    const saved = await res.json();
+                    return new Response(JSON.stringify(saved[0] || saved), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const body = await request.json();
+                    const { id } = body;
+                    if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
             }
 
-            // --- ROUTE: MATERIAL CATEGORIES (Admin - Same as above but prefixed) ---
-            if (method === "GET" && url.pathname === "/admin/material/categories") {
+            // --- ROUTE: BATCH GENERATE QR REFS ---
+            if (url.pathname.endsWith("/admin/material/stock/generate-refs") && method === "POST") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                });
-                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            }
 
-            if (method === "POST" && url.pathname.endsWith("/admin/material/categories")) {
-                const body = await request.json();
-                const { name } = body;
-                if (!name) return new Response("Missing name", { status: 400, headers: corsHeaders });
-                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
-                const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories`, {
+                // Call the Supabase RPC function to assign all refs in one go
+                const res = await fetch(`${supabaseUrl}/rest/v1/rpc/assign_qr_refs`, {
                     method: "POST",
-                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ name })
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ market_code: "01" })
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                const result = await res.json();
+                return new Response(JSON.stringify({ success: true, count: result, message: `${result} références générées` }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
             }
 
-            if (method === "DELETE" && url.pathname.endsWith("/admin/material/categories")) {
-                const body = await request.json();
-                const { id } = body;
-                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+            // --- ROUTE: MATERIAL LOOKUP BY QR REF ---
+            if (url.pathname.endsWith("/admin/material/stock/lookup") && method === "GET") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?id=eq.${id}`, {
-                    method: "DELETE",
+                const ref = url.searchParams.get('ref');
+                if (!ref) return new Response("Missing ref", { status: 400, headers: corsHeaders });
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?qr_ref=eq.${ref}&select=*`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
-                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                const data = await res.json();
+                if (data.length === 0) return new Response("Material not found", { status: 404, headers: corsHeaders });
+                return new Response(JSON.stringify(data[0]), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
+
+            // --- ROUTE: MATERIAL CATEGORIES ---
+            if (url.pathname.includes("/material/categories")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?select=*&order=name.asc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST" && url.pathname.includes("/admin/")) {
+                    const body = await request.json();
+                    const { name } = body;
+                    if (!name) return new Response("Missing name", { status: 400, headers: corsHeaders });
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_categories`, {
+                        method: "POST",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ name })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE" && url.pathname.includes("/admin/")) {
+                    const body = await request.json();
+                    const { id } = body;
+                    if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_categories?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
+
 
             // --- ROUTE: VEHICLES (Admin) ---
             if (method === "GET" && url.pathname.endsWith("/admin/vehicles")) {
@@ -1131,16 +1478,16 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 const { id, ...vehicleData } = body;
                 const upsertBody = { ...vehicleData, updated_at: new Date().toISOString() };
                 if (id) upsertBody.id = id;
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicles`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "return=representation,resolution=merge-duplicates"
                     },
@@ -1161,7 +1508,7 @@ export default {
                 // 1. Try to delete photo from R2 if exists
                 try {
                     await env.MY_BUCKET.delete(`vehicles/photos/${id}.png`);
-                } catch(e) {}
+                } catch (e) { }
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
                     method: "DELETE",
@@ -1237,7 +1584,7 @@ export default {
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 let query = `${supabaseUrl}/rest/v1/vehicle_logs?select=*,profiles(first_name,last_name)&order=created_at.desc&limit=100`;
                 if (vehicle_id) query += `&vehicle_id=eq.${vehicle_id}`;
-                
+
                 const res = await fetch(query, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -1281,7 +1628,7 @@ export default {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 // 1. Fetch user assigned vehicle
                 const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=eq.${user.id}&select=*`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
@@ -1309,10 +1656,10 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
-                const { id, next_maintenance_date, next_maintenance_km, toll_card, dkv_card } = body;
+
+                const { id, next_maintenance_date, next_maintenance_km, toll_card, dkv_card, last_ct_date } = body;
                 if (!id) return new Response("Missing vehicle ID", { status: 400, headers: corsHeaders });
-                
+
                 // Verify user owns it
                 const checkRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}&assigned_user_id=eq.${user.id}`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
@@ -1324,8 +1671,9 @@ export default {
                 const updateRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
                     method: "PATCH",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         next_maintenance_date: next_maintenance_date || null,
+                        last_ct_date: last_ct_date || null,
                         next_maintenance_km: next_maintenance_km ? parseInt(next_maintenance_km) : null,
                         toll_card: toll_card || null,
                         dkv_card: dkv_card || null,
@@ -1341,17 +1689,17 @@ export default {
                 const body = await request.json();
                 const { vehicle_id, type, value, description, image_path, event_date } = body;
                 if (!vehicle_id || !type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
-                
+
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
                 // 1. Insert Log
-                const insertObj = { 
-                    vehicle_id, 
-                    user_id: user.id, 
-                    type, 
-                    value, 
-                    description, 
+                const insertObj = {
+                    vehicle_id,
+                    user_id: user.id,
+                    type,
+                    value,
+                    description,
                     image_path,
                     created_at: event_date || new Date().toISOString()
                 };
@@ -1372,17 +1720,17 @@ export default {
                         body: JSON.stringify({ last_mileage: parseInt(mileageVal), updated_at: new Date().toISOString() })
                     });
 
-                    // Si c'est un plein, on ajoute un point de kilométrage séparé pour la courbe de suivi
+                    // Si c'est un plein, on ajoute un point de kilomÃ©trage sÃ©parÃ© pour la courbe de suivi
                     if (type === 'fuel') {
                         await fetch(`${supabaseUrl}/rest/v1/vehicle_logs`, {
                             method: "POST",
                             headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ 
-                                vehicle_id, 
-                                user_id: user.id, 
-                                type: 'mileage', 
-                                value: mileageVal, 
-                                description: `Relevé auto (Plein)`, 
+                            body: JSON.stringify({
+                                vehicle_id,
+                                user_id: user.id,
+                                type: 'mileage',
+                                value: mileageVal,
+                                description: `RelevÃ© auto (Plein)`,
                                 created_at: event_date || new Date().toISOString()
                             })
                         });
@@ -1408,16 +1756,16 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 const { id, card_number, description } = body;
                 const upsertBody = { card_number, description, updated_at: new Date().toISOString() };
                 if (id) upsertBody.id = id;
 
                 const res = await fetch(`${supabaseUrl}/rest/v1/dkv_cards`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "resolution=merge-duplicates"
                     },
@@ -1502,9 +1850,9 @@ export default {
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_request_config`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "resolution=merge-duplicates"
                     },
@@ -1543,44 +1891,120 @@ export default {
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
 
-                // 2. Add Planning Alerts
+                // 2. Alert Configured Admins
                 try {
+                    const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=first_name,last_name`, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } });
+                    const p = await profileRes.json();
+                    const senderName = p[0] ? `${p[0].first_name} ${p[0].last_name}` : 'Un salariÃ©';
+
                     const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1&select=alert_users`, {
                         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                     });
                     if (configRes.ok) {
                         const configData = await configRes.json();
                         const alertUsers = configData[0]?.alert_users || [];
-                        const today = new Date().toISOString().split('T')[0];
-                        
-                        // Insert tasks for each alert user
-                        for (const targetUserId of alertUsers) {
-                            // Check for existing pending task today
-                            const existingRes = await fetch(`${supabaseUrl}/rest/v1/tasks?user_id=eq.${targetUserId}&date=eq.${today}&title=eq.${encodeURIComponent("Check besoin de matériel")}&done=eq.false&select=id`, {
-                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
-                            });
-                            const existingData = await existingRes.json();
-                            if (existingData.length > 0) continue; // Skip if there's already a pending one
-
-                            await fetch(`${supabaseUrl}/rest/v1/tasks`, {
-                                method: "POST",
-                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                    user_id: targetUserId,
-                                    title: "Check besoin de matériel",
-                                    date: today,
-                                    start_time: "00:00:00",
-                                    end_time: "00:00:00",
-                                    done: "false"
-                                })
-                            });
+                        if (alertUsers.length > 0) {
+                            await sendPushNotification(env, alertUsers, `🚨 Nouvelle demande : ${senderName} demande "${material_name}".`);
                         }
                     }
-                } catch (e) {
-                    console.error("Alert Planning Error:", e);
-                }
+
+                    // --- NEW: Email Notification via Resend ---
+                    const origin = new URL(request.url).origin;
+                    const imageUrl = image_path ? `${origin}/get/${image_path}` : null;
+                    const imageHtml = imageUrl ? `<div style="margin-top:20px;"><img src="${imageUrl}" style="max-width:100%; border-radius:12px; border: 1px solid #eee;" alt="Photo matériel"></div>` : '';
+
+                    const emailBody = `
+                        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2c3e50; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                            <div style="background: #2da140; padding: 30px; text-align: center;">
+                                <h1 style="color: white; margin: 0; font-size: 24px;">🛠️ Nouvelle Demande Matériel</h1>
+                            </div>
+                            <div style="padding: 30px; background: #ffffff;">
+                                <p style="font-size: 16px; margin-top: 0;">Une nouvelle demande vient d'être déposée sur l'application.</p>
+                                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                                    <p style="margin: 5px 0;"><strong>👤 Salarié :</strong> ${senderName}</p>
+                                    <p style="margin: 5px 0;"><strong>📦 Matériel :</strong> ${material_name}</p>
+                                    <p style="margin: 5px 0;"><strong>📁 Catégorie :</strong> ${category || 'Non spécifiée'}</p>
+                                    <p style="margin: 5px 0;"><strong>💬 Commentaire :</strong> ${comment || 'Aucun commentaire'}</p>
+                                </div>
+                                ${imageHtml}
+                                <div style="text-align: center; margin-top: 30px;">
+                                    <a href="${origin}/dashboard.html" style="background: #2da140; color: white; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Ouvrir le Dashboard</a>
+                                </div>
+                            </div>
+                            <div style="background: #f1f3f5; padding: 15px; text-align: center; font-size: 12px; color: #7f8c8d;">
+                                Ceci est un message automatique envoyé par PouchainApp.
+                            </div>
+                        </div>
+                    `;
+
+                    await sendResendEmail(env, "pprayez@pouchain.fr", `🛠️ Demande Matériel : ${material_name} (${senderName})`, emailBody);
+
+                } catch (e) { console.error("Notification alert failed", e); }
 
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MATERIAL PHOTO UPLOAD / DELETE (Admin/Mobile) ---
+            if (url.pathname === "/admin/material/photo") {
+                if (method === "POST") {
+                    const formData = await request.formData();
+                    const file = formData.get("file");
+                    const materialId = formData.get("materialId");
+                    const isRequest = formData.get("isRequest") === "true";
+
+                    if (!file || !materialId) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+
+                    const key = isRequest 
+                        ? `material_requests_photos/${materialId}_${Date.now()}.png`
+                        : `material_photos/${materialId}.png`;
+
+                    await env.MY_BUCKET.put(key, file, {
+                        httpMetadata: { contentType: file.type || "image/png" }
+                    });
+
+                    return new Response(JSON.stringify({ success: true, key }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const key = url.searchParams.get("key");
+                    if (!key) return new Response("Missing key", { status: 400, headers: corsHeaders });
+                    
+                    await env.MY_BUCKET.delete(key);
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
+            // --- ROUTE: MACHINE FAMILIES ---
+            if (method === "GET" && url.pathname === "/admin/machine-families") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_families?select=*&order=name.asc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machine-families") {
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_families`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/admin/machine-families") {
+                const id = url.searchParams.get('id');
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/machine_families?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                return new Response(JSON.stringify({ success: res.ok }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: MACHINES (Admin/Map) ---
@@ -1599,14 +2023,27 @@ export default {
                 const body = await request.json();
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const { id, ...machineData } = body;
-                const upsertBody = { ...machineData, updated_at: new Date().toISOString() };
+                const {
+                    id, machine_id, name, type, description, latitude, longitude,
+                    last_maintenance_date, next_maintenance_date,
+                    family, serial_number, periodicity, status_active,
+                    vgp_status, vgp_observations, assigned_to,
+                    commissioning_date, last_control_type, expiration_date, comments
+                } = body;
+                const upsertBody = {
+                    machine_id, name, type, description, latitude, longitude,
+                    last_maintenance_date, next_maintenance_date,
+                    family, serial_number, periodicity, status_active,
+                    vgp_status, vgp_observations, assigned_to,
+                    commissioning_date, last_control_type, expiration_date, comments,
+                    updated_at: new Date().toISOString()
+                };
                 if (id) upsertBody.id = id;
                 const res = await fetch(`${supabaseUrl}/rest/v1/machines?on_conflict=machine_id`, {
                     method: "POST",
-                    headers: { 
-                        "apikey": serviceKey, 
-                        "Authorization": `Bearer ${serviceKey}`, 
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
                         "Content-Type": "application/json",
                         "Prefer": "return=representation,resolution=merge-duplicates"
                     },
@@ -1622,12 +2059,83 @@ export default {
                 if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Delete Photo from R2 if exists
+                try {
+                    await env.MY_BUCKET.delete(`machines_photos/${id}.png`);
+                } catch (e) { }
+
                 const res = await fetch(`${supabaseUrl}/rest/v1/machines?id=eq.${id}`, {
                     method: "DELETE",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MACHINE MAINTENANCE HISTORY ---
+            if (method === "GET" && url.pathname === "/admin/machines/maintenance") {
+                const machineId = url.searchParams.get('machine_id');
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                let query = `${supabaseUrl}/rest/v1/material_maintenance_history?select=*,profiles(first_name,last_name)&order=date.desc&limit=50`;
+                if (machineId) query += `&machine_id=eq.${machineId}`;
+
+                const res = await fetch(query, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/machines/maintenance") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { machine_id, details, next_maintenance_date, vgp_status, vgp_observations, last_control_type } = body;
+                if (!machine_id) return new Response("Missing machine_id", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Insert History Entry
+                const histRes = await fetch(`${supabaseUrl}/rest/v1/material_maintenance_history`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        machine_id, user_id: user.id, details, next_maintenance_date,
+                        date: new Date().toISOString()
+                    })
+                });
+                if (!histRes.ok) return new Response(await histRes.text(), { status: histRes.status, headers: corsHeaders });
+
+                // 2. Update Machine Status & Dates
+                const machUpdate = {
+                    last_maintenance_date: new Date().toISOString().split('T')[0],
+                    next_maintenance_date: next_maintenance_date,
+                    vgp_status: vgp_status || null,
+                    vgp_observations: vgp_observations || null,
+                    last_control_type: last_control_type || 'Maintenance'
+                };
+                await fetch(`${supabaseUrl}/rest/v1/machines?id=eq.${machine_id}`, {
+                    method: "PATCH",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify(machUpdate)
+                });
+
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: MACHINE PHOTO UPLOAD (Admin) ---
+            if (method === "POST" && url.pathname === "/admin/machines/photo") {
+                const formData = await request.formData();
+                const file = formData.get("file");
+                const machineId = formData.get("machineId");
+
+                if (!file || !machineId) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+
+                const key = `machines_photos/${machineId}.png`;
+                await env.MY_BUCKET.put(key, file, {
+                    httpMetadata: { contentType: file.type || "image/png" }
+                });
+
+                return new Response(JSON.stringify({ success: true, key }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: MACHINE LOGS ---
@@ -1664,7 +2172,7 @@ export default {
             if (method === "GET" && url.pathname === "/admin/buildings") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 const res = await fetch(`${supabaseUrl}/rest/v1/buildings?select=*&order=name.asc`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -1708,10 +2216,10 @@ export default {
                 const machine_db_id = url.searchParams.get('machine_db_id');
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                
+
                 let query = `${supabaseUrl}/rest/v1/machine_logs?select=*,profiles(first_name,last_name)&order=created_at.desc&limit=50`;
                 if (machine_db_id) query += `&machine_db_id=eq.${machine_db_id}`;
-                
+
                 const res = await fetch(query, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
@@ -1723,7 +2231,7 @@ export default {
                 const body = await request.json();
                 const { machine_db_id, action_type, description } = body;
                 if (!machine_db_id || !action_type) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
-                
+
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -1732,10 +2240,10 @@ export default {
                 const res = await fetch(`${supabaseUrl}/rest/v1/machine_logs`, {
                     method: "POST",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
-                        machine_db_id, 
-                        user_id: user.id, 
-                        action_type, 
+                    body: JSON.stringify({
+                        machine_db_id,
+                        user_id: user.id,
+                        action_type,
                         description,
                         created_at: new Date().toISOString()
                     })
@@ -1744,49 +2252,734 @@ export default {
                 return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // --- MATERIAL STOCK ---
+            if (url.pathname === "/admin/material/stock") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?select=*&order=designation.asc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST" || method === "PATCH") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock`, {
+                        method: "POST",
+                        headers: { 
+                            "apikey": serviceKey, 
+                            "Authorization": `Bearer ${serviceKey}`, 
+                            "Content-Type": "application/json",
+                            "Prefer": "resolution=merge-duplicates"
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${body.id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
+            // --- MATERIAL LOGS ---
+            if (url.pathname === "/admin/material/stock/logs") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const matId = url.searchParams.get("material_id");
+                    let query = `${supabaseUrl}/rest/v1/material_stock_logs?select=*,profiles(first_name,last_name)&order=created_at.desc`;
+                    if (matId) query += `&material_id=eq.${matId}`;
+                    
+                    const res = await fetch(query, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    
+                    if (!res.ok) {
+                        const err = await res.text();
+                        return new Response(err, { status: res.status, headers: corsHeaders });
+                    }
+                    
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_logs`, {
+                        method: "POST",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            material_id: body.material_id,
+                            user_id: user.id,
+                            action: body.action,
+                            details: body.details,
+                            created_at: new Date().toISOString()
+                        })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const id = url.searchParams.get("id");
+                    if (!id) return new Response("Missing ID", { status: 400, headers: corsHeaders });
+                    
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_logs?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
+            // --- MATERIAL STOCK REQUESTS (Approvals) ---
+            if (url.pathname === "/admin/material/stock/requests") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?status=eq.pending&select=*,new_photo_url,material_stock(designation,stock_reel,lieu_de_stockage,reference_fournisseur,type),profiles(first_name,last_name)&order=created_at.desc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests`, {
+                        method: "POST",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            material_id: body.material_id,
+                            user_id: user.id,
+                            new_stock_reel: body.new_stock_reel,
+                            new_lieu_de_stockage: body.new_lieu_de_stockage,
+                            new_designation: body.new_designation || null,
+                            new_reference_fournisseur: body.new_reference_fournisseur || null,
+                            new_type: body.new_type || null,
+                            new_photo_url: body.new_photo_url || null,
+                            status: 'pending',
+                            created_at: new Date().toISOString()
+                        })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "PATCH") {
+                    const body = await request.json(); // { id, status }
+                    
+                    if (body.status === 'approved') {
+                        // 1. Get the request details
+                        const reqRes = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?id=eq.${body.id}&select=*`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        const reqData = await reqRes.json();
+                        if (reqData && reqData.length > 0) {
+                            const req = reqData[0];
+                            // 2. Update the material stock
+                            const materialUpdate = {
+                                stock_reel: req.new_stock_reel,
+                                lieu_de_stockage: req.new_lieu_de_stockage
+                            };
+                            if (req.new_designation) materialUpdate.designation = req.new_designation;
+                            if (req.new_reference_fournisseur) materialUpdate.reference_fournisseur = req.new_reference_fournisseur;
+                            if (req.new_type) materialUpdate.type = req.new_type;
+                            if (req.new_photo_url) materialUpdate.photo_url = req.new_photo_url;
+
+                            await fetch(`${supabaseUrl}/rest/v1/material_stock?id=eq.${req.material_id}`, {
+                                method: "PATCH",
+                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                                body: JSON.stringify(materialUpdate)
+                            });
+                            // 3. Add a log
+                            await fetch(`${supabaseUrl}/rest/v1/material_stock_logs`, {
+                                method: "POST",
+                                headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    material_id: req.material_id,
+                                    user_id: user.id, // Admin who approved
+                                    action: 'Approbation',
+                                    details: `Demande approuvée : Stock -> ${req.new_stock_reel}, Lieu -> ${req.new_lieu_de_stockage}`,
+                                    created_at: new Date().toISOString()
+                                })
+                            });
+                        }
+                    }
+
+                    const res = await fetch(`${supabaseUrl}/rest/v1/material_stock_requests?id=eq.${body.id}`, {
+                        method: "PATCH",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ status: body.status })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+            }
+
+            // --- ROUTE: NOTIFICATIONS SUBSCRIBE ---
+            if (method === "POST" && url.pathname.endsWith("/notifications/subscribe")) {
+                const body = await request.json();
+                const { subscription } = body;
+                if (!subscription) return new Response("Missing subscription", { status: 400, headers: corsHeaders });
+                if (!user) {
+                    console.error("Subscribe Error: User not found in request (Auth error)");
+                    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                }
+
+                console.log(`Attempting subscribe for user: ${user.id}`);
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (!serviceKey) {
+                    console.error("Subscribe Error: SUPABASE_SERVICE_KEY is missing in env");
+                    return new Response("Server Configuration Error: Missing Service Key", { status: 500, headers: corsHeaders });
+                }
+
+                // 1. SUPPRIMER LES ANCIENS JETONS pour cet utilisateur
+                // On ne garde que le plus rÃ©cent (celui qui arrive maintenant)
+                await fetch(`${supabaseUrl}/rest/v1/user_push_subscriptions?user_id=eq.${user.id}`, {
+                    method: 'DELETE',
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                // 2. Enregistrer le nouveau jeton
+                const res = await fetch(`${supabaseUrl}/rest/v1/user_push_subscriptions`, {
+                    method: "POST",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates"
+                    },
+                    body: JSON.stringify({
+                        user_id: user.id,
+                        subscription: subscription.toJSON ? subscription.toJSON() : subscription
+                    })
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    // Si c'est une erreur de doublon (23505), on considÃ¨re que c'est un succÃ¨s (dÃ©jÃ  enregistrÃ©)
+                    if (errorText.includes("23505") || errorText.includes("already exists")) {
+                        console.log(`User ${user.id} already subscribed with this token.`);
+                        return new Response(JSON.stringify({ success: true, message: "DÃ©jÃ  enregistrÃ©" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                    }
+                    console.error(`Supabase Subscribe Error (Table: user_push_subscriptions):`, errorText);
+                    return new Response(`Database Error: ${errorText}`, { status: res.status, headers: corsHeaders });
+                }
+
+                console.log(`Push Subscription success for user ${user.id}`);
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: ADMIN SEND NOTIFICATION ---
+            if (method === "POST" && url.pathname.endsWith("/admin/notifications/send")) {
+                const body = await request.json();
+                const { userId, userIds, message } = body; // Support either single userId or array userIds
+                if (!message) return new Response("Missing message", { status: 400, headers: corsHeaders });
+
+                // check admin
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                // Multi-target logic
+                let result;
+                if (userIds && Array.isArray(userIds)) {
+                    // Send to specific list
+                    result = await sendPushNotification(env, userIds, message);
+                } else {
+                    // Send to single or all
+                    result = await sendPushNotification(env, userId === 'all' ? null : userId, message);
+                }
+
+                return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: NOTIFICATION CONFIG ---
+            if (method === "GET" && url.pathname.endsWith("/admin/notifications/config")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1&select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                const data = await res.json();
+                const config = data[0] || {};
+                return new Response(JSON.stringify({
+                    admin_alert_ids: config.alert_users || [],
+                    auto_planning: config.auto_planning !== false,
+                    auto_mileage: config.auto_mileage !== false,
+                    auto_deadline: config.auto_deadline !== false,
+                    auto_material: config.auto_material !== false,
+                    maint_alert_days: config.maint_alert_days || 30,
+                    maint_alert_userIds: config.maint_alert_userIds || [],
+                    maint_alert_reps: config.maint_alert_reps || 1
+                }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname.endsWith("/admin/notifications/config")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const upsertBody = { id: 1, updated_at: new Date().toISOString() };
+                if (body.admin_alert_ids) upsertBody.alert_users = body.admin_alert_ids;
+                if (body.auto_planning !== undefined) upsertBody.auto_planning = body.auto_planning;
+                if (body.auto_mileage !== undefined) upsertBody.auto_mileage = body.auto_mileage;
+                if (body.auto_deadline !== undefined) upsertBody.auto_deadline = body.auto_deadline;
+                if (body.auto_material !== undefined) upsertBody.auto_material = body.auto_material;
+                if (body.maint_alert_days !== undefined) upsertBody.maint_alert_days = body.maint_alert_days;
+                if (body.maint_alert_userIds !== undefined) upsertBody.maint_alert_userIds = body.maint_alert_userIds;
+                if (body.maint_alert_reps !== undefined) upsertBody.maint_alert_reps = body.maint_alert_reps;
+
+                await fetch(`${supabaseUrl}/rest/v1/material_request_config`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+                    body: JSON.stringify(upsertBody)
+                });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: ADMIN LIST SUBSCRIBERS ---
+            if (method === "GET" && url.pathname.endsWith("/admin/notifications/subscribers")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // Return all subscriptions
+                const res = await fetch(`${supabaseUrl}/rest/v1/user_push_subscriptions?select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                const data = await res.json();
+
+                return new Response(JSON.stringify(data), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: ADMIN NOTIFICATION SCHEDULES ---
+            if (method === "GET" && url.pathname.endsWith("/admin/notifications/schedules")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/notification_schedules?select=*&order=created_at.desc`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname.endsWith("/admin/notifications/schedules")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const body = await request.json();
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/notification_schedules`, {
+                    method: "POST",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates,return=representation"
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname.endsWith("/admin/notifications/schedules")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const id = url.searchParams.get('id');
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/notification_schedules?id=eq.${id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            // --- ROUTE: ADMIN SYNC ALL USERS (Mock for now, returns all profiles) ---
+            if (method === "POST" && url.pathname.endsWith("/admin/notifications/sync")) {
+                // On renvoie juste le signal de succÃ¨s pour rafraÃ®chir l'interface
+                return new Response(JSON.stringify({ success: true, message: "Synchronisation effectuÃ©e" }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            // --- ROUTE: FRITERIE ORDERS (User Mobile) ---
+            if (method === "GET" && url.pathname === "/friterie/order") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?user_id=eq.${user.id}&select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "POST" && url.pathname === "/friterie/order") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { item_name, category, details, sauce } = body;
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders`, {
+                    method: "POST",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: user.id, item_name, category, details, sauce })
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/friterie/order") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { id } = body;
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?id=eq.${id}&user_id=eq.${user.id}`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "GET" && url.pathname === "/friterie/all-orders") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                // 1. Fetch Orders
+                const ordersRes = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!ordersRes.ok) return new Response(await ordersRes.text(), { status: ordersRes.status, headers: corsHeaders });
+                const orders = await ordersRes.json();
+
+                // 2. Fetch Profiles for names
+                const profilesRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,first_name,last_name`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                const profiles = profilesRes.ok ? await profilesRes.json() : [];
+
+                // 3. Merge
+                const enriched = orders.map(o => {
+                    const p = profiles.find(p => p.id === o.user_id);
+                    return { ...o, profiles: p || null };
+                });
+
+                return new Response(JSON.stringify(enriched), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "GET" && url.pathname === "/admin/friterie/orders") {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?select=*,profiles(first_name,last_name)`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
+            if (method === "DELETE" && url.pathname === "/admin/friterie/orders") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const res = await fetch(`${supabaseUrl}/rest/v1/friterie_orders?id=neq.-1`, {
+                    method: "DELETE",
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true, message: "Toutes les commandes ont été effacées." }), {
+                    headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            if (method === "POST" && url.pathname === "/admin/material/requests/remind") {
+                const result = await sendMaterialReminders(env);
+                return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // 404
             return new Response("Not Found", { status: 404, headers: corsHeaders });
-
         } catch (err) {
             return new Response(`Error: ${err.message}`, { status: 500, headers: corsHeaders });
         }
     },
 
-    // Déclencheur CRON planifié pour ping Supabase et garder le projet actif (évite la pause après 1 semaine d'inactivité)
+    // DÃ©clencheur CRON planifiÃ© pour ping Supabase et garder le projet actif (Ã©vite la pause aprÃ¨s 1 semaine d'inactivitÃ©)
     async scheduled(event, env, ctx) {
         const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
         const serviceKey = env.SUPABASE_SERVICE_KEY;
 
         if (serviceKey) {
             try {
-                // Requête simple pour maintenir l'activité de la base de données
+                // 1. Keep-alive Supabase
                 const res = await fetch(`${supabaseUrl}/rest/v1/profiles?limit=1`, {
-                    headers: {
-                        "apikey": serviceKey,
-                        "Authorization": `Bearer ${serviceKey}`
-                    }
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
+                if (res.ok) console.log("Ping Supabase keep-alive réussi.");
 
-                if (res.ok) {
-                    console.log("Ping Supabase keep-alive réussi.");
-                } else {
-                    console.error("Ping Supabase keep-alive échoué:", res.status, await res.text());
-                }
+                // 2. Load Config
+                const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1&select=*`, {
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                });
+                const configData = await configRes.json();
+                const globalConfig = configData[0] || {};
 
-                // 2. Weekly Archive Cleanup (Runs every time, but only Monday carries work)
-                // Assuming CRON is set for Monday morning.
-                const day = new Date().getDay();
-                if (day === 1) { // Monday
-                    console.log("Démarrage de l'archivage hebdomadaire automatique...");
-                    const resArchive = await performArchiving(env);
-                    console.log(`Archivage auto terminé : ${resArchive.count} tâches traitées.`);
-                }
+                const now = new Date();
+
+                // Ultra-robust Paris Time calculation
+                const parisParts = new Intl.DateTimeFormat('en-GB', {
+                    timeZone: 'Europe/Paris',
+                    year: 'numeric', month: 'numeric', day: 'numeric',
+                    hour: 'numeric', minute: 'numeric', second: 'numeric',
+                    hour12: false
+                }).formatToParts(now);
+
+                const getP = (t) => parseInt(parisParts.find(p => p.type === t).value);
+                const hour = getP('hour');
+                const min = getP('minute');
+                const dayOfMonth = getP('day');
+                const month = getP('month');
+                const year = getP('year');
+                
+                // For day of week, use a separate reliable formatter
+                const dayStr = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(now);
+                const daysMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+                const day = daysMap[dayStr];
+
+                const todayStr = `${year}-${String(month).padStart(2, '0')}-${String(dayOfMonth).padStart(2, '0')}`;
+
+                // AUTOMATIONS
+
+                // A. Rappels Hebdomadaires (Vendredi après-midi 14:00)
+                try {
+                    if (day === 5 && hour === 14 && min === 0) {
+                        const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=*`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        const vehicles = await vRes.json();
+
+                        if (Array.isArray(vehicles)) {
+                            // 1. Rappel Kilométrage
+                            if (globalConfig.auto_mileage !== false) {
+                                const userIds = [...new Set(vehicles.map(v => v.assigned_user_id))];
+                                if (userIds.length > 0) {
+                                    await sendPushNotification(env, userIds, "🚗 Rappel : Veuillez mettre à jour le kilométrage de votre véhicule dans l'application.");
+                                }
+                            }
+
+                            // 2. Rappel Contrôle Technique
+                            for (const v of vehicles) {
+                                if (v.last_ct_date && v.assigned_user_id) {
+                                    const lastCt = new Date(v.last_ct_date);
+                                    const nextCt = new Date(lastCt);
+                                    nextCt.setMonth(nextCt.getMonth() + (v.ct_interval_months || 12));
+
+                                    const diffDays = Math.ceil((nextCt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+                                    if (diffDays <= 60) {
+                                        let msg = "";
+                                        if (diffDays <= 0) {
+                                            msg = `🚨 Contrôle Technique DÉPASSÉ pour votre véhicule (${v.plate_number}) ! Veuillez le faire rapidement.`;
+                                        } else {
+                                            msg = `🔔 Rappel : Le contrôle technique de votre véhicule (${v.plate_number}) arrive à échéance le ${nextCt.toLocaleDateString('fr-FR')} (dans ${diffDays} jours).`;
+                                        }
+                                        await sendPushNotification(env, v.assigned_user_id, msg);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("Weekly reminders error:", e); }
+
+                // C. Friterie Notification (Mercredi 11:00)
+                try {
+                    if (day === 3 && hour === 11 && min === 0) {
+                        const subRes = await fetch(`${supabaseUrl}/rest/v1/user_push_subscriptions?select=user_id`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        if (subRes.ok) {
+                            const subsData = await subRes.json();
+                            if (Array.isArray(subsData)) {
+                                const userIds = [...new Set(subsData.map(s => s.user_id))];
+                                if (userIds.length > 0) {
+                                    await sendPushNotification(env, userIds, "🍟 Fait ta commande ma belle frite belge !");
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("Friterie notification error:", e); }
+
+                // D. Friterie Cleanup (Mercredi matin 03:00)
+                try {
+                    if (day === 3 && hour === 3 && min === 0) {
+                        await fetch(`${supabaseUrl}/rest/v1/friterie_orders?id=neq.-1`, {
+                            method: "DELETE",
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        console.log("Friterie orders cleared.");
+                    }
+                } catch (e) { console.error("Friterie cleanup error:", e); }
+
+                // E. Échéances Véhicules (Chaque matin à 08:30)
+                try {
+                    if (hour === 8 && min === 30 && globalConfig.auto_deadline !== false) {
+                        const vRes = await fetch(`${supabaseUrl}/rest/v1/vehicles?assigned_user_id=is.not.null&select=*`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        const vehicles = await vRes.json();
+                        if (Array.isArray(vehicles)) {
+                            for (const v of vehicles) {
+                                let alertTriggered = false;
+                                let reason = "";
+                                if (v.next_maintenance_km && v.last_mileage && (v.next_maintenance_km - v.last_mileage < 500)) {
+                                    alertTriggered = true;
+                                    reason = `Entretien proche (${v.next_maintenance_km} km)`;
+                                }
+                                if (v.next_maintenance_date) {
+                                    const deadline = new Date(v.next_maintenance_date);
+                                    const diffDays = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                                    if (diffDays < 30 && diffDays > -1) {
+                                        alertTriggered = true;
+                                        reason = `Entretien/CT proche (${new Date(v.next_maintenance_date).toLocaleDateString()})`;
+                                    }
+                                }
+                                if (alertTriggered) {
+                                    await sendPushNotification(env, v.assigned_user_id, `🚗 Échéance véhicule (${v.plate_number || 'Véhicule'}) : ${reason}.`);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("Vehicle deadlines error:", e); }
+
+                // F. Maintenance Matériel (Chaque matin à 08:30)
+                try {
+                    if (hour === 8 && min === 30 && globalConfig.maint_alert_userIds && globalConfig.maint_alert_userIds.length > 0) {
+                        const mRes = await fetch(`${supabaseUrl}/rest/v1/machines?next_maintenance_date=is.not.null&select=*`, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        if (mRes.ok) {
+                            const machines = await mRes.json();
+                            if (Array.isArray(machines)) {
+                                const alertDays = globalConfig.maint_alert_days || 30;
+                                for (const m of machines) {
+                                    const deadline = new Date(m.next_maintenance_date);
+                                    const diffDays = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                                    if (diffDays <= alertDays && diffDays > 0) {
+                                        await sendPushNotification(env, globalConfig.maint_alert_userIds, `🛠️ Maintenance : Le matériel "${m.name || m.machine_id}" arrive à échéance le ${new Date(m.next_maintenance_date).toLocaleDateString()}.`);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("Material maintenance error:", e); }
+
+                // G. General Scheduled Notifications
+                try {
+                    const scheduleRes = await fetch(`${supabaseUrl}/rest/v1/notification_schedules?active=eq.true&select=*`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (scheduleRes.ok) {
+                        const schedules = await scheduleRes.json();
+                        if (Array.isArray(schedules)) {
+                            for (const s of schedules) {
+                                let shouldSend = false;
+                                const targetHour = s.hour !== null && s.hour !== undefined ? Number(s.hour) : 0;
+                                const targetMin = s.minute !== null && s.minute !== undefined ? Number(s.minute) : 0;
+                                
+                                if (hour !== targetHour) continue;
+                                if (min !== targetMin) continue;
+                                
+                                const lastSentStr = s.last_sent_at ? s.last_sent_at.split('T')[0] : null;
+                                if (lastSentStr === todayStr) continue;
+
+                                switch (s.frequency) {
+                                    case 'daily': shouldSend = true; break;
+                                    case 'weekly': if (day === Number(s.day_of_week)) shouldSend = true; break;
+                                    case 'monthly': if (dayOfMonth === Number(s.day_of_month)) shouldSend = true; break;
+                                    case 'yearly': if (month === Number(s.month) && dayOfMonth === Number(s.day_of_month)) shouldSend = true; break;
+                                }
+
+                                if (shouldSend) {
+                                    let targetIds = null;
+                                    if (s.target_type === 'specific') {
+                                        targetIds = s.target_user_ids || (s.user_id ? [s.user_id] : null);
+                                    }
+                                    const result = await sendPushNotification(env, targetIds, s.message, s.app_url);
+                                    if (result.success) {
+                                        await fetch(`${supabaseUrl}/rest/v1/notification_schedules?id=eq.${s.id}`, {
+                                            method: "PATCH",
+                                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+                                            body: JSON.stringify({ last_sent_at: now.toISOString() })
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { console.error("General schedules error:", e); }
+
+                // I. Rappel Demandes Matériel (Lundi matin 09:00)
+                try {
+                    if (day === 1 && hour === 9 && min === 0) {
+                        await sendMaterialReminders(env);
+                    }
+                } catch (e) { console.error("Material reminder error:", e); }
+
+                // H. Archivage Hebdo (Lundi 08:00)
+                try {
+                    if (day === 1 && hour === 8 && min === 0) {
+                        await performArchiving(env);
+                    }
+                } catch (e) { console.error("Archiving error:", e); }
 
             } catch (err) {
-                console.error("Erreur dans le handler scheduled:", err);
+                console.error("Scheduled global error:", err);
             }
-        } else {
-            console.error("Aucune clé SUPABASE_SERVICE_KEY trouvée.");
         }
     }
 };
@@ -1831,9 +3024,9 @@ async function performArchiving(env) {
     const results = [];
 
     for (const year in tasksByYear) {
-        const archiveKey = `archives/planning/Planning de l'année ${year} CSV Format.csv`;
+        const archiveKey = `archives/planning/Planning de l'annÃ©e ${year} CSV Format.csv`;
         let existingContent = "";
-        
+
         // Check if file exists to append
         const existingObj = await env.MY_BUCKET.get(archiveKey);
         if (existingObj) {
@@ -1881,16 +3074,296 @@ async function getUser(request, env) {
     return await response.json();
 }
 
+async function getUserRole(user, env) {
+    if (!user) return null;
+    try {
+        const res = await fetch(`${env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co"}/rest/v1/profiles?id=eq.${user.id}&select=role`, {
+            headers: {
+                "apikey": env.SUPABASE_SERVICE_KEY,
+                "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`
+            }
+        });
+        if (!res.ok) return 'user';
+        const data = await res.json();
+        return data.length > 0 ? data[0].role : 'user';
+    } catch (e) {
+        console.error("getUserRole Error:", e);
+        return 'user';
+    }
+}
+
 async function isAdmin(user, env) {
-    if (!user) return false;
-    // Verify against profiles table
-    const res = await fetch(`${env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co"}/rest/v1/profiles?id=eq.${user.id}&select=role`, {
-        headers: {
-            "apikey": env.SUPABASE_SERVICE_KEY,
-            "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`
+    const role = await getUserRole(user, env);
+    return role === 'admin';
+}
+
+/**
+ * Helper to send Web Push (VAPID) or Native Push (FCM).
+ */
+async function sendPushNotification(env, userId, message, appUrl = null) {
+    const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+    const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+    let query = `${supabaseUrl}/rest/v1/user_push_subscriptions?select=subscription`;
+    if (userId) {
+        if (Array.isArray(userId) && userId.length > 0) {
+            query += `&user_id=in.(${userId.join(',')})`;
+        } else if (typeof userId === 'string') {
+            query += `&user_id=eq.${userId}`;
         }
+    }
+    query += `&order=created_at.desc`;
+
+    const res = await fetch(query, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
     });
-    if (!res.ok) return false;
+
+    if (!res.ok) return { success: false, error: await res.text() };
+    const rawSubs = await res.json();
+    if (rawSubs.length === 0) return { success: true, count: 0, message: "Aucun abonné trouvé" };
+
+    // Formatage et parsing des abonnements
+    const subs = rawSubs.map(s => {
+        let subData = s.subscription;
+        if (typeof subData === 'string' && subData.trim().startsWith('{')) {
+            try { subData = JSON.parse(subData); } catch (e) { }
+        }
+        return subData;
+    }).filter(Boolean);
+
+    let count = 0;
+    let errors = [];
+
+    // Pre-fetch FCM Token if there are Capacitor subscriptions
+    let fcmAccessToken = null;
+    let sa = null;
+    const hasCapacitor = subs.some(s => s.type === 'capacitor' || s.token);
+    if (hasCapacitor) {
+        try {
+            sa = typeof env.FIREBASE_SERVICE_ACCOUNT === 'string' ? JSON.parse(env.FIREBASE_SERVICE_ACCOUNT) : env.FIREBASE_SERVICE_ACCOUNT;
+            fcmAccessToken = await getGCPAccessToken(sa);
+        } catch (e) {
+            console.error("FCM Auth Error:", e);
+            errors.push("Auth Firebase échouée : " + e.message);
+        }
+    }
+
+    const payload = {
+        title: "Pouchain App",
+        body: message,
+        data: {
+            message: message,
+            click_action: "FCM_PLUGIN_ACTIVITY",
+            url: appUrl || ""
+        }
+    };
+
+    const seenTokens = new Set();
+    for (const s of subs) {
+        try {
+            const token = s.token || (s.type === 'capacitor' ? s.token : null);
+            if (!token || seenTokens.has(token)) continue;
+            seenTokens.add(token);
+
+            if (token) {
+                if (!fcmAccessToken) continue;
+
+                const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${fcmAccessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: {
+                            token: token,
+                            notification: { title: payload.title, body: payload.body },
+                            data: {
+                                ...payload.data,
+                                android_channel_id: "pouchain_notifications"
+                            },
+                            android: {
+                                priority: "high",
+                                notification: {
+                                    channel_id: "pouchain_notifications",
+                                    sound: "default",
+                                    click_action: "FCM_PLUGIN_ACTIVITY"
+                                }
+                            }
+                        }
+                    })
+                });
+                if (fcmRes.ok) count++;
+            }
+        } catch (err) {
+            // Silently skip failed individual tokens
+        }
+    }
+
+    return {
+        success: count > 0,
+        count,
+        total: subs.length,
+        details: count > 0 ? "Notification(s) envoyée(s) avec succès." : "Aucun appareil réceptif trouvé."
+    };
+}
+
+/**
+ * Google Auth Helper for Cloudflare Workers
+ * Signs a JWT to get an access token for FCM v1 API.
+ */
+async function getGCPAccessToken(serviceAccountJson) {
+    if (!serviceAccountJson) throw new Error("FIREBASE_SERVICE_ACCOUNT missing");
+    const sa = typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson;
+
+    const now = Math.floor(Date.now() / 1000);
+    const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+    const claim = btoa(JSON.stringify({
+        iss: sa.client_email,
+        scope: "https://www.googleapis.com/auth/cloud-platform",
+        aud: sa.token_uri,
+        exp: now + 3600,
+        iat: now
+    }));
+
+    const decodeRSAPrivateKey = (pem) => {
+        // Find the actual base64 content between the headers
+        const pemContents = pem
+            .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+            .replace(/-----END PRIVATE KEY-----/g, "")
+            .replace(/\s/g, ""); // Remove ALL spaces, tabs, newlines
+
+        const binary = atob(pemContents);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            array[i] = binary.charCodeAt(i);
+        }
+        return array.buffer;
+    };
+
+    const key = await crypto.subtle.importKey(
+        "pkcs8",
+        decodeRSAPrivateKey(sa.private_key),
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        false,
+        ["sign"]
+    );
+
+    const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${header}.${claim}`));
+    const jwt = `${header}.${claim}.${btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\//g, "_").replace(/\+/g, "-").replace(/=/g, "")}`;
+
+    const res = await fetch(sa.token_uri, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+    });
+
     const data = await res.json();
-    return data.length > 0 && data[0].role === 'admin';
+    if (!res.ok) throw new Error(data.error_description || data.error);
+    return data.access_token;
+}
+
+/**
+ * Find and notify admins about material requests older than 7 days
+ */
+async function sendMaterialReminders(env) {
+    const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+    const serviceKey = env.SUPABASE_SERVICE_KEY;
+    if (!serviceKey) return { success: false, message: "Missing service key" };
+
+    // 1. Fetch Config to get alert_users
+    const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1`, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+    const configs = await configRes.json();
+    const config = configs[0];
+    if (!config || !config.alert_users || config.alert_users.length === 0) {
+        return { success: false, message: "No alert users configured" };
+    }
+
+    // 2. Fetch Pending Requests older than 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const dateStr = sevenDaysAgo.toISOString();
+
+    const requestsRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?status=eq.requested&created_at=lt.${dateStr}`, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+    const requests = await requestsRes.json();
+    if (!Array.isArray(requests) || requests.length === 0) {
+        return { success: true, count: 0, message: "No old pending requests" };
+    }
+
+    // 3. Fetch Alert User Profiles for names
+    const usersRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=in.(${config.alert_users.join(',')})&select=id,first_name`, {
+        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+    });
+    const profiles = await usersRes.json();
+
+    // 4. Send personalized notifications
+    let totalSent = 0;
+    for (const p of profiles) {
+        const count = requests.length;
+        const name = p.first_name || 'Admin';
+        const message = count === 1
+            ? `Bonjour ${name}, une demande de matériel est en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez cette demande de votre collaborateur.`
+            : `Bonjour ${name}, ${count} demandes de matériel sont en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez ces demandes de vos collaborateurs.`;
+
+        const result = await sendPushNotification(env, [p.id], message);
+        if (result && result.success) totalSent++;
+    }
+
+    return { success: true, count: requests.length, notified: totalSent };
+}
+
+/**
+ * Send email via Resend API
+ */
+async function sendResendEmail(env, to, subject, html) {
+    const apiKey = env.RESEND_API_KEY;
+    if (!apiKey) {
+        console.error("RESEND_API_KEY missing in environment variables.");
+        return { error: "API Key missing" };
+    }
+    try {
+        const res = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                from: "onboarding@resend.dev",
+                to: [to],
+                subject: subject,
+                html: html
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            console.error("Resend API Error:", data);
+            return { error: data };
+        }
+        console.log("Resend email sent successfully:", data);
+        return data;
+    } catch (e) {
+        console.error("Resend Fetch Error:", e);
+        return { error: e.message };
+    }
+}
+
+
+
+
+function compareVersions(v1, v2) {
+    const a = v1.split('.').map(Number);
+    const b = v2.split('.').map(Number);
+    // On compare segment par segment jusqu'au plus long
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const valA = a[i] || 0;
+        const valB = b[i] || 0;
+        if (valA > valB) return 1;
+        if (valA < valB) return -1;
+    }
+    return 0;
 }
