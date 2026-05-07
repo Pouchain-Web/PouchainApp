@@ -173,7 +173,7 @@ export const api = {
         return users.filter(u => u.role !== 'visiteur');
     },
 
-    async createUser(email, password, role, firstName, lastName) {
+    async createUser(email, password, role, secteur, firstName, lastName) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'POST',
@@ -181,13 +181,13 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ email, password, role, firstName, lastName })
+            body: JSON.stringify({ email, password, role, secteur, firstName, lastName })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
-    async inviteUser(email, role, redirectTo, firstName, lastName) {
+    async inviteUser(email, role, secteur, redirectTo, firstName, lastName) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/invite`, {
             method: 'POST',
@@ -195,7 +195,7 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ email, role, redirectTo, firstName, lastName })
+            body: JSON.stringify({ email, role, secteur, redirectTo, firstName, lastName })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -257,7 +257,7 @@ export const api = {
         return await response.json();
     },
 
-    async updateUserProfile(id, firstName, lastName) {
+    async updateUserProfile(id, firstName, lastName, secteur) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/profile`, {
             method: 'PUT',
@@ -265,7 +265,7 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, firstName, lastName })
+            body: JSON.stringify({ id, firstName, lastName, secteur })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -1173,6 +1173,17 @@ export const api = {
         const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs?id=${id}`, {
             method: 'DELETE',
             headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async setFolderSectors(folder, sectors) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/folders/sectors`, {
+            method: 'POST',
+            headers: { ...await getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder, sectors })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

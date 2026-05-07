@@ -36,6 +36,32 @@ export default {
 
         const user = await getUser(request, env);
         const userRole = await getUserRole(user, env);
+        const userSecteur = await getUserSecteur(user, env);
+
+        // Security: empêche un utilisateur de modifier un dossier auquel son secteur n'a pas accès.
+        // Basé sur les métadonnées .meta_sectors_ stockées dans R2 (extensible à tout nouveau secteur).
+        if (userSecteur && userSecteur !== 'Tout' && ["PUT", "DELETE", "POST"].includes(method)) {
+            try {
+                const clonedRequest = request.clone();
+                const body = await clonedRequest.json().catch(() => ({}));
+                const targetKey = body.key || body.oldKey || body.oldPrefix || body.path;
+
+                if (targetKey) {
+                    const allowedRoutes = ['/admin/notifications/send', '/admin/notifications/config', '/admin/notifications/schedules', '/admin/material/requests/remind', '/admin/folders/sectors'];
+                    if (!allowedRoutes.some(r => url.pathname.endsWith(r))) {
+                        const targetFolder = targetKey.split('/')[0];
+                        if (targetFolder) {
+                            const folderSectors = await getFolderSectorRestriction(targetFolder, env);
+                            if (folderSectors && !folderSectors.includes(userSecteur)) {
+                                return new Response("Forbidden: Sector not allowed to access this folder", { status: 403, headers: corsHeaders });
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Si parsing JSON échoue (ex: multipart upload), on laisse passer
+            }
+        }
 
         // Check Auth : Allow public access ONLY for /get/ files and /update/check
         const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check') || url.pathname.includes('/update/apk-check') || url.pathname.startsWith('/material');
@@ -253,6 +279,26 @@ export default {
                         !obj.key.endsWith('.json') &&
                         !obj.key.startsWith('.meta_')
                     );
+
+                    // Filtrage par secteur basé sur les métadonnées .meta_sectors_ de chaque dossier.
+                    // Pas de .meta_sectors_ = accessible à tous. Extensible à tout nouveau secteur.
+                    if (userSecteur && userSecteur !== 'Tout') {
+                        const folderSectors = {};
+                        objects.forEach(obj => {
+                            const parts = obj.key.split('/');
+                            if (parts.length > 1 && parts[1].startsWith('.meta_sectors_')) {
+                                const sectors = parts[1].replace('.meta_sectors_', '').split(',').filter(Boolean);
+                                folderSectors[parts[0]] = sectors;
+                            }
+                        });
+                        objects = objects.filter(obj => {
+                            const folder = obj.key.split('/')[0];
+                            const sectors = folderSectors[folder];
+                            if (!sectors) return true; // pas de restriction
+                            return sectors.includes(userSecteur);
+                        });
+                    }
+                    // Pour 'Tout', aucun filtre — tous les dossiers sont visibles.
                 }
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
@@ -574,6 +620,31 @@ export default {
 
 
 
+            // --- ROUTE: FOLDER SECTOR ACCESS MANAGEMENT ---
+            // POST /admin/folders/sectors  { folder, sectors: ['AIA','HT'] | [] }
+            // sectors vide = accès à tous. Extensible : ajouter un secteur côté frontend suffit.
+            if (method === "POST" && url.pathname.endsWith("/admin/folders/sectors")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const body = await request.json();
+                const { folder, sectors } = body;
+                if (!folder) return new Response("Missing folder", { status: 400, headers: corsHeaders });
+
+                // Supprimer l'ancien fichier .meta_sectors_ s'il existe
+                const existing = await env.MY_BUCKET.list({ prefix: `${folder}/.meta_sectors_` });
+                for (const obj of (existing.objects || [])) {
+                    await env.MY_BUCKET.delete(obj.key);
+                }
+
+                // Créer le nouveau fichier si la restriction n'est pas vide
+                if (sectors && sectors.length > 0) {
+                    await env.MY_BUCKET.put(`${folder}/.meta_sectors_${sectors.join(',')}`, '');
+                }
+
+                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             // --- ROUTE: ADMIN USER MANAGEMENT ---
             // THESE ROUTES REQUIRE SUPABASE_SERVICE_KEY env var
 
@@ -620,6 +691,7 @@ export default {
                         email: u.email,
                         created_at: u.created_at,
                         role: profile ? profile.role : 'user',
+                        secteur: profile ? profile.secteur : 'Tout',
                         first_name: profile ? profile.first_name : null,
                         last_name: profile ? profile.last_name : null,
                         color: profile ? profile.color : '#2da140'
@@ -632,7 +704,7 @@ export default {
             // 2. Create User (POST /admin/users)
             if (method === "POST" && url.pathname.endsWith("/admin/users")) {
                 const body = await request.json();
-                const { email, password, role, firstName, lastName } = body;
+                const { email, password, role, secteur, firstName, lastName } = body;
 
                 if (!email || !password) return new Response("Missing email or password", { status: 400, headers: corsHeaders });
 
@@ -672,6 +744,7 @@ export default {
                     body: JSON.stringify({
                         id: userId,
                         role: role || 'user',
+                        secteur: secteur || 'Tout',
                         first_name: firstName || null,
                         last_name: lastName || null
                     })
@@ -689,7 +762,7 @@ export default {
             // 2b. Invite User (POST /admin/users/invite)
             if (method === "POST" && url.pathname.endsWith("/admin/users/invite")) {
                 const body = await request.json();
-                const { email, role, redirectTo, firstName, lastName } = body;
+                const { email, role, secteur, redirectTo, firstName, lastName } = body;
 
                 if (!email) return new Response("Missing email", { status: 400, headers: corsHeaders });
 
@@ -728,6 +801,7 @@ export default {
                     body: JSON.stringify({
                         id: userId,
                         role: role || 'user',
+                        secteur: secteur || 'Tout',
                         first_name: firstName || null,
                         last_name: lastName || null
                     })
@@ -822,8 +896,8 @@ export default {
             // 2e. Update User Profile Name (PUT /admin/users/profile)
             if (method === "PUT" && url.pathname.endsWith("/admin/users/profile")) {
                 const body = await request.json();
-                const { id, firstName, lastName } = body;
-                if (!id) return new Response("Missing aid", { status: 400, headers: corsHeaders });
+                const { id, firstName, lastName, secteur } = body;
+                if (!id) return new Response("Missing id", { status: 400, headers: corsHeaders });
 
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
@@ -837,7 +911,11 @@ export default {
                         "Content-Type": "application/json",
                         "Prefer": "return=minimal"
                     },
-                    body: JSON.stringify({ first_name: firstName || null, last_name: lastName || null })
+                    body: JSON.stringify({ 
+                    first_name: firstName || null, 
+                    last_name: lastName || null,
+                    secteur: secteur || 'Tout'
+                })
                 });
 
                 if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
@@ -1095,6 +1173,34 @@ export default {
                 return new Response(await response.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            if (method === "POST" && url.pathname === "/tasks") {
+                if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+                const body = await request.json();
+                const { title, date, start_time, end_time, done } = body;
+                if (!title || !date) {
+                    return new Response("Missing required fields", { status: 400, headers: corsHeaders });
+                }
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                const payload = { user_id: user.id, title, date, start_time: start_time || '00:00:00', end_time: end_time || '00:00:00', done: done || 'false' };
+
+                const updateRes = await fetch(`${supabaseUrl}/rest/v1/tasks`, {
+                    method: "POST",
+                    headers: {
+                        "apikey": serviceKey,
+                        "Authorization": `Bearer ${serviceKey}`,
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!updateRes.ok) return new Response(await updateRes.text(), { status: updateRes.status, headers: corsHeaders });
+                return new Response(JSON.stringify({ success: true, message: "Task saved" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
+
             if (method === "PATCH" && url.pathname === "/tasks") {
                 if (!user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
                 const body = await request.json();
@@ -1164,7 +1270,12 @@ export default {
             if (method === "GET" && url.pathname === "/admin/material/requests") {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/material_requests?select=*,profiles(first_name,last_name)&order=created_at.desc`, {
+                
+                // On utilise la nouvelle colonne 'secteur' pour filtrer proprement
+                // Le filtre par secteur est appliqué côté frontend via profiles.secteur
+                let query = `${supabaseUrl}/rest/v1/material_requests?select=*,profiles(first_name,last_name,secteur)&order=created_at.desc`;
+
+                const res = await fetch(query, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
@@ -1172,7 +1283,11 @@ export default {
             }
 
             if (method === "GET" && url.pathname === "/admin/material/requests/archived") {
-                const list = await env.MY_BUCKET.list({ prefix: "archives/material_requests/" });
+                const prefix = (userSecteur && userSecteur !== 'Tout') ? `archives/${userSecteur}/material_requests/` : "archives/material_requests/";
+                const list = await env.MY_BUCKET.list({ prefix });
+                
+                // If Tout, we might want to also include HT-Part or other subfolders, 
+                // but let's stick to the main prefix for now.
                 return new Response(JSON.stringify(list.objects), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
@@ -1244,7 +1359,8 @@ export default {
                 // 3. Action based on status
                 if (status === 'received' || status === 'refused') {
                     const year = new Date().getFullYear();
-                    const key = `archives/material_requests/${year}.csv`;
+                    const reqSecteur = r.profiles?.secteur || 'AIA';
+                    const key = `archives/${reqSecteur}/material_requests/${year}.csv`;
                     let csvContent = "";
                     try {
                         const obj = await env.MY_BUCKET.get(key);
@@ -1467,7 +1583,7 @@ export default {
             if (method === "GET" && url.pathname.endsWith("/admin/vehicles")) {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
-                const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?select=*,profiles(first_name,last_name)&order=plate_number.asc`, {
+                const res = await fetch(`${supabaseUrl}/rest/v1/vehicles?select=*,profiles(first_name,last_name,secteur)&order=plate_number.asc`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
@@ -1883,19 +1999,36 @@ export default {
                 const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-                // 1. Insert Request
+                // 0. Get user sector for data separation
+                const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=secteur,first_name,last_name`, { 
+                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } 
+                });
+                const pData = await profileRes.json();
+                const userSecteurReq = pData[0]?.secteur || 'AIA';
+                const senderName = pData[0] ? `${pData[0].first_name} ${pData[0].last_name}` : 'Un salarié';
+
+                // 1. Insert Request with secteur
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_requests`, {
                     method: "POST",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: user.id, material_name, comment, category, image_path, status: 'requested' })
+                    body: JSON.stringify({ 
+                        user_id: user.id, 
+                        material_name, 
+                        comment, 
+                        category, 
+                        image_path, 
+                        status: 'requested',
+                        secteur: userSecteurReq // New column
+                    })
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
 
                 // 2. Alert Configured Admins
                 try {
-                    const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=first_name,last_name`, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } });
+                    const profileRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=first_name,last_name,secteur`, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } });
                     const p = await profileRes.json();
-                    const senderName = p[0] ? `${p[0].first_name} ${p[0].last_name}` : 'Un salariÃ©';
+                    const senderName = p[0] ? `${p[0].first_name} ${p[0].last_name}` : 'Un salarié';
+                    const userSecteur = p[0]?.secteur || 'AIA';
 
                     const configRes = await fetch(`${supabaseUrl}/rest/v1/material_request_config?id=eq.1&select=alert_users`, {
                         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
@@ -1904,7 +2037,14 @@ export default {
                         const configData = await configRes.json();
                         const alertUsers = configData[0]?.alert_users || [];
                         if (alertUsers.length > 0) {
-                            await sendPushNotification(env, alertUsers, `🚨 Nouvelle demande : ${senderName} demande "${material_name}".`);
+                            // Filter admins by sector to ensure data separation
+                            const adminsRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=in.(${alertUsers.join(',')})${userSecteur !== 'Tout' ? `&secteur=eq.${userSecteur}` : ''}&select=id`, { headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } });
+                            const validAdmins = await adminsRes.json();
+                            const finalIds = validAdmins.map(a => a.id);
+                            
+                            if (finalIds.length > 0) {
+                                await sendPushNotification(env, finalIds, `🚨 Nouvelle demande : ${senderName} demande "${material_name}".`);
+                            }
                         }
                     }
 
@@ -2502,7 +2642,8 @@ export default {
                     result = await sendPushNotification(env, userIds, message);
                 } else {
                     // Send to single or all
-                    result = await sendPushNotification(env, userId === 'all' ? null : userId, message);
+                    // For 'all', sendPushNotification will now respect userSecteur
+                    result = await sendPushNotification(env, userId === 'all' ? null : userId, message, null, userSecteur);
                 }
 
                 return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2738,7 +2879,7 @@ export default {
             }
 
             if (method === "POST" && url.pathname === "/admin/material/requests/remind") {
-                const result = await sendMaterialReminders(env);
+                const result = await sendMaterialReminders(env, userSecteur);
                 return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
@@ -3092,25 +3233,69 @@ async function getUserRole(user, env) {
     }
 }
 
+async function getUserSecteur(user, env) {
+    if (!user) return 'Tout';
+    try {
+        const res = await fetch(`${env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co"}/rest/v1/profiles?id=eq.${user.id}&select=secteur`, {
+            headers: {
+                "apikey": env.SUPABASE_SERVICE_KEY,
+                "Authorization": `Bearer ${env.SUPABASE_SERVICE_KEY}`
+            }
+        });
+        if (!res.ok) return 'Tout';
+        const data = await res.json();
+        return data.length > 0 ? data[0].secteur : 'Tout';
+    } catch (e) {
+        console.error("getUserSecteur Error:", e);
+        return 'Tout';
+    }
+}
+
 async function isAdmin(user, env) {
     const role = await getUserRole(user, env);
     return role === 'admin';
 }
 
+// Retourne les secteurs autorisés pour un dossier R2 via .meta_sectors_XYZ,
+// ou null si aucune restriction (accessible à tous).
+async function getFolderSectorRestriction(folder, env) {
+    try {
+        const listing = await env.MY_BUCKET.list({ prefix: `${folder}/.meta_sectors_` });
+        if (!listing.objects || listing.objects.length === 0) return null;
+        const metaKey = listing.objects[0].key;
+        return metaKey.replace(`${folder}/.meta_sectors_`, '').split(',').filter(Boolean);
+    } catch (e) {
+        return null;
+    }
+}
+
 /**
  * Helper to send Web Push (VAPID) or Native Push (FCM).
  */
-async function sendPushNotification(env, userId, message, appUrl = null) {
+async function sendPushNotification(env, userId, message, appUrl = null, secteur = null) {
     const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
     const serviceKey = env.SUPABASE_SERVICE_KEY;
 
-    let query = `${supabaseUrl}/rest/v1/user_push_subscriptions?select=subscription`;
+    // Resolve effective user IDs (sector filter requires a separate profiles query)
+    let effectiveUserIds = null;
     if (userId) {
-        if (Array.isArray(userId) && userId.length > 0) {
-            query += `&user_id=in.(${userId.join(',')})`;
-        } else if (typeof userId === 'string') {
-            query += `&user_id=eq.${userId}`;
+        effectiveUserIds = Array.isArray(userId) ? userId : [userId];
+    } else if (secteur && secteur !== 'Tout') {
+        const profRes = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id&secteur=eq.${secteur}`, {
+            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+        });
+        if (profRes.ok) {
+            const profs = await profRes.json();
+            effectiveUserIds = profs.map(p => p.id);
+            if (effectiveUserIds.length === 0) {
+                return { success: false, count: 0, details: "Aucun utilisateur trouvé pour ce secteur." };
+            }
         }
+    }
+
+    let query = `${supabaseUrl}/rest/v1/user_push_subscriptions?select=subscription`;
+    if (effectiveUserIds && effectiveUserIds.length > 0) {
+        query += `&user_id=in.(${effectiveUserIds.join(',')})`;
     }
     query += `&order=created_at.desc`;
 
@@ -3118,9 +3303,12 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
     });
 
-    if (!res.ok) return { success: false, error: await res.text() };
+    if (!res.ok) {
+        const errText = await res.text();
+        return { success: false, count: 0, details: `Erreur base de données : ${errText.substring(0, 100)}` };
+    }
     const rawSubs = await res.json();
-    if (rawSubs.length === 0) return { success: true, count: 0, message: "Aucun abonné trouvé" };
+    if (rawSubs.length === 0) return { success: false, count: 0, details: "Aucun appareil enregistré pour cet utilisateur. Ouvrez l'app mobile pour activer les notifications." };
 
     // Formatage et parsing des abonnements
     const subs = rawSubs.map(s => {
@@ -3159,52 +3347,83 @@ async function sendPushNotification(env, userId, message, appUrl = null) {
     };
 
     const seenTokens = new Set();
+    let webPushCount = 0;
+
     for (const s of subs) {
         try {
             const token = s.token || (s.type === 'capacitor' ? s.token : null);
+
+            // Web push subscriptions (endpoint/keys) — not handled by FCM v1
+            if (!token && s.endpoint) {
+                webPushCount++;
+                continue;
+            }
+
             if (!token || seenTokens.has(token)) continue;
             seenTokens.add(token);
 
-            if (token) {
-                if (!fcmAccessToken) continue;
+            if (!fcmAccessToken) {
+                errors.push("FCM auth manquant — vérifier FIREBASE_SERVICE_ACCOUNT dans les variables d'environnement Cloudflare.");
+                break;
+            }
 
-                const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${fcmAccessToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        message: {
-                            token: token,
-                            notification: { title: payload.title, body: payload.body },
-                            data: {
-                                ...payload.data,
-                                android_channel_id: "pouchain_notifications"
-                            },
-                            android: {
-                                priority: "high",
-                                notification: {
-                                    channel_id: "pouchain_notifications",
-                                    sound: "default",
-                                    click_action: "FCM_PLUGIN_ACTIVITY"
-                                }
+            const fcmRes = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${fcmAccessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: {
+                        token: token,
+                        notification: { title: payload.title, body: payload.body },
+                        data: {
+                            ...payload.data,
+                            android_channel_id: "pouchain_notifications"
+                        },
+                        android: {
+                            priority: "high",
+                            notification: {
+                                channel_id: "pouchain_notifications",
+                                sound: "default",
+                                click_action: "FCM_PLUGIN_ACTIVITY"
                             }
                         }
-                    })
-                });
-                if (fcmRes.ok) count++;
+                    }
+                })
+            });
+
+            if (fcmRes.ok) {
+                count++;
+            } else {
+                const fcmError = await fcmRes.text();
+                errors.push(`FCM token rejeté (${fcmRes.status}): ${fcmError.substring(0, 100)}`);
             }
         } catch (err) {
-            // Silently skip failed individual tokens
+            errors.push(`Erreur token: ${err.message}`);
         }
+    }
+
+    const fcmTotal = subs.length - webPushCount;
+    let details;
+    if (count > 0) {
+        details = `${count}/${fcmTotal} notification(s) envoyée(s).`;
+    } else if (webPushCount > 0 && fcmTotal === 0) {
+        details = `Abonnements web push uniquement — push non pris en charge sur navigateur. Ouvrez l'app mobile pour activer les notifications.`;
+    } else if (errors.length > 0) {
+        details = errors[0];
+    } else {
+        details = "Aucun appareil réceptif trouvé.";
     }
 
     return {
         success: count > 0,
         count,
         total: subs.length,
-        details: count > 0 ? "Notification(s) envoyée(s) avec succès." : "Aucun appareil réceptif trouvé."
+        fcmTotal,
+        webPushCount,
+        errors,
+        details
     };
 }
 
@@ -3266,7 +3485,7 @@ async function getGCPAccessToken(serviceAccountJson) {
 /**
  * Find and notify admins about material requests older than 7 days
  */
-async function sendMaterialReminders(env) {
+async function sendMaterialReminders(env, secteur = null) {
     const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
     const serviceKey = env.SUPABASE_SERVICE_KEY;
     if (!serviceKey) return { success: false, message: "Missing service key" };
@@ -3281,16 +3500,23 @@ async function sendMaterialReminders(env) {
         return { success: false, message: "No alert users configured" };
     }
 
-    // 2. Fetch Pending Requests older than 7 days
+    // 2. Fetch Pending Requests older than 7 days (with requester sector)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const dateStr = sevenDaysAgo.toISOString();
 
-    const requestsRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?status=eq.requested&created_at=lt.${dateStr}`, {
+    const requestsRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?select=*,profiles(secteur)&status=eq.requested&created_at=lt.${dateStr}`, {
         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
     });
-    const requests = await requestsRes.json();
-    if (!Array.isArray(requests) || requests.length === 0) {
+    let requests = await requestsRes.json();
+    if (!Array.isArray(requests)) requests = [];
+
+    // Filtre secteur : 'Tout' ou null = toutes les demandes
+    if (secteur && secteur !== 'Tout') {
+        requests = requests.filter(r => r.profiles?.secteur === secteur);
+    }
+
+    if (requests.length === 0) {
         return { success: true, count: 0, message: "No old pending requests" };
     }
 
@@ -3298,22 +3524,30 @@ async function sendMaterialReminders(env) {
     const usersRes = await fetch(`${supabaseUrl}/rest/v1/profiles?id=in.(${config.alert_users.join(',')})&select=id,first_name`, {
         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
     });
-    const profiles = await usersRes.json();
+    const profilesRaw = await usersRes.json().catch(() => null);
+    const profiles = Array.isArray(profilesRaw) ? profilesRaw : [];
 
-    // 4. Send personalized notifications
-    let totalSent = 0;
-    for (const p of profiles) {
-        const count = requests.length;
-        const name = p.first_name || 'Admin';
-        const message = count === 1
-            ? `Bonjour ${name}, une demande de matériel est en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez cette demande de votre collaborateur.`
-            : `Bonjour ${name}, ${count} demandes de matériel sont en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez ces demandes de vos collaborateurs.`;
-
-        const result = await sendPushNotification(env, [p.id], message);
-        if (result && result.success) totalSent++;
+    if (profiles.length === 0) {
+        return { success: true, count: requests.length, notified: 0, detail: "Aucun profil admin trouvé pour les IDs configurés" };
     }
 
-    return { success: true, count: requests.length, notified: totalSent };
+    // 4. Send personalized notifications — notified = nb d'admins ciblés (profils trouvés)
+    let totalPushSent = 0;
+    for (const p of profiles) {
+        const msgCount = requests.length;
+        const name = p.first_name || 'Admin';
+        const message = msgCount === 1
+            ? `Bonjour ${name}, une demande de matériel est en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez cette demande de votre collaborateur.`
+            : `Bonjour ${name}, ${msgCount} demandes de matériel sont en attente depuis plus d'une semaine. Merci d'indiquer si vous refusez ou commandez ces demandes de vos collaborateurs.`;
+
+        try {
+            const result = await sendPushNotification(env, [p.id], message);
+            if (result && result.count > 0) totalPushSent++;
+        } catch (e) { /* ignore individual push failures */ }
+    }
+
+    // notified = nb d'admins configurés et trouvés en base (indépendant de la livraison push)
+    return { success: true, count: requests.length, notified: profiles.length, pushSent: totalPushSent };
 }
 
 /**

@@ -1004,3 +1004,33 @@ td:last-child {
     margin: 0;
     color: var(--primary);
 }
+
+/* Tighten User Management Table */
+.users-table th, 
+.users-table td {
+    padding: 10px 12px !important; 
+    font-size: 14px !important;
+}
+
+.users-table th {
+    font-size: 11px !important;
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+}
+
+.users-table .btn-sm {
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    margin-right: 2px !important;
+}
+
+/* Allow long emails to wrap if necessary */
+.users-table td:nth-child(3) {
+    word-break: break-all;
+    max-width: 180px;
+}
+
+/* Ensure no horizontal scroll on the container */
+.users-table-container {
+    overflow-x: hidden !important;
+}

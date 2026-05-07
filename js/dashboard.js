@@ -381,17 +381,20 @@ async function renderMobileView() {
         const userId = session ? session.user.id : null;
 
         // Fetch user profile to get preferences
+        let userSecteur = 'Tout';
         if (session) {
             try {
                 const supabaseClient = window.supabase.createClient(config.supabase.url, config.supabase.anonKey);
                 const { data: profile } = await supabaseClient
                     .from('profiles')
-                    .select('preferences')
+                    .select('preferences, secteur')
                     .eq('id', session.user.id)
                     .single();
 
                 let currentPreferences = (profile && profile.preferences) || {};
                 if (typeof currentPreferences === 'string') currentPreferences = JSON.parse(currentPreferences);
+                
+                userSecteur = (profile && profile.secteur) || 'Tout';
 
                 // Set initial theme
                 const isDarkMode = currentPreferences.mobile_dark_mode === true;
@@ -429,7 +432,7 @@ async function renderMobileView() {
         ]);
         mobileFilesCache = files;
         mobileVehicleCache = myVehicle;
-        generateMobileCategories(files, myVehicle);
+        generateMobileCategories(files, myVehicle, userSecteur);
 
         // Check for missing vehicle information ONLY for assigned vehicle
         const assignedVehicle = myVehicle ? myVehicle.assigned : null;
@@ -584,7 +587,7 @@ function handleMobileSearch(query) {
     });
 }
 
-function generateMobileCategories(files, myVehicle = null) {
+function generateMobileCategories(files, myVehicle = null, userSecteur = 'Tout') {
     const grid = document.getElementById('categories-grid');
     grid.innerHTML = '';
 
@@ -652,46 +655,57 @@ function generateMobileCategories(files, myVehicle = null) {
         grid.appendChild(card);
     }
 
-    // Add Special App Cards
-    const planningCard = document.createElement('div');
-    planningCard.className = 'category-card';
-    planningCard.innerHTML = `
-        <div class="category-icon" style="background-color: var(--primary);">📅</div>
-        <div class="category-title" style="font-weight:bold;">Planning</div>
-    `;
-    planningCard.onclick = () => renderMobilePlanning();
-
-    const matosCard = document.createElement('div');
-    matosCard.className = 'category-card';
-    matosCard.innerHTML = `
-        <div class="category-icon" style="background-color: #FF9500;">📦</div>
-        <div class="category-title" style="font-weight:bold;">Mon Matos</div>
-    `;
-    matosCard.onclick = () => renderMobileMaterialRequests();
-
-    if (myVehicle && (myVehicle.assigned || (myVehicle.common && myVehicle.common.length > 0))) {
-        const autoCard = document.createElement('div');
-        autoCard.className = 'category-card';
-        autoCard.innerHTML = `
-            <div class="category-icon" style="background-color: #34C759;">🚗</div>
-            <div class="category-title" style="font-weight:bold;">Véhicules</div>
+    // Add Special App Cards — Filtered by Sector
+    if (userSecteur === 'AIA' || userSecteur === 'Tout') {
+        const planningCard = document.createElement('div');
+        planningCard.className = 'category-card';
+        planningCard.innerHTML = `
+            <div class="category-icon" style="background-color: var(--primary);">📅</div>
+            <div class="category-title" style="font-weight:bold;">Planning</div>
         `;
-        autoCard.onclick = () => window.renderMobileVehiclesList(myVehicle);
-        grid.prepend(autoCard);
+        planningCard.onclick = () => renderMobilePlanning();
+
+        const matosCard = document.createElement('div');
+        matosCard.className = 'category-card';
+        matosCard.innerHTML = `
+            <div class="category-icon" style="background-color: #FF9500;">📦</div>
+            <div class="category-title" style="font-weight:bold;">Mon Matos</div>
+        `;
+        matosCard.onclick = () => renderMobileMaterialRequests();
+
+        if (myVehicle && (myVehicle.assigned || (myVehicle.common && myVehicle.common.length > 0))) {
+            const autoCard = document.createElement('div');
+            autoCard.className = 'category-card';
+            autoCard.innerHTML = `
+                <div class="category-icon" style="background-color: #34C759;">🚗</div>
+                <div class="category-title" style="font-weight:bold;">Véhicules</div>
+            `;
+            autoCard.onclick = () => window.renderMobileVehiclesList(myVehicle);
+            grid.prepend(autoCard);
+        }
+
+        const matosStockCard = document.createElement('div');
+        matosStockCard.className = 'category-card';
+        matosStockCard.innerHTML = `
+            <div class="category-icon" style="background-color: #5856D6;">📦</div>
+            <div class="category-title" style="font-weight:bold;">Stock</div>
+        `;
+        matosStockCard.onclick = () => renderMobileMaterialTracking();
+
+        grid.prepend(matosStockCard);
+        grid.prepend(matosCard);
+        grid.prepend(planningCard);
+    } else if (userSecteur === 'HT') {
+        // HT Section - Placeholder for future apps
+        const placeholder = document.createElement('div');
+        placeholder.style.cssText = "grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: #8E8E93;";
+        placeholder.innerHTML = `
+            <div style="font-size: 48px; margin-bottom: 20px;">🏗️</div>
+            <h3 style="color: white; margin-bottom: 10px;">Secteur HT</h3>
+            <p>Les applications pour le secteur Haute Tension sont en cours de développement.</p>
+        `;
+        grid.appendChild(placeholder);
     }
-
-    const matosStockCard = document.createElement('div');
-    matosStockCard.className = 'category-card';
-    matosStockCard.innerHTML = `
-        <div class="category-icon" style="background-color: #5856D6;">📦</div>
-        <div class="category-title" style="font-weight:bold;">Stock</div>
-    `;
-    matosStockCard.onclick = () => renderMobileMaterialTracking();
-
-    grid.prepend(matosStockCard);
-    if (typeof autoCard !== 'undefined') grid.prepend(autoCard);
-    grid.prepend(matosCard);
-    grid.prepend(planningCard);
 }
 
 window.renderMobileMaterialRequests = async function () {
@@ -1263,7 +1277,7 @@ async function renderAdminView(session) {
             <div style="margin-bottom: 24px;">
                 <input type="text" id="admin-global-search" class="form-input" placeholder="🔍 Rechercher un document..." style="width:100%; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);" oninput="handleAdminGlobalSearch(this.value)">
             </div>
-            <nav id="admin-nav">
+            <nav id="admin-nav" style="visibility: hidden;">
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
@@ -1316,7 +1330,7 @@ async function renderAdminView(session) {
     try {
         const { data: profile } = await window.supabase.createClient(config.supabase.url, config.supabase.anonKey)
             .from('profiles')
-            .select('id, first_name, last_name, preferences')
+            .select('id, first_name, last_name, secteur, preferences')
             .eq('id', session.user.id)
             .single();
 
@@ -1325,10 +1339,28 @@ async function renderAdminView(session) {
             if (profile.first_name && profile.last_name) {
                 document.getElementById('admin-welcome-name').textContent = `${profile.first_name} ${profile.last_name}`;
             }
-            // Preferences logic removed (always dark mode)
+
+            // ─── Config onglets admin par secteur ───────────────────────────────────
+            // Pour ajouter un nouveau secteur : ajouter une entrée avec les IDs à masquer.
+            const SECTOR_HIDDEN_TABS = {
+                'HT': ['nav-material-stock', 'nav-maintenance'],
+                // 'NOUVEAU_SECTEUR': ['nav-xyz', 'nav-abc'],
+            };
+            // ────────────────────────────────────────────────────────────────────────
+            const secteur = profile.secteur || 'AIA';
+            const hiddenTabs = SECTOR_HIDDEN_TABS[secteur] || [];
+            hiddenTabs.forEach(id => document.getElementById(id)?.remove());
         }
     } catch (e) {
         console.warn("Could not fetch user profile details", e);
+    } finally {
+        // Révéler le nav seulement après application du filtre secteur (évite le flash)
+        const nav = document.getElementById('admin-nav');
+        if (nav) nav.style.visibility = 'visible';
+        // Recalculer le badge véhicule maintenant que le profil secteur est connu
+        if (window.adminVehiclesCache && window.updateVehicleSidebarBadge) {
+            window.updateVehicleSidebarBadge(window.adminVehiclesCache);
+        }
     }
 
     // Fetch and display Cloudflare storage
@@ -1600,7 +1632,15 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         try { closedDays = await api.getPlanningClosedDays(); } catch (e) { }
         window.currentClosedDays = closedDays;
 
-        const users = await api.listUsers();
+        const allUsers = await api.listUsers();
+
+        // Filtre secteur — 'Tout' affiche tous les utilisateurs, sinon uniquement le secteur courant.
+        // Pour ajouter un nouveau secteur, aucun changement nécessaire ici.
+        const planningAdminSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const users = planningAdminSecteur === 'Tout'
+            ? allUsers
+            : allUsers.filter(u => u.secteur === planningAdminSecteur);
+
         let tasks = [];
         try {
             tasks = await api.getAdminTasks(startStr, endStr);
@@ -1611,19 +1651,23 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         const tasksByUserDate = {};
 
         // --- Ghost Users Logic ---
-        // If archived tasks exist for users no longer in the DB, we add them dynamically
+        // Anciens collaborateurs avec des tâches archivées mais plus dans la DB.
+        // On ne les affiche qu'en mode "Tout" : leur secteur est inconnu, ils ne
+        // doivent pas polluer le planning d'un secteur spécifique.
         const currentIds = new Set(users.map(u => u.id));
-        tasks.forEach(t => {
-            if (t.user_id && !currentIds.has(t.user_id)) {
-                users.push({
-                    id: t.user_id,
-                    first_name: t.user_name || "Ancien",
-                    last_name: t.user_name ? "" : "Collaborateur",
-                    is_ghost: true
-                });
-                currentIds.add(t.user_id);
-            }
-        });
+        if (planningAdminSecteur === 'Tout') {
+            tasks.forEach(t => {
+                if (t.user_id && !currentIds.has(t.user_id)) {
+                    users.push({
+                        id: t.user_id,
+                        first_name: t.user_name || "Ancien",
+                        last_name: t.user_name ? "" : "Collaborateur",
+                        is_ghost: true
+                    });
+                    currentIds.add(t.user_id);
+                }
+            });
+        }
 
         users.forEach(u => tasksByUserDate[u.id] = {});
         tasks.forEach(t => {
@@ -2116,7 +2160,9 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
 window.openPlanningExportModal = async function () {
     try {
-        const users = await api.listUsers();
+        const allUsers = await api.listUsers();
+        const exportSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const users = exportSecteur === 'Tout' ? allUsers : allUsers.filter(u => u.secteur === exportSecteur);
         users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
         const modal = document.createElement('div');
@@ -2287,7 +2333,9 @@ window.reorderPlanningUser = function (fromIndex, toIndex, weekStartStr) {
 
 window.autoSortPlanningUsers = async function (weekStartStr, isV2 = false, isSilent = false) {
     try {
-        const users = await api.listUsers();
+        const allUsers = await api.listUsers();
+        const sortSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const users = sortSecteur === 'Tout' ? allUsers : allUsers.filter(u => u.secteur === sortSecteur);
         // Compute week range
         const monday = new Date(weekStartStr + 'T12:00:00');
         const sunday = new Date(monday);
@@ -2986,9 +3034,9 @@ window.renderAdminUsers = async function () {
         const users = await api.listUsers(true);
 
         content.innerHTML = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 20px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
             <!-- Header Section -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: rgba(0,0,0,0.4); padding: 15px 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
                 <div style="display: flex; align-items: center; gap: 20px;">
                     <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #6366f1, #4f46e5); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(99, 102, 241, 0.2);">
                         <span style="font-size: 28px;">👥</span>
@@ -3009,14 +3057,15 @@ window.renderAdminUsers = async function () {
                 </div>
             </div>
 
-                <div class="table-container">
-                    <table>
+                <div class="table-container users-table-container">
+                    <table class="users-table">
                         <thead>
                             <tr>
                                 <th>Prénom</th>
                                 <th>Nom</th>
                                 <th>Email</th>
                                 <th>Rôle</th>
+                                <th>Secteur</th>
                                 <th>Date Création</th>
                                 <th>Actions</th>
                             </tr>
@@ -3039,14 +3088,17 @@ window.renderAdminUsers = async function () {
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
                     ? `<span class="badge" style="background:${u.role === 'admin' ? 'var(--badge-admin-bg)' : (u.role === 'visiteur' ? '#8E8E93' : 'var(--badge-user-bg)')}; color:${u.role === 'admin' ? 'var(--badge-admin-text)' : 'white'}">${u.role}</span>`
                     : `<select class="form-input" style="padding: 4px 8px; font-size: 13px; width: auto;" onchange="changeUserRole('${u.id}', this.value)">
-                                            <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
-                                            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
-                                           </select>`
+                                             <option value="user" ${u.role === 'user' ? 'selected' : ''}>user</option>
+                                             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+                                            </select>`
                 }
-                                </td>
-                                <td>${new Date(u.created_at).toLocaleDateString()}</td>
-                                <td>
-                                    <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${userColor}')" title="Modifier le nom">✏️ Editer</button>
+                                 </td>
+                                 <td>
+                                     <span class="badge" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);">${window.escapeHTML(u.secteur || 'Tout')}</span>
+                                 </td>
+                                 <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                                 <td>
+                                     <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${userColor}', '${u.secteur || 'Tout'}')" title="Modifier le nom">✏️ Editer</button>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
                     ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
                                            <span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
@@ -3101,12 +3153,22 @@ window.openNewUserModal = function () {
                 L'utilisateur sera obligé de le changer lors de sa toute première connexion à l'application.
             </div>
 
-             <div class="form-group">
-                <label>Rôle</label>
-                <select class="form-input" id="new-user-role">
-                    <option value="user">Utilisateur</option>
-                    <option value="admin">Administrateur</option>
-                </select>
+             <div style="display: flex; gap: 16px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Rôle</label>
+                    <select class="form-input" id="new-user-role">
+                        <option value="user">Utilisateur</option>
+                        <option value="admin">Administrateur</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Secteur</label>
+                    <select class="form-input" id="new-user-secteur">
+                        <option value="Tout">Tout</option>
+                        <option value="AIA">AIA</option>
+                        <option value="HT">HT</option>
+                    </select>
+                </div>
             </div>
 
             <div class="modal-actions">
@@ -3144,6 +3206,7 @@ window.createNewUser = async function () {
     const lastName = document.getElementById('new-user-lastname').value.trim();
     const email = document.getElementById('new-user-email').value.trim();
     const role = document.getElementById('new-user-role').value;
+    const secteur = document.getElementById('new-user-secteur').value;
     const mode = document.getElementById('new-user-modal').getAttribute('data-mode') || 'manual';
 
     if (!email) return alert("Veuillez remplir l'email.");
@@ -3158,10 +3221,10 @@ window.createNewUser = async function () {
         if (mode === 'manual') {
             const password = "123456";
 
-            await api.createUser(email, password, role, firstName, lastName);
+            await api.createUser(email, password, role, secteur, firstName, lastName);
             showSuccessModal("Utilisateur créé avec succès !<br><br><span style='font-size:14.5px;color:rgba(100,100,100,0.9); font-weight:normal;'>Le mot de passe temporaire de l'utilisateur est <b>123456</b>.<br>Il sera invité à le changer dès sa première connexion.</span>");
         } else {
-            await api.inviteUser(email, role, redirectTo, firstName, lastName);
+            await api.inviteUser(email, role, secteur, redirectTo, firstName, lastName);
             showSuccessModal("Invitation envoyée avec succès !");
         }
 
@@ -3336,7 +3399,7 @@ window.deleteUser = function (id, email) {
     );
 };
 
-window.openEditUserModal = function (id, firstName, lastName, color = '#2da140') {
+window.openEditUserModal = function (id, firstName, lastName, color = '#2da140', secteur = 'Tout') {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'edit-user-modal';
@@ -3354,6 +3417,14 @@ window.openEditUserModal = function (id, firstName, lastName, color = '#2da140')
                     <label>Nom</label>
                     <input type="text" class="form-input" id="edit-user-lastname" value="${lastName.replace(/"/g, '&quot;').replace(/^-$/, '')}">
                 </div>
+            </div>
+            <div class="form-group">
+                <label>Secteur</label>
+                <select class="form-input" id="edit-user-secteur">
+                    <option value="Tout" ${secteur === 'Tout' ? 'selected' : ''}>Tout</option>
+                    <option value="AIA" ${secteur === 'AIA' ? 'selected' : ''}>AIA</option>
+                    <option value="HT" ${secteur === 'HT' ? 'selected' : ''}>HT</option>
+                </select>
             </div>
             <div class="form-group">
                 <label>Couleur (Planning)</label>
@@ -3375,9 +3446,10 @@ window.updateUserProfileName = async function (id) {
     const firstName = document.getElementById('edit-user-firstname').value.trim();
     const lastName = document.getElementById('edit-user-lastname').value.trim();
     const color = document.getElementById('edit-user-color').value;
+    const secteur = document.getElementById('edit-user-secteur').value;
 
     try {
-        await api.updateUserProfile(id, firstName, lastName);
+        await api.updateUserProfile(id, firstName, lastName, secteur);
         await api.updateUserColor(id, color);
 
         showSuccessModal("Profil mis à jour avec succès.");
@@ -3451,6 +3523,7 @@ async function refreshAdminData() {
         ]);
 
         adminFilesCache = files;
+        window.adminVehiclesCache = vehicles; // mis en cache pour re-filtrage après chargement du profil
         if (window.updateVehicleSidebarBadge) window.updateVehicleSidebarBadge(vehicles);
 
         if (adminCurrentFolder) {
@@ -3499,27 +3572,37 @@ window.renderAdminFolders = async function () {
     // Default Colors
     const palette = ['#FF9500', '#AF52DE', '#5856D6', '#FF2D55', '#5AC8FA', '#34C759', '#FF3B30', '#FFCC00'];
 
+    const secteur = window.currentUserProfile?.secteur || 'AIA';
+
+    // Carte secteurs par dossier (extraite des .meta_sectors_)
+    const folderSectorMap = {}; // { folderName: ['AIA','HT'] | null }
+
     adminFilesCache.forEach(file => {
         const parts = file.key.split('/');
-        if (parts.length > 1) {
-            const folderName = parts[0];
+        if (parts.length < 2) return;
+        const folderName = parts[0];
 
-            if (!categories.has(folderName)) {
-                categories.set(folderName, { color: null, count: 0, emoji: '📁', order: 999, row: 1 });
-            }
-            const catData = categories.get(folderName);
+        // Extraire les métadonnées secteur
+        if (parts[1].startsWith('.meta_sectors_')) {
+            folderSectorMap[folderName] = parts[1].replace('.meta_sectors_', '').split(',').filter(Boolean);
+            return;
+        }
 
-            if (parts[1].startsWith('.meta_color_')) {
-                catData.color = parts[1].replace('.meta_color_', '#');
-            } else if (parts[1].startsWith('.meta_emoji_')) {
-                catData.emoji = decodeURIComponent(parts[1].replace('.meta_emoji_', ''));
-            } else if (parts[1].startsWith('.meta_order_')) {
-                catData.order = parseInt(parts[1].replace('.meta_order_', ''), 10) || 999;
-            } else if (parts[1].startsWith('.meta_row_')) {
-                catData.row = parseInt(parts[1].replace('.meta_row_', ''), 10) || 1;
-            } else if (!file.key.endsWith('.keep') && !parts[1].startsWith('.meta_')) {
-                catData.count++;
-            }
+        if (!categories.has(folderName)) {
+            categories.set(folderName, { color: null, count: 0, emoji: '📁', order: 999, row: 1 });
+        }
+        const catData = categories.get(folderName);
+
+        if (parts[1].startsWith('.meta_color_')) {
+            catData.color = parts[1].replace('.meta_color_', '#');
+        } else if (parts[1].startsWith('.meta_emoji_')) {
+            catData.emoji = decodeURIComponent(parts[1].replace('.meta_emoji_', ''));
+        } else if (parts[1].startsWith('.meta_order_')) {
+            catData.order = parseInt(parts[1].replace('.meta_order_', ''), 10) || 999;
+        } else if (parts[1].startsWith('.meta_row_')) {
+            catData.row = parseInt(parts[1].replace('.meta_row_', ''), 10) || 1;
+        } else if (!file.key.endsWith('.keep') && !parts[1].startsWith('.meta_')) {
+            catData.count++;
         }
     });
 
@@ -3528,6 +3611,7 @@ window.renderAdminFolders = async function () {
         <header>
             <h1>Dossiers</h1>
             <div class="actions">
+                ${secteur === 'Tout' ? `<button class="btn-secondary" onclick="openFolderSectorsModal()" style="margin-right:8px;">🔒 Accès secteurs</button>` : ''}
                 <button class="btn-primary" onclick="openNewFolderModal()">+ Nouveau Dossier</button>
             </div>
         </header>
@@ -3591,6 +3675,7 @@ window.renderAdminFolders = async function () {
                     <div style="width: 24px; height: 4px; background-color: ${color}; border-radius: 2px; margin-bottom: 12px;"></div>
                     <div class="category-title" title="${cat}">${cat}</div>
                     <div style="font-size:12px; color:#888; margin-top:4px;">${data.count} fichiers</div>
+                    ${folderSectorMap[cat] ? `<div style="font-size:10px; margin-top:4px; color:#FF9500; font-weight:600;">${folderSectorMap[cat].join(' · ')}</div>` : ''}
                     ${ownerBadge}
                 </div>
                 `;
@@ -3620,9 +3705,120 @@ window.renderAdminFolders = async function () {
     content.innerHTML = html;
 }
 
+// Sector access modal for folders (Tout only)
+window.openFolderSectorsModal = function () {
+    const AVAILABLE_SECTORS = ['AIA', 'HT'];
+
+    // Build folderSectorMap from cache (same logic as renderAdminFolders)
+    const folderSectorMap = {};
+    const folderNames = new Set();
+
+    adminFilesCache.forEach(file => {
+        const parts = file.key.split('/');
+        if (parts.length < 2) return;
+        const folderName = parts[0];
+        folderNames.add(folderName);
+        if (parts[1].startsWith('.meta_sectors_')) {
+            folderSectorMap[folderName] = parts[1].replace('.meta_sectors_', '').split(',').filter(Boolean);
+        }
+    });
+
+    const folders = Array.from(folderNames).filter(f => !f.startsWith('.meta_')).sort();
+
+    if (folders.length === 0) {
+        showToast('Aucun dossier trouvé.');
+        return;
+    }
+
+    let rowsHtml = folders.map(folder => {
+        const currentSectors = folderSectorMap[folder] || [];
+        const checkboxes = AVAILABLE_SECTORS.map(s => {
+            const checked = currentSectors.includes(s) ? 'checked' : '';
+            return `<label style="margin-right:12px; cursor:pointer;">
+                <input type="checkbox" data-folder="${folder}" data-sector="${s}" ${checked} style="margin-right:4px;">
+                ${s}
+            </label>`;
+        }).join('');
+        const badge = currentSectors.length > 0
+            ? `<span style="font-size:10px; color:#FF9500; font-weight:600;">${currentSectors.join(' · ')}</span>`
+            : `<span style="font-size:10px; color:#888;">Tous</span>`;
+        return `<tr>
+            <td style="padding:10px 8px; border-bottom:1px solid rgba(255,255,255,0.07); font-size:14px;">📁 ${folder}</td>
+            <td style="padding:10px 8px; border-bottom:1px solid rgba(255,255,255,0.07);">${checkboxes}</td>
+            <td style="padding:10px 8px; border-bottom:1px solid rgba(255,255,255,0.07);">${badge}</td>
+        </tr>`;
+    }).join('');
+
+    const modalHtml = `
+        <div id="folder-sectors-modal" style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;">
+            <div style="background:#1C1C1E;border-radius:16px;padding:24px;width:min(680px,95vw);max-height:80vh;display:flex;flex-direction:column;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                    <h2 style="margin:0;color:white;font-size:18px;">🔒 Accès secteurs par dossier</h2>
+                    <button onclick="document.getElementById('folder-sectors-modal').remove()" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;">✕</button>
+                </div>
+                <p style="color:#aaa;font-size:13px;margin:0 0 16px;">Cochez les secteurs autorisés pour chaque dossier. Sans sélection = accessible à tous.</p>
+                <div style="overflow-y:auto;flex:1;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left;padding:8px;color:#888;font-size:12px;font-weight:500;">Dossier</th>
+                                <th style="text-align:left;padding:8px;color:#888;font-size:12px;font-weight:500;">Secteurs autorisés</th>
+                                <th style="text-align:left;padding:8px;color:#888;font-size:12px;font-weight:500;">Actuel</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+                <div style="display:flex;gap:12px;margin-top:20px;justify-content:flex-end;">
+                    <button onclick="document.getElementById('folder-sectors-modal').remove()" class="btn-secondary">Annuler</button>
+                    <button onclick="saveFolderSectors()" class="btn-primary" id="save-folder-sectors-btn">Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+};
+
+window.saveFolderSectors = async function () {
+    const btn = document.getElementById('save-folder-sectors-btn');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+
+    const checkboxes = document.querySelectorAll('#folder-sectors-modal input[type="checkbox"]');
+    const folderSectors = {};
+    checkboxes.forEach(cb => {
+        const folder = cb.dataset.folder;
+        if (!folderSectors[folder]) folderSectors[folder] = [];
+        if (cb.checked) folderSectors[folder].push(cb.dataset.sector);
+    });
+
+    let errors = 0;
+    for (const [folder, sectors] of Object.entries(folderSectors)) {
+        try {
+            await api.setFolderSectors(folder, sectors);
+        } catch (e) {
+            console.error(`setFolderSectors failed for ${folder}:`, e);
+            errors++;
+        }
+    }
+
+    document.getElementById('folder-sectors-modal')?.remove();
+
+    if (errors > 0) {
+        showToast(`Enregistré avec ${errors} erreur(s).`);
+    } else {
+        showToast('Accès secteurs mis à jour ✓');
+    }
+
+    await refreshAdminData();
+    renderAdminFolders();
+};
+
 // 2. Render File List (Inside a Folder)
 window.renderAdminFiles = async function (folder) {
     adminCurrentFolder = folder;
+
     const title = folder || "Divers (Racine)";
     const currentPrefix = folder ? folder + '/' : '';
 
@@ -3680,6 +3876,7 @@ window.renderAdminFiles = async function (folder) {
             // We are at "Folder", back goes to Categories
             backAction = `renderAdminFolders()`;
         }
+
     }
 
     const content = document.getElementById('admin-content');
@@ -5106,10 +5303,15 @@ window.renderAdminMaterialRequests = async function () {
             <div class="material-admin-container" style="display: grid; gap: 40px; padding-bottom: 60px;">
         `;
 
-        // Filter out acquitted requests if they are 'received'? 
-        // User says "L'admin peux aquitter une demande pour la faire disparaitre"
-        // So we filter 'received' out of the main list, but maybe have a toggle?
-        const mainRequests = requests;
+        // Filtre secteur — 'Tout' affiche toutes les demandes, sinon uniquement celles du secteur courant.
+        // Pour un nouveau secteur, aucun changement nécessaire ici.
+        const matSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const sectorUserIds = matSecteur === 'Tout'
+            ? null
+            : new Set(allUsers.filter(u => u.secteur === matSecteur).map(u => u.id));
+        const mainRequests = sectorUserIds
+            ? requests.filter(r => sectorUserIds.has(r.user_id))
+            : requests;
 
         // Group by category
         const catMap = new Map();
@@ -5366,7 +5568,9 @@ window.renderAdminMaterialRequests = async function () {
                 try {
                     const result = await api.sendMaterialReminders();
                     if (result.success) {
-                        alert(`✅ Test réussi !\nDemandes trouvées : ${result.count}\nAdmins notifiés : ${result.notified}`);
+                        const detail = result.detail ? `\n⚠️ ${result.detail}` : '';
+                        const pushLine = result.pushSent != null ? `\nPush délivrés : ${result.pushSent}` : '';
+                        alert(`✅ Test réussi !\nDemandes trouvées : ${result.count}\nAdmins notifiés : ${result.notified}${pushLine}${detail}`);
                     } else {
                         alert(`⚠️ ${result.message || 'Aucune notification envoyée.'}`);
                     }
@@ -5441,10 +5645,17 @@ window.renderAdminVehicles = async function () {
     `;
 
     try {
-        const [vehicles, users] = await Promise.all([
+        const [allVehicles, users] = await Promise.all([
             api.getVehicles(),
             api.listUsers()
         ]);
+
+        // Filtre secteur — véhicules affectés au secteur courant + non affectés.
+        // 'Tout' affiche tout. Pour ajouter un secteur, aucun changement nécessaire ici.
+        const vehSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const vehicles = vehSecteur === 'Tout'
+            ? allVehicles
+            : allVehicles.filter(v => !v.assigned_user_id || v.profiles?.secteur === vehSecteur);
 
         let html = `
             <div class="admin-table-container glass-panel" style="padding: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
@@ -5730,11 +5941,13 @@ window.openTollManagementModal = async function () {
 
 window.openAddVehicleModal = async function (vehicleId = null) {
     try {
-        const [users, dkvCards, tollCards] = await Promise.all([
+        const [allUsers, dkvCards, tollCards] = await Promise.all([
             api.listUsers(),
             api.getDkvCards(),
             api.getTollCards()
         ]);
+        const vehModalSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const users = vehModalSecteur === 'Tout' ? allUsers : allUsers.filter(u => u.secteur === vehModalSecteur);
         users.sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
         let existing = null;
@@ -5892,7 +6105,11 @@ window.deleteAdminVehicle = async function (id) {
 window.updateMaterialBadge = async function () {
     try {
         const requests = await api.getMaterialRequests();
-        const pendingCount = requests.filter(r => r.status === 'requested').length;
+        const badgeSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const sectorRequests = badgeSecteur === 'Tout'
+            ? requests
+            : requests.filter(r => r.profiles?.secteur === badgeSecteur);
+        const pendingCount = sectorRequests.filter(r => r.status === 'requested').length;
         const badge = document.getElementById('mat-request-badge');
         if (badge) {
             if (pendingCount > 0) {
@@ -6370,10 +6587,16 @@ window.logMobileFuel = async function (vehicleId, dkvCard) {
 };
 
 window.updateVehicleSidebarBadge = function (vehicles) {
+    // Filtre par secteur — les véhicules non affectés sont visibles partout
+    const vBadgeSecteur = window.currentUserProfile?.secteur;
+    const sectorVehicles = (!vBadgeSecteur || vBadgeSecteur === 'Tout')
+        ? vehicles
+        : vehicles.filter(v => !v.assigned_user_id || v.profiles?.secteur === vBadgeSecteur);
+
     let alertCount = 0;
     const today = new Date();
 
-    vehicles.forEach(v => {
+    sectorVehicles.forEach(v => {
         let isAlert = false;
         if (v.next_maintenance_km && (v.next_maintenance_km - v.last_mileage <= 2000)) isAlert = true;
         if (v.next_maintenance_date) {
@@ -7463,8 +7686,9 @@ window.renderAdminMaterialTracking = async function () {
             <!-- Filters Bar -->
             <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 24px; padding: 0 10px;">
                 <div style="position: relative; flex: 1;">
-                    <input type="text" id="material-search" placeholder="Rechercher par nom, type, référence..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 20px 0 45px; font-size: 14px; outline: none;">
+                    <input type="text" id="material-search" placeholder="Rechercher par nom, type, référence..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 85px 0 45px; font-size: 14px; outline: none;">
                     <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
+                    <button id="inverse-search-toggle" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #8E8E93; font-size: 11px; font-weight: 700; padding: 5px 10px; cursor: pointer; transition: all 0.2s;">INVERSE</button>
                 </div>
 
                 <div style="display: flex; align-items: center; gap: 10px; background: rgba(255, 59, 48, 0.1); padding: 0 16px; border-radius: 12px; height: 48px; border: 1px solid rgba(255, 59, 48, 0.2); cursor: pointer;" onclick="if(event.target.id !== 'material-filter-missing') { const cb = document.getElementById('material-filter-missing'); cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }">
@@ -7549,10 +7773,10 @@ window.renderAdminMaterialTracking = async function () {
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
                             <div style="display: flex; gap: 15px; flex: 1;">
                                 <div style="width: 60px; height: 60px; border-radius: 14px; background: ${item.photo_url ? '#000' : 'rgba(255,255,255,0.03)'}; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
-                                    ${item.photo_url ? 
-                                        `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : 
-                                        `<span style="font-size: 24px;">${item.type === 'Électroportatif' ? '🔌' : '🛠️'}</span>`
-                                    }
+                                    ${item.photo_url ?
+                        `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` :
+                        `<span style="font-size: 24px;">${item.type === 'Électroportatif' ? '🔌' : '🛠️'}</span>`
+                    }
                                 </div>
                                 <div style="flex: 1;">
                                     <div style="font-weight: 800; color: white; font-size: 15px; line-height: 1.3; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${item.designation || 'Sans nom'}</div>
@@ -7609,6 +7833,8 @@ window.renderAdminMaterialTracking = async function () {
         const searchInput = document.getElementById('material-search');
         const locationFilter = document.getElementById('material-filter-location');
         const missingFilter = document.getElementById('material-filter-missing');
+        const inverseBtn = document.getElementById('inverse-search-toggle');
+        let isInverse = false;
 
         const handleFilter = () => {
             const search = searchInput.value.toLowerCase();
@@ -7616,16 +7842,31 @@ window.renderAdminMaterialTracking = async function () {
             const onlyMissing = missingFilter.checked;
 
             const filtered = stock.filter(s => {
-                const matchesSearch = (s.designation || '').toLowerCase().includes(search) ||
+                let matchesSearch = (s.designation || '').toLowerCase().includes(search) ||
                     (s.type || '').toLowerCase().includes(search) ||
                     (s.caracteristiques || '').toLowerCase().includes(search) ||
                     (s.reference_fournisseur || '').toLowerCase().includes(search) ||
+                    (s.qr_ref || '').toLowerCase().includes(search) ||
                     (s.fournisseur || '').toLowerCase().includes(search);
+                
+                if (search && isInverse) {
+                    matchesSearch = !matchesSearch;
+                }
+
                 const matchesLocation = !location || s.lieu_de_stockage === location;
                 const matchesMissing = !onlyMissing || (s.nb_souhaite || 0) > (s.stock_reel || 0);
                 return matchesSearch && matchesLocation && matchesMissing;
             });
             renderGrid(filtered);
+        };
+
+        inverseBtn.onclick = () => {
+            isInverse = !isInverse;
+            inverseBtn.classList.toggle('active', isInverse);
+            inverseBtn.style.background = isInverse ? '#FF3B30' : 'rgba(255,255,255,0.05)';
+            inverseBtn.style.color = isInverse ? 'white' : '#8E8E93';
+            inverseBtn.style.borderColor = isInverse ? '#FF3B30' : 'rgba(255,255,255,0.1)';
+            handleFilter();
         };
 
         searchInput.oninput = handleFilter;
@@ -7949,7 +8190,7 @@ window.exportAllQrPdf = async function (btn) {
 
     const sizeMm = parseInt(document.getElementById('qr-size-select').value) || 80;
     const pxPerMm = 11.81; // 300 DPI (300 / 25.4)
-    
+
     // Space allocations
     const logoHMm = sizeMm < 40 ? 6 : 12;
     const nameHMm = sizeMm < 40 ? 8 : 12;
@@ -7969,7 +8210,7 @@ window.exportAllQrPdf = async function (btn) {
     const margin = Math.round(marginMm * pxPerMm);
     const pageW = Math.round(210 * pxPerMm); // A4 width
     const pageH = Math.round(297 * pxPerMm); // A4 height
-    
+
     const cols = Math.floor((pageW - margin) / (cellW + margin)) || 1;
     const rows = Math.floor((pageH - margin) / (cellH + margin)) || 1;
     const perPage = cols * rows;
@@ -8136,12 +8377,12 @@ window.deleteMaterialPhoto = async function (id) {
 
         // 2. Clear photo_url in DB
         await api.updateMaterialStock(id, { photo_url: null });
-        
+
         // Update local data immediately
         if (item) item.photo_url = null;
 
         window.showToast("Photo supprimée avec succès");
-        
+
         // Refresh the modal correctly
         const modal = document.querySelector('.modal-overlay');
         if (modal) {
@@ -8160,7 +8401,7 @@ window.exportMaterialToExcel = function () {
 
     // CSV Header
     const headers = ["Désignation", "Catégorie", "Caractéristiques", "Référence Fournisseur", "Fournisseur", "Stock Réel", "Stock Souhaité", "Lieu de Stockage", "Réf QR"];
-    
+
     // CSV Content
     const rows = stock.map(item => [
         item.designation || "",
@@ -8175,7 +8416,7 @@ window.exportMaterialToExcel = function () {
     ]);
 
     // Escape CSV values
-    const csvContent = [headers, ...rows].map(row => 
+    const csvContent = [headers, ...rows].map(row =>
         row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(";")
     ).join("\n");
 
@@ -8184,7 +8425,7 @@ window.exportMaterialToExcel = function () {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     const dateStr = new Date().toISOString().split('T')[0];
-    
+
     link.setAttribute("href", url);
     link.setAttribute("download", `inventaire_ats_pouchain_${dateStr}.csv`);
     link.style.visibility = "hidden";
@@ -8959,6 +9200,17 @@ window.renderAdminNotifications = async function () {
         const configRes = results[2].status === 'fulfilled' ? results[2].value : {};
         const schedules = results[3].status === 'fulfilled' ? results[3].value : [];
 
+        const secteur = window.currentUserProfile?.secteur || 'AIA';
+        const filteredUsers = (secteur === 'Tout') ? users : users.filter(u => u.secteur === secteur);
+
+        // Schedules filtrés par secteur (créateur = utilisateur du même secteur).
+        // Filtre strict : les schedules sans user_id ne sont visibles qu'en mode 'Tout'.
+        // Pour ajouter un secteur, aucun changement nécessaire ici.
+        const sectorUserIdSet = new Set(filteredUsers.map(u => u.id));
+        const filteredSchedules = secteur === 'Tout'
+            ? schedules
+            : schedules.filter(s => s.user_id && sectorUserIdSet.has(s.user_id));
+
         if (results[0].status === 'rejected' || results[1].status === 'rejected') {
             console.error("Certaines APIs de notification ont échoué", results);
             if (list) list.innerHTML = `<div style="padding: 20px; color: #FF3B30; text-align:center;">
@@ -8992,7 +9244,9 @@ window.renderAdminNotifications = async function () {
                 list.innerHTML = '<div style="padding: 20px; color: #888; text-align:center;">Aucun utilisateur trouvé.</div>';
             }
         }
-        const validUsers = users.filter(u => u && u.id);
+        // filteredUsers est déjà limité au secteur courant (calculé ligne ~9050).
+        // Pour un nouveau secteur, aucun changement nécessaire ici.
+        const validUsers = filteredUsers.filter(u => u && u.id);
         validUsers.sort((a, b) => {
             const subA = subscriberUserIds.has(a.id);
             const subB = subscriberUserIds.has(b.id);
@@ -9024,7 +9278,7 @@ window.renderAdminNotifications = async function () {
         const maintUserList = document.getElementById('maint-alert-users');
         adminList.innerHTML = "";
         maintUserList.innerHTML = "";
-        const admins = users.filter(u => u.role === 'admin');
+        const admins = filteredUsers.filter(u => u.role === 'admin');
 
         admins.forEach(u => {
             const isSelected = adminAlertIds.has(u.id);
@@ -9059,12 +9313,13 @@ window.renderAdminNotifications = async function () {
             maintUserList.appendChild(mBadge);
         });
 
-        // Remplir SECTION 4: Schedules Planifiés
+        // Remplir SECTION 4: Schedules Planifiés (filtrés par secteur)
         const scheduleList = document.getElementById('scheduled-notifications-list');
         scheduleList.innerHTML = "";
-        if (!schedules || (Array.isArray(schedules) && schedules.length === 0)) {
+        if (!filteredSchedules || (Array.isArray(filteredSchedules) && filteredSchedules.length === 0)) {
             scheduleList.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; grid-column: 1 / -1;">Aucune programmation active.</div>`;
-        } else if (Array.isArray(schedules)) {
+        } else if (Array.isArray(filteredSchedules)) {
+            const schedules = filteredSchedules;
             const daysNames = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
             const monthNames = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 
@@ -9117,8 +9372,8 @@ window.renderAdminNotifications = async function () {
             modal.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(10px); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px;";
 
             // Sort users and filter for multi-selection
-            users.sort((a, b) => (a.first_name || "").localeCompare(b.first_name || ""));
-            const userSelectionHTML = users.map(u => `
+            filteredUsers.sort((a, b) => (a.first_name || "").localeCompare(b.first_name || ""));
+            const userSelectionHTML = filteredUsers.map(u => `
                 <div class="sch-user-option" data-id="${u.id}" style="display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px; background:rgba(255,255,255,0.03); cursor:pointer; transition:0.2s;" onclick="this.classList.toggle('selected'); this.style.background = this.classList.contains('selected') ? 'rgba(88, 86, 214, 0.3)' : 'rgba(255,255,255,0.03)'">
                     <div style="width:18px; height:18px; border:2px solid rgba(255,255,255,0.2); border-radius:4px; display:flex; align-items:center; justify-content:center;">
                         <div class="check" style="width:10px; height:10px; background:#5856D6; border-radius:2px; opacity:0; transition:0.2s;"></div>
@@ -9648,25 +9903,25 @@ window.openMaterialRequestsModal = async function () {
                                 ${req.profiles.first_name} ${req.profiles.last_name}
                             </td>
                             <td style="padding: 16px 12px;">
-                                ${req.new_designation && req.new_designation !== req.material_stock.designation ? 
-                                    `<div style="color: #34C759; font-weight: 800; background: rgba(52,199,89,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📝 Nom : ${req.material_stock.designation} ➔ <span style="font-size: 1.1em;">${req.new_designation}</span></div>` : ''
-                                }
-                                ${req.new_reference_fournisseur && req.new_reference_fournisseur !== req.material_stock.reference_fournisseur ? 
-                                    `<div style="color: #007AFF; font-weight: 800; background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">🔢 Réf : ${req.material_stock.reference_fournisseur || '—'} ➔ <span style="font-size: 1.1em;">${req.new_reference_fournisseur}</span></div>` : ''
-                                }
-                                ${req.new_type && req.new_type !== req.material_stock.type ? 
-                                    `<div style="color: #AF52DE; font-weight: 800; background: rgba(175,82,222,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📁 Cat : ${req.material_stock.type || '—'} ➔ <span style="font-size: 1.1em;">${req.new_type}</span></div>` : ''
-                                }
-                                ${req.new_stock_reel !== req.material_stock.stock_reel ? 
-                                    `<div style="color: #FF9500; font-weight: 800; background: rgba(255,149,0,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📦 Stock : ${req.material_stock.stock_reel} ➔ <span style="font-size: 1.1em;">${req.new_stock_reel}</span></div>` : 
-                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Stock : ${req.new_stock_reel} (inchangé)</div>`
-                                }
-                                ${req.new_lieu_de_stockage !== req.material_stock.lieu_de_stockage ? 
-                                    `<div style="color: #5856D6; font-weight: 800; background: rgba(88,86,214,0.1); padding: 4px 8px; border-radius: 6px;">📍 Lieu : ${req.material_stock.lieu_de_stockage || '—'} ➔ <span style="font-size: 1.1em;">${req.new_lieu_de_stockage}</span></div>` : 
-                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Lieu : ${req.new_lieu_de_stockage} (inchangé)</div>`
-                                }
-                                ${req.new_photo_url ? 
-                                    `<div style="margin-top: 10px; background: rgba(88,86,214,0.1); border-radius: 12px; padding: 10px; border: 1px solid rgba(88,86,214,0.2);">
+                                ${req.new_designation && req.new_designation !== req.material_stock.designation ?
+                `<div style="color: #34C759; font-weight: 800; background: rgba(52,199,89,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📝 Nom : ${req.material_stock.designation} ➔ <span style="font-size: 1.1em;">${req.new_designation}</span></div>` : ''
+            }
+                                ${req.new_reference_fournisseur && req.new_reference_fournisseur !== req.material_stock.reference_fournisseur ?
+                `<div style="color: #007AFF; font-weight: 800; background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">🔢 Réf : ${req.material_stock.reference_fournisseur || '—'} ➔ <span style="font-size: 1.1em;">${req.new_reference_fournisseur}</span></div>` : ''
+            }
+                                ${req.new_type && req.new_type !== req.material_stock.type ?
+                `<div style="color: #AF52DE; font-weight: 800; background: rgba(175,82,222,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📁 Cat : ${req.material_stock.type || '—'} ➔ <span style="font-size: 1.1em;">${req.new_type}</span></div>` : ''
+            }
+                                ${req.new_stock_reel !== req.material_stock.stock_reel ?
+                `<div style="color: #FF9500; font-weight: 800; background: rgba(255,149,0,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📦 Stock : ${req.material_stock.stock_reel} ➔ <span style="font-size: 1.1em;">${req.new_stock_reel}</span></div>` :
+                `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Stock : ${req.new_stock_reel} (inchangé)</div>`
+            }
+                                ${req.new_lieu_de_stockage !== req.material_stock.lieu_de_stockage ?
+                `<div style="color: #5856D6; font-weight: 800; background: rgba(88,86,214,0.1); padding: 4px 8px; border-radius: 6px;">📍 Lieu : ${req.material_stock.lieu_de_stockage || '—'} ➔ <span style="font-size: 1.1em;">${req.new_lieu_de_stockage}</span></div>` :
+                `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Lieu : ${req.new_lieu_de_stockage} (inchangé)</div>`
+            }
+                                ${req.new_photo_url ?
+                `<div style="margin-top: 10px; background: rgba(88,86,214,0.1); border-radius: 12px; padding: 10px; border: 1px solid rgba(88,86,214,0.2);">
                                         <div style="font-size: 11px; color: #5856D6; margin-bottom: 6px; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
                                             <span>📸 Nouvelle Photo</span>
                                             <span style="background: #5856D6; color: white; padding: 1px 4px; border-radius: 4px; font-size: 9px;">DÉTECTÉE</span>
@@ -9678,7 +9933,7 @@ window.openMaterialRequestsModal = async function () {
                                                  onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=color:#FF3B30;font-size:11px;padding:10px;text-align:center;>⚠️ Erreur de chargement<br><small style=opacity:0.7;>${req.new_photo_url}</small></div>'">
                                         </div>
                                      </div>` : ''
-                                }
+            }
                             </td>
                             <td style="padding: 16px 12px; text-align: right;">
                                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
