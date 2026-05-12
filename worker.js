@@ -158,89 +158,53 @@ export default {
                 const isMaterialAllowed = (method === "GET" && url.pathname.includes("/admin/material/stock")) ||
                                           (method === "POST" && url.pathname.endsWith("/admin/material/stock/requests"));
 
+                // EXCEPTION: allow all users to see HT torques
+                const isHTTorqueAllowed = (method === "GET" && url.pathname.includes("/admin/ht-torques"));
+
+                // EXCEPTION: allow all users to see archived material requests list
+                const isMaterialArchiveAllowed = (method === "GET" && url.pathname.endsWith("/admin/material/requests/archived"));
+
                 const isVisitorAllowed = method === "GET" && userRole === 'visiteur';
 
-                if (!isParcOrMaintPath && !isVehicleRead && !isMaterialAllowed && userRole !== 'admin' && !isVisitorAllowed) {
+                if (!isParcOrMaintPath && !isVehicleRead && !isMaterialAllowed && !isHTTorqueAllowed && !isMaterialArchiveAllowed && userRole !== 'admin' && !isVisitorAllowed) {
                     return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
                 }
             }
         }
 
         try {
-            // --- ROUTE: CHECK FOR APK UPDATE ---
+
+            // --- ROUTE: APK VERSION CHECK (Scan app_dist/ for PouchainAppV*.apk) ---
             if (url.pathname.includes("/update/apk-check")) {
-                const currentVersion = url.searchParams.get('current_version') || "0.0";
-                const listing = await env.MY_BUCKET.list({ prefix: 'app_dist/' });
-                let latestVersion = "0.0";
-                let latestFile = null;
+                try {
+                    const listing = await env.MY_BUCKET.list({ prefix: 'app_dist/' });
+                    let latestVersion = "0.0.0";
+                    let latestFile = null;
 
-                for (const obj of listing.objects) {
-                    const match = obj.key.match(/PouchainApp[Vv](\d+[\.\d]*)\.apk$/i);
-                    if (match) {
-                        const ver = match[1];
-                        if (compareVersions(ver, latestVersion) > 0) {
-                            latestVersion = ver;
-                            latestFile = obj;
+                    for (const obj of listing.objects) {
+                        const match = obj.key.match(/PouchainApp[Vv](\d+[\.\d]*)\.apk$/i);
+                        if (match) {
+                            const ver = match[1];
+                            if (compareVersions(ver, latestVersion) > 0) {
+                                latestVersion = ver;
+                                latestFile = obj;
+                            }
                         }
                     }
-                }
 
-                const isNewer = compareVersions(latestVersion, currentVersion) > 0;
-                return new Response(JSON.stringify({
-                    updateAvailable: isNewer,
-                    newVersion: latestVersion,
-                    url: latestFile ? `${url.origin}/get/${latestFile.key}` : null
-                }), {
-                    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache" }
-                });
-            }
-
-            // --- ROUTE: CHECK FOR UPDATES (Auto-Detect zip files with version in name) ---
-            if (url.pathname.includes("/update/check")) {
-                const currentVersion = url.searchParams.get('current_version') || "0.0.0";
-
-                // Scan the WHOLE bucket (recursive search for safety)
-                const listing = await env.MY_BUCKET.list();
-                let latestVersion = "0.0.0";
-                let latestVersionFile = null;
-                let latestTimestamp = 0;
-
-                console.log(`[Updater] Scanning ${listing.objects.length} files...`);
-
-                for (const obj of listing.objects) {
-                    // Match files like V1.0.2.zip or v1.0.2.zip
-                    const match = obj.key.match(/[Vv](\d+\.\d+\.\d+)\.zip$/);
-                    if (match) {
-                        const ver = match[1];
-                        const uploadTime = new Date(obj.uploaded).getTime();
-
-                        const cmp = compareVersions(ver, latestVersion);
-
-                        // We take the HIGHEST version. If versions are equal, take the newest upload.
-                        if (cmp > 0 || (cmp === 0 && uploadTime > latestTimestamp)) {
-                            latestVersion = ver;
-                            latestTimestamp = uploadTime;
-                            latestVersionFile = obj;
-                            console.log(`[Updater] Higher candidate found: ${obj.key} (v${ver})`);
-                        }
+                    if (!latestFile) {
+                        return new Response(JSON.stringify({ error: "Aucun APK trouvé dans app_dist/" }), { status: 404, headers: corsHeaders });
                     }
+
+                    return new Response(JSON.stringify({
+                        version: latestVersion,
+                        size: latestFile.size,
+                        uploaded: latestFile.uploaded,
+                        url: `${url.origin}/get/${latestFile.key}`
+                    }), { headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache" } });
+                } catch (e) {
+                    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
                 }
-
-                const isNewer = compareVersions(latestVersion, currentVersion) > 0;
-                console.log(`[Updater] Result: Last Version found: ${latestVersion}. Current App: ${currentVersion}. Update required? ${isNewer}`);
-
-                return new Response(JSON.stringify({
-                    updateAvailable: isNewer,
-                    newVersion: latestVersion,
-                    url: latestVersionFile ? `${url.origin}/get/${latestVersionFile.key}` : null,
-                    mandatory: true
-                }), {
-                    headers: {
-                        ...corsHeaders,
-                        "Content-Type": "application/json",
-                        "Cache-Control": "no-store, no-cache, must-revalidate"
-                    }
-                });
             }
 
             // --- ROUTE: LIST FILES ---
@@ -700,6 +664,76 @@ export default {
 
                 return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
+
+            // --- ROUTE: HT TORQUES MANAGEMENT ---
+            if (url.pathname.includes("/admin/ht-torques")) {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    const res = await fetch(`${supabaseUrl}/rest/v1/pouchain_ht_torques?select=*&order=marque.asc,modele.asc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    return new Response(await res.text(), { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "POST") {
+                    const body = await request.json();
+                    const res = await fetch(`${supabaseUrl}/rest/v1/pouchain_ht_torques`, {
+                        method: "POST",
+                        headers: {
+                            "apikey": serviceKey,
+                            "Authorization": `Bearer ${serviceKey}`,
+                            "Content-Type": "application/json",
+                            "Prefer": "return=representation"
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    return new Response(await res.text(), { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "PATCH") {
+                    const body = await request.json();
+                    const id = body.id || url.pathname.split('/').pop();
+                    if (!id || id === 'ht-torques') return new Response("Missing ID", { status: 400, headers: corsHeaders });
+                    
+                    const res = await fetch(`${supabaseUrl}/rest/v1/pouchain_ht_torques?id=eq.${id}`, {
+                        method: "PATCH",
+                        headers: {
+                            "apikey": serviceKey,
+                            "Authorization": `Bearer ${serviceKey}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(body)
+                    });
+                    return new Response(await res.text(), { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const id = url.searchParams.get('id') || url.pathname.split('/').pop();
+                    if (!id || id === 'ht-torques') {
+                        // Check if ID is in body (legacy or alternative)
+                        try {
+                            const body = await request.json();
+                            if (body.id) {
+                                const res = await fetch(`${supabaseUrl}/rest/v1/pouchain_ht_torques?id=eq.${body.id}`, {
+                                    method: "DELETE",
+                                    headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                                });
+                                return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                            }
+                        } catch(e) {}
+                        return new Response("Missing ID", { status: 400, headers: corsHeaders });
+                    }
+                    
+                    const res = await fetch(`${supabaseUrl}/rest/v1/pouchain_ht_torques?id=eq.${id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                }
+            }
+
 
             // 2. Create User (POST /admin/users)
             if (method === "POST" && url.pathname.endsWith("/admin/users")) {
@@ -1170,7 +1204,55 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 if (!response.ok) return new Response(await response.text(), { status: response.status, headers: corsHeaders });
-                return new Response(await response.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                
+                let results = await response.json();
+
+                // FALLBACK: If 0 results in Supabase and we are looking at a period, search in R2 archives
+                if (results.length === 0 && (startDate || date)) {
+                    try {
+                        const listing = await env.MY_BUCKET.list({ prefix: "archives/planning/" });
+                        const targetStart = startDate || date;
+                        const targetEnd = endDate || date;
+
+                        for (const obj of listing.objects) {
+                            const archive = await env.MY_BUCKET.get(obj.key);
+                            if (archive) {
+                                const text = await archive.text();
+                                const lines = text.split("\n");
+                                if (lines.length < 2) continue;
+                                const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, ''));
+                                const dateIdx = headers.indexOf('date');
+                                const userIdIdx = headers.indexOf('user_id');
+
+                                for (let i = 1; i < lines.length; i++) {
+                                    if (!lines[i]) continue;
+                                    const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                                    if (row && row.length >= headers.length) {
+                                        const cleanRow = row.map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"'));
+                                        const rowDate = cleanRow[dateIdx];
+                                        const rowUserId = cleanRow[userIdIdx];
+
+                                        if (rowUserId === user.id && rowDate >= targetStart && rowDate <= targetEnd) {
+                                            const task = {};
+                                            headers.forEach((h, idx) => { if (h) task[h] = cleanRow[idx]; });
+                                            results.push(task);
+                                        }
+                                    }
+                                }
+                                // We don't break here because tasks for a period might be spread across multiple years (rare but possible)
+                            }
+                        }
+                        // Sort by date/time since R2 results are unsorted
+                        results.sort((a, b) => {
+                            if (a.date !== b.date) return a.date.localeCompare(b.date);
+                            return (a.start_time || "").localeCompare(b.start_time || "");
+                        });
+                    } catch (e) {
+                        console.error("Web Archive fallback failed", e);
+                    }
+                }
+
+                return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             if (method === "POST" && url.pathname === "/tasks") {
@@ -1283,12 +1365,30 @@ export default {
             }
 
             if (method === "GET" && url.pathname === "/admin/material/requests/archived") {
-                const prefix = (userSecteur && userSecteur !== 'Tout') ? `archives/${userSecteur}/material_requests/` : "archives/material_requests/";
-                const list = await env.MY_BUCKET.list({ prefix });
-                
-                // If Tout, we might want to also include HT-Part or other subfolders, 
-                // but let's stick to the main prefix for now.
-                return new Response(JSON.stringify(list.objects), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                // Always include legacy path (archives/material_requests/) + sector-specific paths
+                const prefixes = ["archives/material_requests/"];
+                const sec = (userSecteur || 'AIA').trim().toLowerCase();
+                if (sec !== 'tout') {
+                    prefixes.push(`archives/${userSecteur}/material_requests/`);
+                } else {
+                    try {
+                        const rootList = await env.MY_BUCKET.list({ prefix: "archives/", delimiter: "/" });
+                        for (const p of rootList.delimitedPrefixes) {
+                            if (!p.includes("material_requests") && !p.includes("planning") && !p.includes("machines_photos")) {
+                                prefixes.push(`${p}material_requests/`);
+                            }
+                        }
+                    } catch(e) {
+                        // Fallback in case of error
+                        prefixes.push("archives/AIA/material_requests/", "archives/HT/material_requests/");
+                    }
+                }
+                const allObjects = [];
+                for (const prefix of prefixes) {
+                    const list = await env.MY_BUCKET.list({ prefix });
+                    allObjects.push(...list.objects);
+                }
+                return new Response(JSON.stringify(allObjects), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             if (method === "DELETE" && url.pathname === "/admin/material/requests/archived") {
@@ -1333,7 +1433,7 @@ export default {
                 const serviceKey = env.SUPABASE_SERVICE_KEY;
 
                 // 1. Fetch current data
-                const fetchRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}&select=*,profiles(first_name,last_name)`, {
+                const fetchRes = await fetch(`${supabaseUrl}/rest/v1/material_requests?id=eq.${id}&select=*,profiles(first_name,last_name,secteur)`, {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
                 });
                 const data = await fetchRes.json();
@@ -1367,7 +1467,7 @@ export default {
                         if (obj) csvContent = await obj.text();
                     } catch (e) { }
                     if (!csvContent) {
-                        csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path,handled_by\n";
+                        csvContent = "id,user_id,user_name,category,material_name,quantity,comment,status,created_at,image_path,handled_by,secteur\n";
                     }
                     const escapeCsv = (val) => {
                         if (val === null || val === undefined) return '""';
@@ -1379,7 +1479,7 @@ export default {
                         escapeCsv(r.id), escapeCsv(r.user_id),
                         escapeCsv(r.profiles ? (r.profiles.first_name + " " + r.profiles.last_name) : 'Inconnu'),
                         escapeCsv(r.category), escapeCsv(r.material_name), escapeCsv(r.quantity), escapeCsv(r.comment),
-                        escapeCsv(status), escapeCsv(r.created_at), escapeCsv(r.image_path), escapeCsv(adminName || 'Admin')
+                        escapeCsv(status), escapeCsv(r.created_at), escapeCsv(r.image_path), escapeCsv(adminName || 'Admin'), escapeCsv(reqSecteur)
                     ].join(',');
                     csvContent += line + "\n";
                     await env.MY_BUCKET.put(key, csvContent, { httpMetadata: { contentType: "text/csv" } });
@@ -1650,47 +1750,6 @@ export default {
                 return new Response(JSON.stringify({ message: "Photo uploaded successfully" }), {
                     headers: { ...corsHeaders, "Content-Type": "application/json" }
                 });
-            }
-
-            // 5. List Archived Material Requests (Admin)
-            if (method === "GET" && url.pathname.endsWith("/admin/material/requests/archived")) {
-                const list = await env.MY_BUCKET.list({ prefix: "archives/material_requests/" });
-                return new Response(JSON.stringify(list.objects), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            }
-
-            if (method === "DELETE" && url.pathname.endsWith("/admin/material/requests/archived")) {
-                const body = await request.json();
-                const { id, key } = body;
-                if (!id || !key) return new Response("Missing id or key", { status: 400, headers: corsHeaders });
-
-                const obj = await env.MY_BUCKET.get(key);
-                if (!obj) return new Response("Archive not found", { status: 404, headers: corsHeaders });
-
-                let csv = await obj.text();
-                const lines = csv.split('\n');
-                const header = lines[0];
-                const rows = lines.slice(1);
-
-                const filtered = rows.filter(row => {
-                    if (!row.trim()) return false;
-                    // Robust CSV separation for the first column (ID)
-                    let firstCol = '';
-                    let inQuotes = false;
-                    for (let i = 0; i < row.length; i++) {
-                        const char = row[i];
-                        if (char === '"') inQuotes = !inQuotes;
-                        else if (char === ',' && !inQuotes) break;
-                        else firstCol += char;
-                    }
-                    // Remove potential double quotes from firstCol
-                    const cleanId = firstCol.trim().replace(/^"|"$/g, '').replace(/""/g, '"');
-                    return cleanId !== id;
-                });
-
-                const newCsv = [header, ...filtered].join('\n');
-                await env.MY_BUCKET.put(key, newCsv, { httpMetadata: { contentType: "text/csv" } });
-
-                return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
             // --- ROUTE: VEHICLE LOGS (Admin) ---
@@ -2004,21 +2063,19 @@ export default {
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` } 
                 });
                 const pData = await profileRes.json();
-                const userSecteurReq = pData[0]?.secteur || 'AIA';
                 const senderName = pData[0] ? `${pData[0].first_name} ${pData[0].last_name}` : 'Un salarié';
 
-                // 1. Insert Request with secteur
+                // 1. Insert Request
                 const res = await fetch(`${supabaseUrl}/rest/v1/material_requests`, {
                     method: "POST",
                     headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
-                        user_id: user.id, 
-                        material_name, 
-                        comment, 
-                        category, 
-                        image_path, 
-                        status: 'requested',
-                        secteur: userSecteurReq // New column
+                    body: JSON.stringify({
+                        user_id: user.id,
+                        material_name,
+                        comment,
+                        category,
+                        image_path,
+                        status: 'requested'
                     })
                 });
                 if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
@@ -3090,7 +3147,8 @@ export default {
                                     if (s.target_type === 'specific') {
                                         targetIds = s.target_user_ids || (s.user_id ? [s.user_id] : null);
                                     }
-                                    const result = await sendPushNotification(env, targetIds, s.message, s.app_url);
+                                    // Passer le secteur à sendPushNotification pour filtrer les cibles ("Tous") par secteur
+                                    const result = await sendPushNotification(env, targetIds, s.message, s.app_url, s.secteur);
                                     if (result.success) {
                                         await fetch(`${supabaseUrl}/rest/v1/notification_schedules?id=eq.${s.id}`, {
                                             method: "PATCH",

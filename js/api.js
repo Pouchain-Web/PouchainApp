@@ -1187,5 +1187,35 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    // --- HT Torques ---
+    async getHTTorques() {
+        const response = await fetch(`${config.api.workerUrl}/admin/ht-torques`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async saveHTTorque(data) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/ht-torques`, {
+            method: data.id ? 'PATCH' : 'POST',
+            headers: { ...await getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteHTTorque(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/ht-torques?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return true;
     }
 };

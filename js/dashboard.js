@@ -1294,6 +1294,9 @@ async function renderAdminView(session) {
                     <span id="mat-stock-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance">🛠️ Maintenance Matériel</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminHTTorques()" id="nav-ht-torques" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>⚡ Couples de Serrage HT</span>
+                </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
@@ -1348,7 +1351,15 @@ async function renderAdminView(session) {
             };
             // ────────────────────────────────────────────────────────────────────────
             const secteur = profile.secteur || 'AIA';
+            
+            // Masquage automatique des onglets non autorisés
             const hiddenTabs = SECTOR_HIDDEN_TABS[secteur] || [];
+            
+            // Si pas HT ou Tout, on masque l'onglet HT Torques
+            if (secteur !== 'HT' && secteur !== 'Tout') {
+                hiddenTabs.push('nav-ht-torques');
+            }
+            
             hiddenTabs.forEach(id => document.getElementById(id)?.remove());
         }
     } catch (e) {
@@ -1393,6 +1404,13 @@ async function renderAdminView(session) {
         window.updateMaterialBadge();
         window.updateMaterialStockBadge();
     }, 30000);
+}
+
+function setActiveNav(navId) {
+    adminCurrentFolder = null;
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    const navItem = document.getElementById(navId);
+    if (navItem) navItem.classList.add('active');
 }
 
 window.openPersonalSettings = function () {
@@ -5209,7 +5227,7 @@ window.renderAdminMaterialRequests = async function () {
                     try {
                         const r = await fetch(`${config.api.workerUrl}/get/${f.key}?t=${Date.now()}`);
                         if (!r.ok) return null;
-                        return await r.text();
+                        return { key: f.key, csv: await r.text() };
                     } catch (e) {
                         console.error(`Echec fetch archive ${f.key}:`, e);
                         return null;
@@ -5217,9 +5235,9 @@ window.renderAdminMaterialRequests = async function () {
                 })
             );
 
-            archiveContents.forEach(csv => {
-                if (!csv) return;
-                const lines = csv.split('\n').filter(l => l.trim());
+            archiveContents.forEach(fileData => {
+                if (!fileData || !fileData.csv) return;
+                const lines = fileData.csv.split('\n').filter(l => l.trim());
                 if (lines.length <= 1) return; // Only header
                 const rows = lines.slice(1);
                 rows.forEach(row => {
@@ -5244,6 +5262,15 @@ window.renderAdminMaterialRequests = async function () {
 
                     const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
                     const status = clean(cols[7]);
+                    const userId = clean(cols[1]);
+                    
+                    // Déterminer le secteur : soit via la colonne CSV (index 11), soit en devinant via allUsers (rétrocompatibilité)
+                    let reqSecteur = cols.length > 11 ? clean(cols[11]) : null;
+                    if (!reqSecteur) {
+                        const u = allUsers.find(u => u.id === userId);
+                        reqSecteur = u ? u.secteur : 'AIA'; // Fallback par défaut
+                    }
+
                     const item = {
                         id: clean(cols[0]),
                         user_name: clean(cols[2]),
@@ -5252,7 +5279,9 @@ window.renderAdminMaterialRequests = async function () {
                         comment: clean(cols[6]),
                         status: status,
                         date: clean(cols[8]),
-                        handled_by: clean(cols[10]) || 'Admin'
+                        handled_by: clean(cols[10]) || 'Admin',
+                        secteur: reqSecteur,
+                        source_key: fileData.key
                     };
                     if (status === 'received') historyConfirmed.push(item);
                     else if (status === 'refused') historyRefused.push(item);
@@ -5263,6 +5292,13 @@ window.renderAdminMaterialRequests = async function () {
             historyConfirmed.sort((a, b) => new Date(b.date) - new Date(a.date));
             historyRefused.sort((a, b) => new Date(b.date) - new Date(a.date));
 
+            // Filtre par secteur courant de l'administrateur
+            const currentMatSecteur = window.currentUserProfile?.secteur || 'AIA';
+            const secNormalized = currentMatSecteur.trim().toLowerCase();
+            if (secNormalized !== 'tout') {
+                historyConfirmed = historyConfirmed.filter(item => item.secteur === currentMatSecteur);
+                historyRefused = historyRefused.filter(item => item.secteur === currentMatSecteur);
+            }
         } catch (err) {
             console.error("Erreur générale archives:", err);
         }
@@ -5306,7 +5342,8 @@ window.renderAdminMaterialRequests = async function () {
         // Filtre secteur — 'Tout' affiche toutes les demandes, sinon uniquement celles du secteur courant.
         // Pour un nouveau secteur, aucun changement nécessaire ici.
         const matSecteur = window.currentUserProfile?.secteur || 'AIA';
-        const sectorUserIds = matSecteur === 'Tout'
+        const isMatTout = matSecteur.trim().toLowerCase() === 'tout';
+        const sectorUserIds = isMatTout
             ? null
             : new Set(allUsers.filter(u => u.secteur === matSecteur).map(u => u.id));
         const mainRequests = sectorUserIds
@@ -5350,11 +5387,15 @@ window.renderAdminMaterialRequests = async function () {
 
                 catRequests.forEach(req => {
                     const userName = [req.profiles?.first_name, req.profiles?.last_name].filter(Boolean).join(' ') || 'Inconnu';
+                    const reqSecteur = req.profiles?.secteur || 'AIA';
                     const statusInfo = groups[req.status] || { label: req.status, color: '#fff' };
 
                     html += `
                         <tr>
-                            <td><div style="font-weight: 600;">${userName}</div></td>
+                            <td>
+                                <div style="font-weight: 600;">${userName}</div>
+                                ${isMatTout ? `<div style="font-size: 10px; padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px; display: inline-block; margin-top: 4px; color: #bbb;">Secteur: ${reqSecteur}</div>` : ''}
+                            </td>
                             <td>
                                 <div style="color: #fff; font-weight: 700; font-size: 15px;">${window.escapeHTML(req.material_name)}</div>
                                 ${req.image_path ? `
@@ -5421,13 +5462,16 @@ window.renderAdminMaterialRequests = async function () {
                                 </tr>
                             ` : items.map(item => `
                                 <tr>
-                                    <td><div style="font-weight: 700; color: #eee;">${item.user_name}</div></td>
+                                    <td>
+                                        <div style="font-weight: 700; color: #eee;">${item.user_name}</div>
+                                        ${isMatTout ? `<div style="font-size: 10px; padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px; display: inline-block; margin-top: 4px; color: #bbb;">Secteur: ${item.secteur}</div>` : ''}
+                                    </td>
                                     <td><div style="font-size: 14px; color: #bbb;">${item.material_name}</div></td>
                                     <td><div style="font-weight: 800; color: #fff;">${item.quantity}</div></td>
                                     <td><div style="color: #34C759; font-size: 13px; display:flex; align-items:center; gap:6px;">🛡️ ${item.handled_by}</div></td>
                                     <td><div style="font-size: 12px; color: #555;">${new Date(item.date).toLocaleDateString()}</div></td>
                                     <td style="text-align: right;">
-                                        <button class="mat-btn refused" onclick="deleteArchivedRequest('${item.id}', '${item.date}')" style="padding: 6px 12px; font-size: 12px;" title="Supprimer de l'historique">🗑️</button>
+                                        <button class="mat-btn refused" onclick="deleteArchivedRequest('${item.id}', '${item.source_key}')" style="padding: 6px 12px; font-size: 12px;" title="Supprimer de l'historique">🗑️</button>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -5453,10 +5497,8 @@ window.renderAdminMaterialRequests = async function () {
 
         content.innerHTML = html;
 
-        window.deleteArchivedRequest = async (id, date) => {
+        window.deleteArchivedRequest = async (id, key) => {
             try {
-                const year = new Date(date).getFullYear();
-                const key = `archives/material_requests/${year}.csv`;
                 await api.deleteArchivedMaterialRequest(id, key);
                 renderAdminMaterialRequests(); // Refresh
             } catch (e) {
@@ -9203,13 +9245,12 @@ window.renderAdminNotifications = async function () {
         const secteur = window.currentUserProfile?.secteur || 'AIA';
         const filteredUsers = (secteur === 'Tout') ? users : users.filter(u => u.secteur === secteur);
 
-        // Schedules filtrés par secteur (créateur = utilisateur du même secteur).
-        // Filtre strict : les schedules sans user_id ne sont visibles qu'en mode 'Tout'.
-        // Pour ajouter un secteur, aucun changement nécessaire ici.
-        const sectorUserIdSet = new Set(filteredUsers.map(u => u.id));
+        // Affichage des programmations :
+        // Les anciennes configurations n'ont pas forcément un secteur défini (null).
+        // On affiche les programmations correspondant au secteur courant ou à 'Tout'.
         const filteredSchedules = secteur === 'Tout'
             ? schedules
-            : schedules.filter(s => s.user_id && sectorUserIdSet.has(s.user_id));
+            : schedules.filter(s => !s.secteur || s.secteur === 'Tout' || s.secteur === secteur);
 
         if (results[0].status === 'rejected' || results[1].status === 'rejected') {
             console.error("Certaines APIs de notification ont échoué", results);
@@ -9326,7 +9367,8 @@ window.renderAdminNotifications = async function () {
             schedules.forEach(s => {
                 let targetLabel = "";
                 if (s.target_type === 'all') {
-                    targetLabel = "🌍 Tous les collaborateurs";
+                    const secLabel = s.secteur && s.secteur !== 'Tout' ? ` (${s.secteur})` : '';
+                    targetLabel = "🌍 Tous les collaborateurs" + secLabel;
                 } else {
                     const ids = s.target_user_ids || (s.user_id ? [s.user_id] : []);
                     if (ids.length === 1) {
@@ -9401,7 +9443,7 @@ window.renderAdminNotifications = async function () {
                         <div>
                             <label style="display:block; margin-bottom:10px; font-size:12px; font-weight:700; color:#888; text-transform:uppercase;">Destinataires</label>
                             <select id="sch-target-type" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:15px; color:white; padding:12px; font-size:15px; outline:none;" onchange="window.toggleSchUserBlock(this.value)">
-                                <option value="all">🌍 Tous les collaborateurs</option>
+                                <option value="all">🌍 Tous les collaborateurs ${secteur !== 'Tout' ? '(' + secteur + ')' : ''}</option>
                                 <option value="specific">👤 Sélection spécifique</option>
                             </select>
                         </div>
@@ -9505,7 +9547,8 @@ window.renderAdminNotifications = async function () {
                     day_of_week: frequency === 'weekly' ? parseInt(document.getElementById('sch-val-day-week').value) : null,
                     day_of_month: (frequency === 'monthly' || frequency === 'yearly') ? parseInt(document.getElementById('sch-val-day-month').value) : null,
                     month: frequency === 'yearly' ? parseInt(document.getElementById('sch-val-month').value) : null,
-                    active: true
+                    active: true,
+                    secteur: window.currentUserProfile?.secteur || 'Tout'
                 };
 
                 btn.disabled = true;
@@ -9964,5 +10007,202 @@ window.handleMaterialRequest = async function (id, status) {
     }
 };
 
-initDashboard();
+window.renderAdminHTTorques = async () => {
+    setActiveNav('nav-ht-torques');
+    const content = document.getElementById('admin-content');
+    
+    content.innerHTML = `
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header Section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #F59F00, #F08C00); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(245, 159, 0, 0.2);">
+                        <span style="font-size: 28px;">⚡</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Couples de Serrage HT</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Gestion de la base de données par modèle de cellule</p>
+                    </div>
+                </div>
 
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="search-box" style="margin: 0;">
+                        <input type="text" id="ht-search" placeholder="Rechercher..." oninput="window.filterHTTable(this.value)" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 12px; height: 46px; padding: 0 16px; width: 250px;">
+                    </div>
+                    <button class="btn-primary" onclick="window.openHTTorqueModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #34C759; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 18px;">+</span> Ajouter une fiche
+                    </button>
+                    <button onclick="window.renderAdminHTTorques()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                <div class="admin-table-container glass-panel" style="padding: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2);">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Marque</th>
+                                <th>Modèle</th>
+                                <th>Type / Détails</th>
+                                <th>Couple Câbles</th>
+                                <th>Couple Barres</th>
+                                <th>Internes / Disjoncteurs</th>
+                                <th style="text-align: right; width: 120px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ht-torque-tbody">
+                            <tr><td colspan="7" class="loading-state" style="text-align: center; padding: 40px; color: #888;">Chargement des données...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    try {
+        const torques = await api.getHTTorques();
+        window.allHTTorques = torques;
+        window.renderHTTorqueTable(torques);
+    } catch (e) {
+        console.error(e);
+        document.getElementById('ht-torque-tbody').innerHTML = `<tr><td colspan="7" class="error-state">Erreur: ${e.message}</td></tr>`;
+    }
+};
+
+window.renderHTTorqueTable = (data) => {
+    const tbody = document.getElementById('ht-torque-tbody');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Aucun couple de serrage trouvé.</td></tr>`;
+        return;
+    }
+    
+    tbody.innerHTML = data.map(t => `
+        <tr>
+            <td style="font-weight: 700; color: #fff;">${window.escapeHTML(t.marque)}</td>
+            <td>${window.escapeHTML(t.modele)}</td>
+            <td style="color: rgba(255,255,255,0.5);">${window.escapeHTML(t.type || '-')}</td>
+            <td><span class="badge badge-primary">${window.escapeHTML(t.couple_cable || '-')}</span></td>
+            <td><span class="badge badge-success" style="background: rgba(175, 82, 222, 0.1); color: #AF52DE;">${window.escapeHTML(t.couple_barre || '-')}</span></td>
+            <td><span class="badge badge-warning">${window.escapeHTML(t.couple_interne || '-')}</span></td>
+            <td style="text-align: right;">
+                <div class="action-buttons">
+                    <button class="icon-btn edit" onclick='window.openHTTorqueModal(${JSON.stringify(t).replace(/'/g, "&#39;")})' title="Modifier">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path></svg>
+                    </button>
+                    <button class="icon-btn delete" onclick="window.deleteHTTorque('${t.id}')" title="Supprimer">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+};
+
+window.filterHTTable = (query) => {
+    const q = query.toLowerCase();
+    const filtered = window.allHTTorques.filter(t => 
+        t.marque.toLowerCase().includes(q) || 
+        t.modele.toLowerCase().includes(q) || 
+        (t.type && t.type.toLowerCase().includes(q))
+    );
+    window.renderHTTorqueTable(filtered);
+};
+
+window.openHTTorqueModal = (data = null) => {
+    const isEdit = !!data;
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '2000';
+    modal.innerHTML = `
+        <div class="modal-box" style="width: 550px;">
+            <div class="modal-header">
+                <h2>${isEdit ? 'Modifier' : 'Ajouter'} un couple de serrage</h2>
+                <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Marque</label>
+                        <input type="text" id="ht-marque" class="form-input" value="${data?.marque || ''}" placeholder="ex: Schneider, Alstom...">
+                    </div>
+                    <div class="form-group">
+                        <label>Modèle</label>
+                        <input type="text" id="ht-modele" class="form-input" value="${data?.modele || ''}" placeholder="ex: RM6, SM6, Fluokit...">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Type de cellule / Détails supplémentaires</label>
+                    <input type="text" id="ht-type" class="form-input" value="${data?.type || ''}" placeholder="ex: Tous types, VM6-S, SMAirset...">
+                </div>
+
+                <div class="form-divider">Paramètres de serrage (Nm)</div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Couple Câbles HTA</label>
+                        <input type="text" id="ht-couple-cable" class="form-input" value="${data?.couple_cable || ''}" placeholder="ex: 50 Nm">
+                    </div>
+                    <div class="form-group">
+                        <label>Couple Jeux de Barres</label>
+                        <input type="text" id="ht-couple-barre" class="form-input" value="${data?.couple_barre || ''}" placeholder="ex: 28 Nm">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Connexions Internes / Disjoncteurs</label>
+                    <input type="text" id="ht-couple-interne" class="form-input" value="${data?.couple_interne || ''}" placeholder="ex: 28 Nm">
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                <button id="save-ht-btn" class="btn-primary">${isEdit ? 'Mettre à jour' : 'Enregistrer'}</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('save-ht-btn').onclick = async () => {
+        const btn = document.getElementById('save-ht-btn');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner"></span> Enregistrement...`;
+
+        try {
+            const payload = {
+                marque: document.getElementById('ht-marque').value,
+                modele: document.getElementById('ht-modele').value,
+                type: document.getElementById('ht-type').value,
+                couple_cable: document.getElementById('ht-couple-cable').value,
+                couple_barre: document.getElementById('ht-couple-barre').value,
+                couple_interne: document.getElementById('ht-couple-interne').value
+            };
+            if (isEdit) payload.id = data.id;
+
+            await api.saveHTTorque(payload);
+            modal.remove();
+            window.renderAdminHTTorques();
+            window.showToast("Données enregistrées avec succès", "success");
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btn.disabled = false;
+            btn.innerText = isEdit ? 'Mettre à jour' : 'Enregistrer';
+        }
+    };
+};
+
+window.deleteHTTorque = async (id) => {
+    if (!confirm("Voulez-vous vraiment supprimer cet enregistrement ?")) return;
+    try {
+        await api.deleteHTTorque(id);
+        window.renderAdminHTTorques();
+        window.showToast("Enregistrement supprimé", "info");
+    } catch (e) {
+        alert("Erreur: " + e.message);
+    }
+};
+
+initDashboard();

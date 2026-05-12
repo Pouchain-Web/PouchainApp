@@ -110,7 +110,9 @@
                     localStorage.setItem('pouchain_role', role);
 
                     // Redirect
-                    window.location.href = 'dashboard.html';
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const redirect = urlParams.get('redirect');
+                    window.location.href = redirect || 'dashboard.html';
                 }
             } catch (error) {
                 console.error(error);
@@ -141,7 +143,9 @@
 
                 // Redirect
                 setTimeout(() => {
-                    window.location.href = 'dashboard.html';
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const redirect = urlParams.get('redirect');
+                    window.location.href = redirect || 'dashboard.html';
                 }, 1000);
 
             } catch (error) {
