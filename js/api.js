@@ -1217,5 +1217,47 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return true;
+    },
+
+    // --- Overtime ---
+    async getAdminOvertimeAll() {
+        const response = await fetch(`${config.api.workerUrl}/admin/overtime/all?t=${Date.now()}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminOvertimeLogs(userId) {
+        const response = await fetch(`${config.api.workerUrl}/admin/overtime/logs?userId=${userId}&t=${Date.now()}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+
+    async deleteOvertimeLog(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/overtime?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async addOvertimeLogByAdmin(userId, data) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/overtime/logs`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ userId, ...data })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

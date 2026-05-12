@@ -12,14 +12,16 @@ export default {
         const url = new URL(request.url);
         const method = request.method;
 
-        console.log(`[REQUEST] ${method} ${url.pathname}`);
-
         // CORS Headers
         const corsHeaders = {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, PUT, POST, DELETE, PATCH, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, x-worker-secret, Authorization",
         };
+
+
+        console.log(`[REQUEST] ${method} ${url.pathname}`);
+
 
         // 1. Handle Preflight (OPTIONS)
         if (method === "OPTIONS") {
@@ -28,7 +30,7 @@ export default {
 
         // Safety check for R2 binding
         if (!env.MY_BUCKET) {
-            return new Response("Erreur de configuration: R2 Bucket (MY_BUCKET) non trouvÃ© dans le Worker.", {
+            return new Response("Erreur de configuration: R2 Bucket (MY_BUCKET) non trouvé dans le Worker.", {
                 status: 500,
                 headers: { ...corsHeaders, "Content-Type": "text/plain" }
             });
@@ -39,7 +41,6 @@ export default {
         const userSecteur = await getUserSecteur(user, env);
 
         // Security: empêche un utilisateur de modifier un dossier auquel son secteur n'a pas accès.
-        // Basé sur les métadonnées .meta_sectors_ stockées dans R2 (extensible à tout nouveau secteur).
         if (userSecteur && userSecteur !== 'Tout' && ["PUT", "DELETE", "POST"].includes(method)) {
             try {
                 const clonedRequest = request.clone();
@@ -58,13 +59,25 @@ export default {
                         }
                     }
                 }
-            } catch (e) {
-                // Si parsing JSON échoue (ex: multipart upload), on laisse passer
-            }
+            } catch (e) { }
         }
 
         // Check Auth : Allow public access ONLY for /get/ files and /update/check
         const isPublicPath = url.pathname.startsWith('/get/') || url.pathname.includes('/update/check') || url.pathname.includes('/update/apk-check') || url.pathname.startsWith('/material');
+        
+        if (!isPublicPath) {
+            if (!user) {
+                return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+            }
+
+            // Visitor Protection: Block all mutations with custom message
+            if (method !== "GET" && userRole === 'visiteur') {
+                return new Response("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !", {
+                    status: 403,
+                    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" }
+                });
+            }
+        }
 
         // --- ROUTE: MATERIAL QR DEEP LINK (Public) ---
         if (method === "GET" && url.pathname === '/material') {
@@ -106,14 +119,7 @@ export default {
         // Try to open the app via custom scheme
         const ref = '${ref}';
         const appUrl = 'pouchainapp://material?ref=' + ref;
-        
-        // Try intent for Android
-        const intentUrl = 'intent://material?ref=' + ref + '#Intent;scheme=pouchainapp;package=com.pouchain.app;end';
-        
-        // Try custom scheme first
         window.location.href = appUrl;
-        
-        // After 2 seconds, show manual button
         setTimeout(() => {
             document.getElementById('spinner').style.display = 'none';
             document.getElementById('open-btn').style.display = 'block';
@@ -125,21 +131,8 @@ export default {
             return new Response(html, { headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' } });
         }
 
-        if (!isPublicPath) {
-            if (!user) {
-                return new Response("Unauthorized", { status: 401, headers: corsHeaders });
-            }
-
-            // Visitor Protection: Block all mutations with custom message
-            if (method !== "GET" && userRole === 'visiteur') {
-                return new Response("Désolé, mais vous ne pouvez pas modifier d'informations avec votre niveau d'accès. Votre compte est dédié à la visualisation de l'interface admin de PouchainApp. Bon visionnage !", {
-                    status: 403,
-                    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" }
-                });
-            }
-
-            // Check Admin/Visitor for /admin/ routes
-            if (url.pathname.startsWith('/admin/')) {
+        // Check Admin/Visitor for /admin/ routes
+        if (url.pathname.startsWith('/admin/')) {
                 // EXCEPTION: grant access to all authenticated users for "Cartes et Parc" and "Maint." apps
                 const isParcOrMaintPath =
                     url.pathname.includes("/admin/machines") ||
@@ -170,37 +163,96 @@ export default {
                     return new Response("Forbidden: Admin access required", { status: 403, headers: corsHeaders });
                 }
             }
-        }
 
         try {
+            // --- ROUTE: CHECK FOR UPDATES (Auto-Detect zip files with version in name) ---
+            if (url.pathname.includes("/update/check")) {
+                const currentVersion = url.searchParams.get('current_version') || "0.0.0";
 
-            // --- ROUTE: APK VERSION CHECK (Scan app_dist/ for PouchainAppV*.apk) ---
-            if (url.pathname.includes("/update/apk-check")) {
-                try {
-                    const listing = await env.MY_BUCKET.list({ prefix: 'app_dist/' });
-                    let latestVersion = "0.0.0";
-                    let latestFile = null;
+                // Scan the WHOLE bucket recursively (R2 listing is limited to 1000 per call)
+                let latestVersion = "0.0.0";
+                let latestVersionFile = null;
+                let latestTimestamp = 0;
+                let cursor = undefined;
+                let truncated = true;
 
+                while (truncated) {
+                    const listing = await env.MY_BUCKET.list({ cursor });
                     for (const obj of listing.objects) {
-                        const match = obj.key.match(/PouchainApp[Vv](\d+[\.\d]*)\.apk$/i);
+                        // Match files like V1.0.2.zip or v1.0.2.zip anywhere in the bucket
+                        const match = obj.key.match(/[Vv](\d+[\.\d]*)\.zip$/i);
                         if (match) {
                             const ver = match[1];
-                            if (compareVersions(ver, latestVersion) > 0) {
+                            const uploadTime = new Date(obj.uploaded).getTime();
+                            const cmp = compareVersions(ver, latestVersion);
+
+                            if (cmp > 0 || (cmp === 0 && uploadTime > latestTimestamp)) {
                                 latestVersion = ver;
-                                latestFile = obj;
+                                latestTimestamp = uploadTime;
+                                latestVersionFile = obj;
                             }
                         }
                     }
+                    truncated = listing.truncated;
+                    cursor = listing.cursor;
+                }
 
-                    if (!latestFile) {
-                        return new Response(JSON.stringify({ error: "Aucun APK trouvé dans app_dist/" }), { status: 404, headers: corsHeaders });
+                const isNewer = compareVersions(latestVersion, currentVersion) > 0;
+
+                return new Response(JSON.stringify({
+                    updateAvailable: isNewer,
+                    newVersion: latestVersion,
+                    url: latestVersionFile ? `${url.origin}/get/${latestVersionFile.key}` : null,
+                    mandatory: true
+                }), {
+                    headers: {
+                        ...corsHeaders,
+                        "Content-Type": "application/json",
+                        "Cache-Control": "no-store, no-cache, must-revalidate"
+                    }
+                });
+            }
+
+            // --- ROUTE: APK VERSION CHECK (Scan bucket for PouchainAppV*.apk) ---
+            if (url.pathname.includes("/update/apk-check")) {
+                try {
+                    const currentVersion = url.searchParams.get('current_version') || "0.0.0";
+                    
+                    let latestVersion = "0.0.0";
+                    let latestFile = null;
+                    let cursor = undefined;
+                    let truncated = true;
+
+                    while (truncated) {
+                        const listing = await env.MY_BUCKET.list({ cursor });
+                        for (const obj of listing.objects) {
+                            // Match files like PouchainAppV1.0.2.apk or PouchainAppv1.0.2.apk anywhere
+                            const match = obj.key.match(/PouchainApp[Vv](\d+[\.\d]*)\.apk$/i);
+                            if (match) {
+                                const ver = match[1];
+                                if (compareVersions(ver, latestVersion) > 0) {
+                                    latestVersion = ver;
+                                    latestFile = obj;
+                                }
+                            }
+                        }
+                        truncated = listing.truncated;
+                        cursor = listing.cursor;
                     }
 
+                    if (!latestFile) {
+                        return new Response(JSON.stringify({ error: "Aucun APK trouvé dans le bucket" }), { status: 404, headers: corsHeaders });
+                    }
+
+                    const isNewer = compareVersions(latestVersion, currentVersion) > 0;
+
                     return new Response(JSON.stringify({
-                        version: latestVersion,
+                        updateAvailable: isNewer,
+                        newVersion: latestVersion,
+                        version: latestVersion, // compatibility
+                        url: `${url.origin}/get/${latestFile.key}`,
                         size: latestFile.size,
-                        uploaded: latestFile.uploaded,
-                        url: `${url.origin}/get/${latestFile.key}`
+                        uploaded: latestFile.uploaded
                     }), { headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache" } });
                 } catch (e) {
                     return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
@@ -2940,6 +2992,189 @@ export default {
                 return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
             }
 
+            // --- ROUTES: HEURES SUP ---
+            if (url.pathname === "/overtime") {
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (method === "GET") {
+                    // Récupérer les logs de l'utilisateur
+                    const res = await fetch(`${supabaseUrl}/rest/v1/overtime_logs?user_id=eq.${user.id}&order=date.desc`, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    const logs = await res.json();
+                    
+                    // Calculer le solde
+                    const total = logs.reduce((acc, log) => acc + parseFloat(log.amount), 0);
+                    
+                    return new Response(JSON.stringify({ logs, total }), {
+                        headers: { ...corsHeaders, "Content-Type": "application/json" }
+                    });
+                }
+
+                if (method === "POST") {
+                    const body = await request.json();
+                    const { amount, date, justification } = body;
+                    
+                    if (!amount || !date) return new Response("Missing parameters", { status: 400, headers: corsHeaders });
+
+                    const res = await fetch(`${supabaseUrl}/rest/v1/overtime_logs`, {
+                        method: "POST",
+                        headers: { 
+                            "apikey": serviceKey, 
+                            "Authorization": `Bearer ${serviceKey}`,
+                            "Content-Type": "application/json",
+                            "Prefer": "return=representation"
+                        },
+                        body: JSON.stringify({
+                            user_id: user.id,
+                            amount: parseFloat(amount),
+                            date,
+                            justification: justification || "",
+                            created_by: user.id
+                        })
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                }
+
+                if (method === "DELETE") {
+                    const logId = url.searchParams.get('id');
+                    if (!logId) return new Response("Missing id", { status: 400, headers: corsHeaders });
+                    
+                    const res = await fetch(`${supabaseUrl}/rest/v1/overtime_logs?id=eq.${logId}&user_id=eq.${user.id}`, {
+                        method: "DELETE",
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+                }
+            }
+
+            // --- ROUTES ADMIN: HEURES SUP ---
+            if (url.pathname.startsWith("/admin/overtime")) {
+                const isUserAdmin = await isAdmin(user, env);
+                if (!isUserAdmin) return new Response("Forbidden", { status: 403, headers: corsHeaders });
+
+                const supabaseUrl = env.SUPABASE_URL || "https://kezjltaafvqnoktfrqym.supabase.co";
+                const serviceKey = env.SUPABASE_SERVICE_KEY;
+
+                if (url.pathname === "/admin/overtime/all") {
+                    // 1. Récupérer le secteur de l'admin
+                    const adminSecteur = await getUserSecteur(user, env);
+
+                    // 2. Récupérer TOUS les logs pour calculer les soldes par personne
+                    // On inclut 'secteur' dans la sélection du profil
+                    const query = `${supabaseUrl}/rest/v1/overtime_logs?select=user_id,amount,profiles!overtime_logs_user_id_fkey(id,first_name,last_name,secteur)`;
+                    const res = await fetch(query, {
+                        headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                    });
+                    if (!res.ok) {
+                        const err = await res.text();
+                        return new Response(JSON.stringify({ error: err, version: "1.0.7", query }), { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                    }
+                    const allLogs = await res.json();
+
+                    // 3. Agréger par utilisateur en utilisant les MINUTES
+                    const usersMap = {};
+                    allLogs.forEach(log => {
+                        const p = log.profiles;
+                        if (!p) return;
+                        
+                        // FILTRAGE : Si l'admin a un secteur défini (autre que 'Tout'), 
+                        // on ne garde que les employés de son secteur.
+                        if (adminSecteur !== 'Tout' && p.secteur !== adminSecteur) return;
+
+                        const uid = p.id;
+                        if (!usersMap[uid]) {
+                            usersMap[uid] = { 
+                                id: uid, 
+                                first_name: p.first_name || "",
+                                last_name: p.last_name || "",
+                                secteur: p.secteur || "Non défini",
+                                total_minutes: 0 
+                            };
+                        }
+                        
+                        const amountHours = parseFloat(log.amount || 0);
+                        const amountMinutes = Math.round(amountHours * 60);
+                        usersMap[uid].total_minutes += amountMinutes;
+                    });
+
+                    // Conversion finale en heures décimales
+                    const results = Object.values(usersMap).map(u => {
+                        const balance = u.total_minutes / 60;
+                        delete u.total_minutes;
+                        return { ...u, overtime_balance: balance };
+                    });
+
+                    return new Response(JSON.stringify(results), {
+                        headers: { ...corsHeaders, "Content-Type": "application/json", "X-Worker-Version": "1.0.8" }
+                    });
+                }
+
+                if (url.pathname === "/admin/overtime/logs") {
+                    if (method === "GET") {
+                        const userId = url.searchParams.get('userId');
+                        let query = `${supabaseUrl}/rest/v1/overtime_logs?select=id,date,amount,justification,profiles!overtime_logs_user_id_fkey(first_name,last_name)&order=created_at.desc&limit=100`;
+                        
+                        if (userId) {
+                            query += `&user_id=eq.${userId}`;
+                        }
+
+                        const res = await fetch(query, {
+                            headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
+                        });
+                        if (!res.ok) {
+                            const err = await res.text();
+                            return new Response(JSON.stringify({ error: err, version: "1.0.3", query }), { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                        }
+                        
+                        const rawLogs = await res.json();
+                        // Adapter les champs pour le dashboard (hours, type, comment)
+                        const adaptedLogs = rawLogs.map(log => ({
+                            id: log.id,
+                            date: log.date,
+                            hours: log.amount,
+                            type: parseFloat(log.amount) >= 0 ? 'ajout' : 'deduction',
+                            comment: log.justification || ""
+                        }));
+
+                        return new Response(JSON.stringify(adaptedLogs), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                    }
+
+                    if (method === "POST") {
+                        const body = await request.json();
+                        const { userId, amount, date, justification } = body;
+
+                        if (!userId || !amount || !date) {
+                            return new Response("Missing parameters (userId, amount, date)", { status: 400, headers: corsHeaders });
+                        }
+
+                        const res = await fetch(`${supabaseUrl}/rest/v1/overtime_logs`, {
+                            method: "POST",
+                            headers: { 
+                                "apikey": serviceKey, 
+                                "Authorization": `Bearer ${serviceKey}`,
+                                "Content-Type": "application/json",
+                                "Prefer": "return=representation"
+                            },
+                            body: JSON.stringify({
+                                user_id: userId,
+                                amount: parseFloat(amount),
+                                date,
+                                justification: justification || "Ajustement Admin",
+                                created_by: user.id
+                            })
+                        });
+
+                        if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
+                        return new Response(await res.text(), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                    }
+                }
+            }
+
             // 404
             return new Response("Not Found", { status: 404, headers: corsHeaders });
         } catch (err) {
@@ -3648,9 +3883,14 @@ async function sendResendEmail(env, to, subject, html) {
 
 
 function compareVersions(v1, v2) {
-    const a = v1.split('.').map(Number);
-    const b = v2.split('.').map(Number);
-    // On compare segment par segment jusqu'au plus long
+    if (!v1 || !v2) return 0;
+    // Strip leading 'v' or 'V'
+    const s1 = String(v1).toLowerCase().startsWith('v') ? String(v1).slice(1) : String(v1);
+    const s2 = String(v2).toLowerCase().startsWith('v') ? String(v2).slice(1) : String(v2);
+    
+    const a = s1.split('.').map(Number);
+    const b = s2.split('.').map(Number);
+    
     for (let i = 0; i < Math.max(a.length, b.length); i++) {
         const valA = a[i] || 0;
         const valB = b[i] || 0;
