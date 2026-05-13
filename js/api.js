@@ -173,7 +173,8 @@ export const api = {
         return users.filter(u => u.role !== 'visiteur');
     },
 
-    async createUser(email, password, role, secteur, firstName, lastName) {
+    async createUser(email, password, role, secteur, firstName, lastName, societe) {
+
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users`, {
             method: 'POST',
@@ -181,13 +182,15 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ email, password, role, secteur, firstName, lastName })
+            body: JSON.stringify({ email, password, role, secteur, firstName, lastName, societe })
+
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
-    async inviteUser(email, role, secteur, redirectTo, firstName, lastName) {
+    async inviteUser(email, role, secteur, redirectTo, firstName, lastName, societe) {
+
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/invite`, {
             method: 'POST',
@@ -195,7 +198,8 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ email, role, secteur, redirectTo, firstName, lastName })
+            body: JSON.stringify({ email, role, secteur, redirectTo, firstName, lastName, societe })
+
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -257,7 +261,7 @@ export const api = {
         return await response.json();
     },
 
-    async updateUserProfile(id, firstName, lastName, secteur) {
+    async updateUserProfile(id, firstName, lastName, secteur, societe) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/profile`, {
             method: 'PUT',
@@ -265,8 +269,9 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, firstName, lastName, secteur })
+            body: JSON.stringify({ id, firstName, lastName, secteur, societe })
         });
+
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
@@ -1256,6 +1261,57 @@ export const api = {
                 ...(await getAuthHeaders())
             },
             body: JSON.stringify({ userId, ...data })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // --- Pointage (Time Tracking) ---
+    async getPointages(week, year) {
+        let url = `${config.api.workerUrl}/pointage`;
+        const params = [];
+        if (week) params.push(`week=${week}`);
+        if (year) params.push(`year=${year}`);
+        if (params.length > 0) url += `?${params.join('&')}`;
+
+        const response = await fetch(url, { headers: await getAuthHeaders() });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitPointage(data) {
+        const response = await fetch(`${config.api.workerUrl}/pointage`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAllPointages(week, year) {
+        let url = `${config.api.workerUrl}/admin/pointage/all`;
+        const params = [];
+        if (week) params.push(`week=${week}`);
+        if (year) params.push(`year=${year}`);
+        if (params.length > 0) url += `?${params.join('&')}`;
+
+        const response = await fetch(url, { headers: await getAuthHeaders() });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async notifyMissingPointage(userIds, message) {
+        const response = await fetch(`${config.api.workerUrl}/admin/pointage/notify-missing`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ userIds, message })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

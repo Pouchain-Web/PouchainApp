@@ -282,11 +282,17 @@ body {
     overflow-y: auto;
     /* Custom scrollbar for sidebar */
     scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.1) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
-.sidebar::-webkit-scrollbar { width: 5px; }
-.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+.sidebar::-webkit-scrollbar {
+    width: 5px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
 
 .sidebar h2 {
     margin-top: 0;
@@ -404,7 +410,8 @@ header h1 {
     gap: 10px;
     padding: 12px 24px;
     border: none;
-    border-radius: 25px; /* Fully rounded "pill" style */
+    border-radius: 25px;
+    /* Fully rounded "pill" style */
     font-size: 14px;
     font-weight: 700;
     cursor: pointer;
@@ -714,6 +721,32 @@ td:last-child {
     color: var(--text-primary);
 }
 
+.form-divider {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    margin: 30px 0 15px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.form-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+    opacity: 0.5;
+}
+
+.form-row {
+    display: flex;
+    gap: 15px;
+    align-items: flex-start;
+}
+
 .color-grid {
     display: flex;
     gap: 12px;
@@ -872,8 +905,13 @@ td:last-child {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 /* Material Admin Table Overrides */
@@ -969,6 +1007,7 @@ td:last-child {
 .mobile-mat-card {
     transition: transform 0.2s;
 }
+
 .mobile-mat-card:active {
     transform: scale(0.98);
 }
@@ -1006,9 +1045,9 @@ td:last-child {
 }
 
 /* Tighten User Management Table */
-.users-table th, 
+.users-table th,
 .users-table td {
-    padding: 10px 12px !important; 
+    padding: 10px 12px !important;
     font-size: 14px !important;
 }
 

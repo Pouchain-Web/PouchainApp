@@ -53,9 +53,14 @@ window.showToast = function (message) {
     }, 3000);
 };
 
-window.getISOWeekNumber = function (dateStr) {
-    if (!dateStr) return '';
-    const date = new Date(dateStr + 'T12:00:00');
+window.getISOWeekNumber = function (dateInput) {
+    if (!dateInput) return '';
+    let date;
+    if (dateInput instanceof Date) {
+        date = dateInput;
+    } else {
+        date = new Date(dateInput + 'T12:00:00');
+    }
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);
@@ -240,7 +245,7 @@ async function initDashboard() {
                 try {
                     await renderAdminPlanning();
                     showFullscreenOverlay(fsMode);
-                } catch(e) {}
+                } catch (e) { }
             })();
         }
     } else {
@@ -421,7 +426,7 @@ async function renderMobileView() {
 
                 let currentPreferences = (profile && profile.preferences) || {};
                 if (typeof currentPreferences === 'string') currentPreferences = JSON.parse(currentPreferences);
-                
+
                 userSecteur = (profile && profile.secteur) || 'Tout';
 
                 // Set initial theme
@@ -1309,6 +1314,7 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPointage()" id="nav-pointage">📝 Pointage Intelligent</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminOvertime()" id="nav-overtime">⏳ Heures Supplémentaires</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📦 Demande de matériel</span>
@@ -1380,15 +1386,15 @@ async function renderAdminView(session) {
             };
             // ────────────────────────────────────────────────────────────────────────
             const secteur = profile.secteur || 'AIA';
-            
+
             // Masquage automatique des onglets non autorisés
             const hiddenTabs = SECTOR_HIDDEN_TABS[secteur] || [];
-            
+
             // Si pas HT ou Tout, on masque l'onglet HT Torques
             if (secteur !== 'HT' && secteur !== 'Tout') {
                 hiddenTabs.push('nav-ht-torques');
             }
-            
+
             hiddenTabs.forEach(id => document.getElementById(id)?.remove());
         }
     } catch (e) {
@@ -3143,9 +3149,12 @@ window.renderAdminUsers = async function () {
                                  <td>
                                      <span class="badge" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);">${window.escapeHTML(u.secteur || 'Tout')}</span>
                                  </td>
+                                 <td>
+                                     <span class="badge" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);">${window.escapeHTML(u.societe || 'Pouchain')}</span>
+                                 </td>
                                  <td>${new Date(u.created_at).toLocaleDateString()}</td>
                                  <td>
-                                     <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${userColor}', '${u.secteur || 'Tout'}')" title="Modifier le nom">✏️ Editer</button>
+                                     <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${userColor}', '${u.secteur || 'Tout'}', '${u.societe || 'Pouchain'}')" title="Modifier le nom">✏️ Editer</button>
                                     ${currentAdminSession && currentAdminSession.user.email === u.email
                     ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
                                            <span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
@@ -3216,6 +3225,13 @@ window.openNewUserModal = function () {
                         <option value="HT">HT</option>
                     </select>
                 </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Société</label>
+                    <select class="form-input" id="new-user-societe">
+                        <option value="Pouchain">Pouchain</option>
+                        <option value="CEPP">CEPP</option>
+                    </select>
+                </div>
             </div>
 
             <div class="modal-actions">
@@ -3254,6 +3270,7 @@ window.createNewUser = async function () {
     const email = document.getElementById('new-user-email').value.trim();
     const role = document.getElementById('new-user-role').value;
     const secteur = document.getElementById('new-user-secteur').value;
+    const societe = document.getElementById('new-user-societe').value;
     const mode = document.getElementById('new-user-modal').getAttribute('data-mode') || 'manual';
 
     if (!email) return alert("Veuillez remplir l'email.");
@@ -3268,10 +3285,10 @@ window.createNewUser = async function () {
         if (mode === 'manual') {
             const password = "123456";
 
-            await api.createUser(email, password, role, secteur, firstName, lastName);
+            await api.createUser(email, password, role, secteur, firstName, lastName, societe);
             showSuccessModal("Utilisateur créé avec succès !<br><br><span style='font-size:14.5px;color:rgba(100,100,100,0.9); font-weight:normal;'>Le mot de passe temporaire de l'utilisateur est <b>123456</b>.<br>Il sera invité à le changer dès sa première connexion.</span>");
         } else {
-            await api.inviteUser(email, role, secteur, redirectTo, firstName, lastName);
+            await api.inviteUser(email, role, secteur, redirectTo, firstName, lastName, societe);
             showSuccessModal("Invitation envoyée avec succès !");
         }
 
@@ -3446,7 +3463,7 @@ window.deleteUser = function (id, email) {
     );
 };
 
-window.openEditUserModal = function (id, firstName, lastName, color = '#2da140', secteur = 'Tout') {
+window.openEditUserModal = function (id, firstName, lastName, color = '#2da140', secteur = 'Tout', societe = 'Pouchain') {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'edit-user-modal';
@@ -3465,13 +3482,22 @@ window.openEditUserModal = function (id, firstName, lastName, color = '#2da140',
                     <input type="text" class="form-input" id="edit-user-lastname" value="${lastName.replace(/"/g, '&quot;').replace(/^-$/, '')}">
                 </div>
             </div>
-            <div class="form-group">
-                <label>Secteur</label>
-                <select class="form-input" id="edit-user-secteur">
-                    <option value="Tout" ${secteur === 'Tout' ? 'selected' : ''}>Tout</option>
-                    <option value="AIA" ${secteur === 'AIA' ? 'selected' : ''}>AIA</option>
-                    <option value="HT" ${secteur === 'HT' ? 'selected' : ''}>HT</option>
-                </select>
+            <div style="display: flex; gap: 16px;">
+                <div class="form-group" style="flex: 1;">
+                    <label>Secteur</label>
+                    <select class="form-input" id="edit-user-secteur">
+                        <option value="Tout" ${secteur === 'Tout' ? 'selected' : ''}>Tout</option>
+                        <option value="AIA" ${secteur === 'AIA' ? 'selected' : ''}>AIA</option>
+                        <option value="HT" ${secteur === 'HT' ? 'selected' : ''}>HT</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Société</label>
+                    <select class="form-input" id="edit-user-societe">
+                        <option value="Pouchain" ${societe === 'Pouchain' ? 'selected' : ''}>Pouchain</option>
+                        <option value="CEPP" ${societe === 'CEPP' ? 'selected' : ''}>CEPP</option>
+                    </select>
+                </div>
             </div>
             <div class="form-group">
                 <label>Couleur (Planning)</label>
@@ -3494,9 +3520,10 @@ window.updateUserProfileName = async function (id) {
     const lastName = document.getElementById('edit-user-lastname').value.trim();
     const color = document.getElementById('edit-user-color').value;
     const secteur = document.getElementById('edit-user-secteur').value;
+    const societe = document.getElementById('edit-user-societe').value;
 
     try {
-        await api.updateUserProfile(id, firstName, lastName, secteur);
+        await api.updateUserProfile(id, firstName, lastName, secteur, societe);
         await api.updateUserColor(id, color);
 
         showSuccessModal("Profil mis à jour avec succès.");
@@ -5292,7 +5319,7 @@ window.renderAdminMaterialRequests = async function () {
                     const clean = (s) => (s || '').replace(/^"|"$/g, '').trim();
                     const status = clean(cols[7]);
                     const userId = clean(cols[1]);
-                    
+
                     // Déterminer le secteur : soit via la colonne CSV (index 11), soit en devinant via allUsers (rétrocompatibilité)
                     let reqSecteur = cols.length > 11 ? clean(cols[11]) : null;
                     if (!reqSecteur) {
@@ -7919,7 +7946,7 @@ window.renderAdminMaterialTracking = async function () {
                     (s.reference_fournisseur || '').toLowerCase().includes(search) ||
                     (s.qr_ref || '').toLowerCase().includes(search) ||
                     (s.fournisseur || '').toLowerCase().includes(search);
-                
+
                 if (search && isInverse) {
                     matchesSearch = !matchesSearch;
                 }
@@ -10039,7 +10066,7 @@ window.handleMaterialRequest = async function (id, status) {
 window.renderAdminHTTorques = async () => {
     setActiveNav('nav-ht-torques');
     const content = document.getElementById('admin-content');
-    
+
     content.innerHTML = `
         <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
             <!-- Header Section -->
@@ -10071,7 +10098,7 @@ window.renderAdminHTTorques = async () => {
                 <div class="admin-table-container glass-panel" style="padding: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2);">
                     <table class="admin-table">
                         <thead>
-                            <tr>
+                            <tr id="ht-torque-thead-tr">
                                 <th>Marque</th>
                                 <th>Modèle</th>
                                 <th>Type / Détails</th>
@@ -10102,38 +10129,74 @@ window.renderAdminHTTorques = async () => {
 
 window.renderHTTorqueTable = (data) => {
     const tbody = document.getElementById('ht-torque-tbody');
+    const theadTr = document.getElementById('ht-torque-thead-tr');
+
     if (!data || data.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Aucun couple de serrage trouvé.</td></tr>`;
         return;
     }
-    
-    tbody.innerHTML = data.map(t => `
-        <tr>
-            <td style="font-weight: 700; color: #fff;">${window.escapeHTML(t.marque)}</td>
-            <td>${window.escapeHTML(t.modele)}</td>
-            <td style="color: rgba(255,255,255,0.5);">${window.escapeHTML(t.type || '-')}</td>
-            <td><span class="badge badge-primary">${window.escapeHTML(t.couple_cable || '-')}</span></td>
-            <td><span class="badge badge-success" style="background: rgba(175, 82, 222, 0.1); color: #AF52DE;">${window.escapeHTML(t.couple_barre || '-')}</span></td>
-            <td><span class="badge badge-warning">${window.escapeHTML(t.couple_interne || '-')}</span></td>
-            <td style="text-align: right;">
-                <div class="action-buttons">
-                    <button class="icon-btn edit" onclick='window.openHTTorqueModal(${JSON.stringify(t).replace(/'/g, "&#39;")})' title="Modifier">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path></svg>
-                    </button>
-                    <button class="icon-btn delete" onclick="window.deleteHTTorque('${t.id}')" title="Supprimer">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    </button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
+
+    // Collecter toutes les colonnes personnalisées uniques présentes dans les données
+    const customLabels = new Set();
+    data.forEach(t => {
+        if (t.extra_torques) {
+            Object.keys(t.extra_torques).forEach(label => {
+                if (label && label.trim()) customLabels.add(label.trim());
+            });
+        }
+    });
+    const sortedCustomLabels = Array.from(customLabels).sort();
+
+    // Mettre à jour l'en-tête du tableau
+    theadTr.innerHTML = `
+        <th style="text-align: left;">MARQUE</th>
+        <th style="text-align: left;">MODÈLE</th>
+        <th style="text-align: left;">TYPE / DÉTAILS</th>
+        <th style="text-align: center;">COUPLE CÂBLES</th>
+        <th style="text-align: center;">COUPLE BARRES</th>
+        <th style="text-align: center;">INTERNES / DISJONCTEURS</th>
+        ${sortedCustomLabels.map(label => `<th style="text-align: center;">${window.escapeHTML(label.toUpperCase())}</th>`).join('')}
+        <th style="text-align: right; width: 120px;">ACTIONS</th>
+    `;
+
+    const purpleBadgeStyle = 'background: rgba(175, 82, 222, 0.1); color: #AF52DE;';
+
+    tbody.innerHTML = data.map(t => {
+        const extraTorques = t.extra_torques || {};
+        const customCells = sortedCustomLabels.map(label => {
+            const val = extraTorques[label] || '-';
+            return `<td style="text-align: center;"><span class="badge" style="${purpleBadgeStyle}">${window.escapeHTML(val)}</span></td>`;
+        }).join('');
+
+        return `
+            <tr>
+                <td style="font-weight: 700; color: #fff; text-align: left;">${window.escapeHTML(t.marque)}</td>
+                <td style="text-align: left;">${window.escapeHTML(t.modele)}</td>
+                <td style="color: rgba(255,255,255,0.5); text-align: left;">${window.escapeHTML(t.type || '-')}</td>
+                <td style="text-align: center;"><span class="badge" style="${purpleBadgeStyle}">${window.escapeHTML(t.couple_cable || '-')}</span></td>
+                <td style="text-align: center;"><span class="badge" style="${purpleBadgeStyle}">${window.escapeHTML(t.couple_barre || '-')}</span></td>
+                <td style="text-align: center;"><span class="badge" style="${purpleBadgeStyle}">${window.escapeHTML(t.couple_interne || '-')}</span></td>
+                ${customCells}
+                <td style="text-align: right;">
+                    <div class="action-buttons">
+                        <button class="icon-btn edit" onclick='window.openHTTorqueModal(${JSON.stringify(t).replace(/'/g, "&#39;")})' title="Modifier">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path></svg>
+                        </button>
+                        <button class="icon-btn delete" onclick="window.deleteHTTorque('${t.id}')" title="Supprimer">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
 };
 
 window.filterHTTable = (query) => {
     const q = query.toLowerCase();
-    const filtered = window.allHTTorques.filter(t => 
-        t.marque.toLowerCase().includes(q) || 
-        t.modele.toLowerCase().includes(q) || 
+    const filtered = window.allHTTorques.filter(t =>
+        t.marque.toLowerCase().includes(q) ||
+        t.modele.toLowerCase().includes(q) ||
         (t.type && t.type.toLowerCase().includes(q))
     );
     window.renderHTTorqueTable(filtered);
@@ -10144,8 +10207,28 @@ window.openHTTorqueModal = (data = null) => {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.zIndex = '2000';
+
+    // Fonction interne pour générer une ligne de couple personnalisé
+    const createExtraRow = (label = '', value = '') => {
+        const div = document.createElement('div');
+        div.className = 'form-row extra-torque-row';
+        div.style.marginBottom = '10px';
+        div.innerHTML = `
+            <div class="form-group" style="flex: 2;">
+                <input type="text" class="form-input extra-label" value="${label}" placeholder="Nom de la colonne (ex: Moteur)">
+            </div>
+            <div class="form-group" style="flex: 2;">
+                <input type="text" class="form-input extra-value" value="${value}" placeholder="Valeur (ex: 15 Nm)">
+            </div>
+            <button class="icon-btn delete" style="margin-top: 4px; height: 46px; width: 46px; border-radius: 12px; background: rgba(255, 59, 48, 0.1);" onclick="this.parentElement.remove()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+        `;
+        return div;
+    };
+
     modal.innerHTML = `
-        <div class="modal-box" style="width: 550px;">
+        <div class="modal-box" style="width: 550px; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header">
                 <h2>${isEdit ? 'Modifier' : 'Ajouter'} un couple de serrage</h2>
                 <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
@@ -10168,7 +10251,7 @@ window.openHTTorqueModal = (data = null) => {
                     <input type="text" id="ht-type" class="form-input" value="${data?.type || ''}" placeholder="ex: Tous types, VM6-S, SMAirset...">
                 </div>
 
-                <div class="form-divider">Paramètres de serrage (Nm)</div>
+                <div class="form-divider">Paramètres de serrage standards (Nm)</div>
 
                 <div class="form-row">
                     <div class="form-group">
@@ -10185,6 +10268,12 @@ window.openHTTorqueModal = (data = null) => {
                     <label>Connexions Internes / Disjoncteurs</label>
                     <input type="text" id="ht-couple-interne" class="form-input" value="${data?.couple_interne || ''}" placeholder="ex: 28 Nm">
                 </div>
+
+                <div class="form-divider">Couples supplémentaires</div>
+                <div id="ht-extra-torques-list"></div>
+                <button id="add-extra-torque-btn" class="btn" style="width: 100%; background: rgba(255,255,255,0.05); color: #fff; border: 1px dashed rgba(255,255,255,0.2); padding: 12px; border-radius: 12px; font-weight: 600; cursor: pointer; margin-top: 10px;">
+                    + Ajouter un couple personnalisé
+                </button>
             </div>
 
             <div class="modal-footer">
@@ -10195,19 +10284,41 @@ window.openHTTorqueModal = (data = null) => {
     `;
     document.body.appendChild(modal);
 
+    const listContainer = document.getElementById('ht-extra-torques-list');
+
+    // Charger les couples existants
+    if (data?.extra_torques) {
+        Object.entries(data.extra_torques).forEach(([label, value]) => {
+            listContainer.appendChild(createExtraRow(label, value));
+        });
+    }
+
+    document.getElementById('add-extra-torque-btn').onclick = () => {
+        listContainer.appendChild(createExtraRow());
+    };
+
     document.getElementById('save-ht-btn').onclick = async () => {
         const btn = document.getElementById('save-ht-btn');
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner"></span> Enregistrement...`;
 
         try {
+            // Collecter les couples personnalisés
+            const extra_torques = {};
+            document.querySelectorAll('.extra-torque-row').forEach(row => {
+                const label = row.querySelector('.extra-label').value.trim();
+                const value = row.querySelector('.extra-value').value.trim();
+                if (label) extra_torques[label] = value;
+            });
+
             const payload = {
                 marque: document.getElementById('ht-marque').value,
                 modele: document.getElementById('ht-modele').value,
                 type: document.getElementById('ht-type').value,
                 couple_cable: document.getElementById('ht-couple-cable').value,
                 couple_barre: document.getElementById('ht-couple-barre').value,
-                couple_interne: document.getElementById('ht-couple-interne').value
+                couple_interne: document.getElementById('ht-couple-interne').value,
+                extra_torques: extra_torques
             };
             if (isEdit) payload.id = data.id;
 
@@ -10236,7 +10347,7 @@ window.deleteHTTorque = async (id) => {
 
 window.renderAdminOvertime = async function () {
     const content = document.getElementById('admin-content');
-    
+
     // Set Active Nav
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     const navItem = document.getElementById('nav-overtime');
@@ -10245,7 +10356,7 @@ window.renderAdminOvertime = async function () {
     if (!window.escapeHTML) {
         window.escapeHTML = (str) => {
             if (!str) return '';
-            return str.replace(/[&<>"']/g, function(m) {
+            return str.replace(/[&<>"']/g, function (m) {
                 return {
                     '&': '&amp;',
                     '<': '&lt;',
@@ -10348,9 +10459,9 @@ window.renderAdminOvertime = async function () {
         const searchInput = document.getElementById('overtime-search');
         searchInput.oninput = () => {
             const search = searchInput.value.toLowerCase();
-            const filtered = data.filter(u => 
-                (u.first_name || '').toLowerCase().includes(search) || 
-                (u.last_name || '').toLowerCase().includes(search) || 
+            const filtered = data.filter(u =>
+                (u.first_name || '').toLowerCase().includes(search) ||
+                (u.last_name || '').toLowerCase().includes(search) ||
                 (u.email || '').toLowerCase().includes(search)
             );
             renderGrid(filtered);
@@ -10399,7 +10510,7 @@ window.renderAdminOvertimeLogs = async function (user) {
     try {
         const logs = await api.getAdminOvertimeLogs(user.id);
         const container = document.getElementById('logs-container');
-        
+
         if (logs.length === 0) {
             container.innerHTML = `<div style="text-align:center; color:#8E8E93; padding: 40px;">Aucun log pour cet employé.</div>`;
             return;
@@ -10426,7 +10537,7 @@ window.renderAdminOvertimeLogs = async function (user) {
 
                 const ctx = chartCanvas.getContext('2d');
                 if (window.overtimeChartInstance) window.overtimeChartInstance.destroy();
-                
+
                 window.overtimeChartInstance = new Chart(ctx, {
                     type: 'line',
                     data: {
@@ -10452,12 +10563,12 @@ window.renderAdminOvertimeLogs = async function (user) {
                         scales: {
                             x: {
                                 type: 'time',
-                                time: { 
+                                time: {
                                     unit: chartData.length > 5 ? 'day' : 'hour',
-                                    displayFormats: { 
+                                    displayFormats: {
                                         hour: 'HH:mm',
-                                        day: 'dd/MM' 
-                                    } 
+                                        day: 'dd/MM'
+                                    }
                                 },
                                 grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
                                 ticks: { color: '#8E8E93', maxRotation: 0 }
@@ -10465,7 +10576,7 @@ window.renderAdminOvertimeLogs = async function (user) {
                             y: {
                                 beginAtZero: true,
                                 grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
-                                ticks: { 
+                                ticks: {
                                     color: '#8E8E93',
                                     callback: value => value + 'h'
                                 }
@@ -10537,10 +10648,10 @@ window.renderAdminOvertimeLogs = async function (user) {
 
 window.deleteOvertimeLogByAdmin = async function (logId, userId, btn) {
     if (!confirm("Voulez-vous vraiment supprimer ce log ? Cela impactera le solde de l'employé.")) return;
-    
+
     btn.disabled = true;
     btn.innerText = "...";
-    
+
     try {
         await api.deleteOvertimeLog(logId);
         window.showToast("Log supprimé avec succès");
@@ -10554,11 +10665,11 @@ window.deleteOvertimeLogByAdmin = async function (logId, userId, btn) {
     }
 };
 
-window.openAdminOvertimeAdjustmentModal = function(user) {
+window.openAdminOvertimeAdjustmentModal = function (user) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
     modal.style.zIndex = '1000001';
-    
+
     const balance = parseFloat(user.overtime_balance) || 0;
     const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
 
@@ -10616,30 +10727,30 @@ window.openAdminOvertimeAdjustmentModal = function(user) {
     window.targetSign = isNegative ? -1 : 1;
 };
 
-window.toggleTargetSign = function() {
+window.toggleTargetSign = function () {
     window.targetSign = window.targetSign === 1 ? -1 : 1;
     const btn = document.getElementById('target-sign-btn');
     const isNeg = window.targetSign === -1;
-    
+
     btn.innerText = isNeg ? '-' : '+';
     btn.style.borderColor = isNeg ? '#FF3B30' : '#34C759';
     btn.style.background = isNeg ? 'rgba(255, 59, 48, 0.1)' : 'rgba(52, 199, 89, 0.1)';
     btn.style.color = isNeg ? '#FF3B30' : '#34C759';
 };
 
-window.submitAdminOvertimeAdjustment = async function(userId, currentBalance) {
+window.submitAdminOvertimeAdjustment = async function (userId, currentBalance) {
     const btn = document.getElementById('btn-save-adj');
     const targetH = parseFloat(document.getElementById('target-hours').value) || 0;
     const targetM = parseFloat(document.getElementById('target-minutes').value) || 0;
     const comment = document.getElementById('adj-comment').value.trim();
-    
+
     if (!comment) {
         return alert("Veuillez saisir une justification pour ce changement de solde.");
     }
-    
+
     const targetTotalDecimal = window.targetSign * (targetH + (targetM / 60));
     const adjustmentNeeded = targetTotalDecimal - currentBalance;
-    
+
     // Si la différence est quasi nulle, on ne fait rien
     if (Math.abs(adjustmentNeeded) < 0.0001) {
         window.showToast("Le solde est déjà à cette valeur.");
@@ -10649,16 +10760,16 @@ window.submitAdminOvertimeAdjustment = async function(userId, currentBalance) {
 
     btn.disabled = true;
     btn.innerText = "⏳ Mise à jour...";
-    
+
     try {
         await api.addOvertimeLogByAdmin(userId, {
             amount: adjustmentNeeded,
             date: new Date().toISOString().split('T')[0],
             justification: `[Ajustement Solde] ${comment}`
         });
-        
+
         window.showToast("Solde mis à jour avec succès !");
-        
+
         // Fermer les deux modales et rafraîchir
         document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
         window.renderAdminOvertime();
@@ -10667,6 +10778,236 @@ window.submitAdminOvertimeAdjustment = async function(userId, currentBalance) {
         btn.disabled = false;
         btn.innerText = "Mettre à jour le solde";
     }
+};
+
+window.renderAdminPointage = async function (targetWeek, targetYear) {
+    setActiveNav('nav-pointage');
+    const container = document.getElementById('admin-content');
+
+    const now = new Date();
+    const currentWeek = window.getISOWeekNumber(now);
+    const currentYear = now.getFullYear();
+
+    const week = parseInt(targetWeek) || currentWeek;
+    const year = parseInt(targetYear) || currentYear;
+
+    container.innerHTML = `
+        <div style="padding: 30px; background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(40px); border-radius: 40px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 12px 40px rgba(0,0,0,0.4);">
+            <div class="glass-header" style="display: flex; align-items: center; justify-content: space-between; padding: 25px; background: #121212; border-radius: 24px; border: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 30px; box-shadow: 0 8px 20px rgba(0,0,0,0.5);">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="background: linear-gradient(135deg, #FF3B30 0%, #FF9500 100%); width: 54px; height: 54px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; box-shadow: 0 8px 16px rgba(255, 59, 48, 0.3);">📝</div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: #fff;">Pointage Intelligent</h1>
+                        <p style="margin: 0; font-size: 14px; color: rgba(255, 255, 255, 0.5);">Suivi hebdomadaire et relances collaborateurs</p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn-primary" onclick="exportPointageToExcel(${week}, ${year})" style="display: flex; align-items: center; gap: 8px; background: #1C1C1E; border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 12px 24px; border-radius: 14px; font-weight: 700; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#2C2C2E'" onmouseout="this.style.background='#1C1C1E'">
+                        📊 Exporter Semaine ${week}
+                    </button>
+                </div>
+            </div>
+
+        <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 25px;">
+            <div>
+                <div class="glass-card" style="background: #121212; border-radius: 28px; border: 1px solid rgba(255, 255, 255, 0.1); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                    <div style="padding: 22px 30px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02);">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="color: #34C759; font-size: 18px;">●</span>
+                            <span style="font-weight: 800; text-transform: uppercase; letter-spacing: 1px; font-size: 12px; color: rgba(255,255,255,0.7);">Tableau de bord - Semaine ${week}</span>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <select class="form-input" style="width: auto; background: #1C1C1E; border: 1px solid rgba(255,255,255,0.1); color: white; height: 38px; border-radius: 10px; padding: 0 12px;" id="pointage-week-select" onchange="renderAdminPointage(this.value, document.getElementById('pointage-year-select').value)">
+                                ${Array.from({ length: 52 }, (_, i) => i + 1).map(w => `<option value="${w}" ${w === week ? 'selected' : ''}>S${w}</option>`).join('')}
+                            </select>
+                            <select class="form-input" style="width: auto; background: #1C1C1E; border: 1px solid rgba(255,255,255,0.1); color: white; height: 38px; border-radius: 10px; padding: 0 12px;" id="pointage-year-select" onchange="renderAdminPointage(document.getElementById('pointage-week-select').value, this.value)">
+                                ${[year - 1, year, year + 1].map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="admin-table" style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <th style="padding: 18px 30px; text-align: left; font-size: 12px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px;">Collaborateur</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Lun</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Mar</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Mer</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Jeu</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Ven</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Sam</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Dim</th>
+                                    <th style="padding: 18px 15px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Total</th>
+                                    <th style="padding: 18px 30px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Statut</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pointage-table-body">
+                                <tr><td colspan="10" style="text-align:center; padding: 60px; color: rgba(255,255,255,0.3);">Chargement des données...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div id="pointage-sidebar">
+                 <!-- Stats and tools -->
+                 <div style="display: flex; flex-direction: column; gap: 20px;">
+                    <div class="glass-card" style="background: #121212; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 28px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                        <h3 style="margin: 0 0 20px 0; font-size: 16px; font-weight: 800;">Récapitulatif</h3>
+                        <div id="pointage-stats-content">
+                            <div class="loader" style="margin: auto;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card" style="background: #121212; border: 1px solid rgba(52, 199, 89, 0.2); border-radius: 28px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                        <h3 style="margin: 0 0 10px 0; font-size: 15px; font-weight: 800; color: #34C759;">Notifications</h3>
+                        <p style="margin: 0 0 15px 0; font-size: 12px; color: rgba(255,255,255,0.5);">Envoyez un rappel automatique aux collaborateurs qui n'ont pas encore validé leur semaine.</p>
+                        <button id="btn-notify-missing" class="btn-primary" style="width: 100%; background: #34C759; border: none; box-shadow: 0 6px 15px rgba(52, 199, 89, 0.3); height: 45px; border-radius: 14px; font-weight: 800; color: white; cursor: pointer;" onclick="notifyMissingPointages()">🔔 Rappel pointage</button>
+                    </div>
+                 </div>
+            </div>
+        </div>
+    </div>
+    `;
+
+    try {
+        const [users, pointages] = await Promise.all([
+            api.listUsers(),
+            api.getAllPointages(week, year)
+        ]);
+
+        const tableBody = document.getElementById('pointage-table-body');
+        tableBody.innerHTML = '';
+
+        const missingUsers = [];
+
+        users.forEach(user => {
+            const userPointages = pointages.filter(p => p.user_id === user.id);
+            const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const dayValues = days.map(dayName => {
+                const p = userPointages.find(up => {
+                    const d = new Date(up.date);
+                    const options = { weekday: 'long', timeZone: 'UTC' };
+                    return d.toLocaleDateString('en-US', options) === dayName;
+                });
+                if (!p) return 0;
+                return p.activities.reduce((acc, act) => acc + parseFloat(act.hours || 0), 0);
+            });
+
+            const total = dayValues.reduce((acc, v) => acc + v, 0);
+            const isFullyComplete = dayValues.slice(0, 5).every(v => v >= 7);
+
+            if (!isFullyComplete) missingUsers.push(user);
+
+            const row = document.createElement('tr');
+            row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+            row.innerHTML = `
+                <td style="padding: 15px 25px;">
+                    <div style="display: flex; flex-direction: column;">
+                        <span style="font-weight: 700; color: #fff;">${window.escapeHTML(user.first_name || '')} ${window.escapeHTML(user.last_name || '')}</span>
+                        <span style="font-size: 11px; color: rgba(255,255,255,0.4);">${window.escapeHTML(user.societe || 'Pouchain')}</span>
+                    </div>
+                </td>
+                ${dayValues.map((v, i) => {
+                let color = 'rgba(255,255,255,0.2)';
+                let bg = 'transparent';
+                if (i < 5) {
+                    if (v >= 7) { color = '#34C759'; bg = 'rgba(52, 199, 89, 0.05)'; }
+                    else if (v > 0) { color = '#FF9500'; bg = 'rgba(255, 149, 0, 0.05)'; }
+                    else { color = '#FF3B30'; bg = 'rgba(255, 59, 48, 0.03)'; }
+                } else if (v > 0) { color = '#5856D6'; bg = 'rgba(88, 86, 214, 0.05)'; }
+
+                return `<td style="padding: 15px; text-align: center; background: ${bg};">
+                                <span style="font-weight: 800; color: ${color}; font-size: 13px;">${v > 0 ? v + 'h' : '-'}</span>
+                            </td>`;
+            }).join('')}
+                <td style="padding: 15px; text-align: center; font-weight: 800; color: #fff; background: rgba(255,255,255,0.02);">${total}h</td>
+                <td style="padding: 15px 25px; text-align: center;">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 8px; background: ${isFullyComplete ? 'rgba(52, 199, 89, 0.1)' : 'rgba(255, 59, 48, 0.1)'}; color: ${isFullyComplete ? '#34C759' : '#FF3B30'}; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; border: 1px solid ${isFullyComplete ? 'rgba(52, 199, 89, 0.2)' : 'rgba(255, 59, 48, 0.2)'};">
+                        <span style="font-size: 12px;">${isFullyComplete ? '●' : '●'}</span>
+                        ${isFullyComplete ? 'OK' : 'Relancer'}
+                    </div>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+
+        const statsContent = document.getElementById('pointage-stats-content');
+        statsContent.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: rgba(255,255,255,0.5); font-size: 13px;">Effectif total</span>
+                    <span style="font-weight: 800; font-size: 16px;">${users.length}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: rgba(255,255,255,0.5); font-size: 13px;">Semaines validées</span>
+                    <span style="font-weight: 800; font-size: 16px; color: #34C759;">${users.length - missingUsers.length}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: rgba(255,255,255,0.5); font-size: 13px;">Semaines incomplètes</span>
+                    <span style="font-weight: 800; font-size: 16px; color: #FF3B30;">${missingUsers.length}</span>
+                </div>
+                <div style="height: 1px; background: rgba(255,255,255,0.05); margin: 5px 0;"></div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: rgba(255,255,255,0.4);">
+                        <span>Progression globale</span>
+                        <span>${Math.round(((users.length - missingUsers.length) / users.length) * 100)}%</span>
+                    </div>
+                    <div style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                        <div style="height: 100%; width: ${((users.length - missingUsers.length) / users.length) * 100}%; background: linear-gradient(90deg, #34C759, #32D74B); border-radius: 3px;"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        window.lastMissingUsers = missingUsers;
+
+    } catch (e) {
+        alert("Erreur lors du chargement des pointages: " + e.message);
+    }
+};
+
+window.notifyMissingPointages = async function () {
+    const users = window.lastMissingUsers;
+    if (!users || users.length === 0) return;
+    if (!confirm(`Envoyer un rappel aux ${users.length} utilisateurs ?`)) return;
+    try {
+        await api.notifyMissingPointage(users.map(u => u.id), "Rappel : Vos pointages de la semaine sont incomplets.");
+        alert("Notifications envoyées !");
+    } catch (e) { alert("Erreur: " + e.message); }
+};
+
+window.exportPointageToExcel = async function (week, year) {
+    try {
+        const [users, pointages] = await Promise.all([api.listUsers(), api.getAllPointages(week, year)]);
+        if (pointages.length === 0) return alert("Aucun pointage.");
+        const wb = XLSX.utils.book_new();
+        users.forEach(user => {
+            const up = pointages.filter(p => p.user_id === user.id);
+            if (up.length === 0) return;
+            const data = [
+                ["POINTAGE HEBDOMADAIRE", "", "", "Semaine:", week, "Année:", year],
+                ["Employé:", `${user.first_name || ''} ${user.last_name || ''}`, "Société:", user.societe || 'Pouchain'],
+                [],
+                ["Date", "Activité", "Heures", "Projet", "Nuit", "Trajet", "Repas", "GD"]
+            ];
+            up.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(p => {
+                (p.activities || []).forEach((act, idx) => {
+                    data.push([
+                        idx === 0 ? p.date : "",
+                        act.activity_name || act.activity || "",
+                        act.hours || 0,
+                        act.project_name || "",
+                        idx === 0 ? (p.night_hours || 0) : "",
+                        idx === 0 ? (p.trajet ? "OUI" : "NON") : "",
+                        idx === 0 ? (p.repas ? "OUI" : "NON") : "",
+                        idx === 0 ? (p.grand_deplacement ? "OUI" : "NON") : ""
+                    ]);
+                });
+            });
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), `${user.last_name || 'User'}`.substring(0, 30));
+        });
+        XLSX.writeFile(wb, `Pointages_S${week}_${year}.xlsx`);
+    } catch (e) { alert("Erreur export: " + e.message); }
 };
 
 window.exportOvertimeToExcel = async function () {
