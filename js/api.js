@@ -1315,5 +1315,196 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async getPointageActivities() {
+        const response = await fetch(`${config.api.workerUrl}/pointage/activities`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async savePointageActivity(data) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/pointage/activities`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deletePointageActivity(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/pointage/activities?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getPointageModificationRequest(week, year) {
+        const response = await fetch(`${config.api.workerUrl}/pointage/modification-requests?week=${week}&year=${year}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitPointageModificationRequest(week, year, comment) {
+        const response = await fetch(`${config.api.workerUrl}/pointage/modification-requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ week, year, comment })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getPendingPointageModificationRequests() {
+        const response = await fetch(`${config.api.workerUrl}/pointage/modification-requests?all=true`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async decidePointageModificationRequest(requestId, approved) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/pointage/modification-requests/decide`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ requestId, approved })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // --- LEAVE MANAGEMENT (Congés) ---
+    async getCongeSolde() {
+        const response = await fetch(`${config.api.workerUrl}/conges/solde`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async initCongeSolde(initialSolde) {
+        const response = await fetch(`${config.api.workerUrl}/conges/init`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ initial_solde: initialSolde })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitCongeRequest(start_date, end_date, dates_list, days_requested, signature) {
+        const response = await fetch(`${config.api.workerUrl}/conges/requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ start_date, end_date, dates_list, days_requested, signature })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getCongeRequests() {
+        const response = await fetch(`${config.api.workerUrl}/conges/requests`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminCongeRequests() {
+        const response = await fetch(`${config.api.workerUrl}/admin/conges/requests`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+     async actionCongeRequest(id, action, adminName, pdfPath = null, comment = null, adminSignature = null) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/conges/action`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ 
+                id, 
+                action, 
+                admin_name: adminName, 
+                pdf_path: pdfPath, 
+                admin_comment: comment, 
+                admin_signature: adminSignature 
+            })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminCongeUsers() {
+        const response = await fetch(`${config.api.workerUrl}/admin/conges/users`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminUserApprovedRequests(userId) {
+        const response = await fetch(`${config.api.workerUrl}/admin/conges/user-requests?userId=${encodeURIComponent(userId)}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async adjustCongeSolde(targetUserId, delta, reason) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/conges/adjust-solde`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ targetUserId, delta, reason })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteCongeRequest(requestId) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/conges/delete-request`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ requestId })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };
