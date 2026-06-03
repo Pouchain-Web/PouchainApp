@@ -260,7 +260,44 @@ async function initDashboard() {
 
                 try {
                     await renderAdminPlanning();
-                    showFullscreenOverlay(fsMode);
+                    if (fsMode === '2') {
+                        window.togglePlanningFullscreenV2();
+                    } else {
+                        window.togglePlanningFullscreen();
+                    }
+
+                    // Show a non-blocking elegant floating tip at the top
+                    const tip = document.createElement('div');
+                    tip.id = 'fs-click-tip';
+                    tip.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:999999; background:rgba(0,0,0,0.85); color:#fff; padding:12px 24px; border-radius:30px; font-weight:600; font-size:14px; border:1px solid #2da140; box-shadow: 0 10px 25px rgba(0,0,0,0.5); pointer-events:none; transition:opacity 0.3s; font-family:sans-serif;";
+                    tip.innerHTML = "💡 Cliquez n'importe où pour masquer les onglets (Plein Écran)";
+                    document.body.appendChild(tip);
+
+                    // Attempt to enter browser fullscreen automatically on first user click or key press anywhere
+                    const autoFS = () => {
+                        if (!document.fullscreenElement) {
+                            if (fsMode === '2') {
+                                const v2 = document.getElementById('planning-v2-container');
+                                if (v2) v2.requestFullscreen().catch(() => {});
+                            } else {
+                                const el = document.getElementById('integrated-planning-container');
+                                if (el) el.requestFullscreen().catch(() => {});
+                            }
+                        }
+                        tip.remove();
+                        document.removeEventListener('click', autoFS);
+                        document.removeEventListener('keydown', autoFS);
+                    };
+                    document.addEventListener('click', autoFS);
+                    document.addEventListener('keydown', autoFS);
+
+                    const onFSChange = () => {
+                        if (document.fullscreenElement) {
+                            tip.remove();
+                            document.removeEventListener('fullscreenchange', onFSChange);
+                        }
+                    };
+                    document.addEventListener('fullscreenchange', onFSChange);
                 } catch (e) { }
             })();
         }
@@ -1316,9 +1353,10 @@ async function renderAdminView(session) {
     // Force admin theme to dark mode
     document.documentElement.setAttribute('data-theme', 'dark');
 
+    const isFullscreenTab = !!new URLSearchParams(window.location.search).get('fullscreen');
     document.body.innerHTML = `
     <div class="admin-layout">
-        <aside class="sidebar">
+        <aside class="sidebar" style="${isFullscreenTab ? 'display: none !important;' : ''}">
             <h2>Pouchain <span>Admin</span></h2>
             <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; margin-bottom: 24px;">
                 Bienvenue <br><span id="admin-welcome-name" style="color: white; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 4px;" onclick="window.openPersonalSettings()" title="Cliquez pour vos paramètres personnels">${session.user.email}</span>
@@ -1372,7 +1410,7 @@ async function renderAdminView(session) {
             </div>
         </aside>
         
-        <main class="content" id="admin-content">
+        <main class="content" id="admin-content" style="${isFullscreenTab ? 'padding: 0 !important;' : ''}">
             <!-- Content Injected Here -->
             <div style="text-align:center; margin-top: 50px;">Chargement...</div>
         </main>
@@ -1690,7 +1728,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     const navItem = document.getElementById('nav-planning');
     if (navItem) navItem.classList.add('active');
     const existingContainer = document.getElementById('planning-v2-container') || document.getElementById('integrated-planning-container');
-    const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-v2-container');
+    const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-v2-container') || (new URLSearchParams(window.location.search).get('fullscreen'));
 
     if (!existingContainer && !isRefresh) {
         content.innerHTML = `<div style="display:flex; justify-content:center; padding: 40px;"><div class="loader" style="border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div></div>`;
@@ -1968,12 +2006,12 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                         📅 Planning Semaine
                     </h1>
                     <div style="display:flex; gap: 20px; align-items:center;">
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', -7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">◀</button>
-                        <div style="display: flex; align-items: center; gap: 25px; color: white;">
+                        <button onclick="changePlanningWeek('${startStr}', -7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #2da140; color: white; border: none; font-size: 16px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#258535'" onmouseout="this.style.background='#2da140'">◀</button>
+                        <div style="display: flex; align-items: center; gap: 25px; color: #495057;">
                             <div style="font-weight: 700; font-size: 18px; letter-spacing: 0.5px;">Du ${displayStart} au ${displayEnd}</div>
-                            <div style="font-weight: 900; font-size: 28px; color: var(--primary); background: rgba(255,255,255,0.05); padding: 5px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">S${window.getISOWeekNumber(startStr)}</div>
+                            <div style="font-weight: 900; font-size: 28px; color: #2da140; background: rgba(45,161,64,0.08); padding: 5px 15px; border-radius: 10px; border: 1px solid rgba(45,161,64,0.15);">S${window.getISOWeekNumber(startStr)}</div>
                         </div>
-                        <button class="btn-sm btn-secondary p-header-controls" onclick="changePlanningWeek('${startStr}', 7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">▶</button>
+                        <button onclick="changePlanningWeek('${startStr}', 7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #2da140; color: white; border: none; font-size: 16px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#258535'" onmouseout="this.style.background='#2da140'">▶</button>
                     </div>
                     <div class="p-header-controls" style="display:flex; gap: 12px;">
                         <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Export</button>
@@ -2227,13 +2265,18 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                 `;
             }
         } else {
+            const containerClass = isCurrentlyFullscreen ? 'planning-fullscreen' : 'planning-inline';
+            const containerStyle = isCurrentlyFullscreen
+                ? 'height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 0; background: #f8f9fa;'
+                : 'height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;';
+
             content.innerHTML = `
-                <div id="integrated-planning-container" class="planning-inline" data-monday="${startStr}" style="height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+                <div id="integrated-planning-container" class="${containerClass}" data-monday="${startStr}" style="${containerStyle}">
                     <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
                         <div id="planning-main-desktop" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                             ${finalContent}
                         </div>
-                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0; margin: 0 -30px -30px -30px;">
+                        <div id="planning-footer-config" style="height: 15vh; min-height: 120px; border-top: 2px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); padding: 5px 30px; overflow: hidden; display: flex; align-items: center; flex-shrink: 0; margin: 0 -30px -30px -30px; ${isCurrentlyFullscreen ? 'display: none !important;' : ''}">
                             <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
                                 ${slideshowConfigHTML}
                             </div>
@@ -2522,7 +2565,7 @@ window.togglePlanningFullscreen = function () {
         el.classList.add('planning-fullscreen');
         if (scrollArea) scrollArea.style.padding = '0 40px 20px 40px';
         el.requestFullscreen().catch(err => {
-            alert(`Erreur plein écran: ${err.message}`);
+            console.warn(`Erreur plein écran: ${err.message}`);
         });
     } else {
         document.exitFullscreen();
