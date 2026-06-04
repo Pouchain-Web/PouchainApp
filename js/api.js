@@ -1151,55 +1151,6 @@ export const api = {
             method: 'POST',
             headers: await getAuthHeaders()
         });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async lookupMaterialByRef(ref) {
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/lookup?ref=${encodeURIComponent(ref)}`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async deleteFile(key) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/photo?key=${encodeURIComponent(key)}`, {
-            method: 'DELETE',
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async deleteMaterialLog(id) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs?id=${id}`, {
-            method: 'DELETE',
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    async setFolderSectors(folder, sectors) {
-        await checkVisitor();
-        const response = await fetch(`${config.api.workerUrl}/admin/folders/sectors`, {
-            method: 'POST',
-            headers: { ...await getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ folder, sectors })
-        });
-        if (!response.ok) throw new Error(await response.text());
-        return await response.json();
-    },
-
-    // --- HT Torques ---
-    async getHTTorques() {
-        const response = await fetch(`${config.api.workerUrl}/admin/ht-torques`, {
-            headers: await getAuthHeaders()
-        });
-        if (!response.ok) throw new Error(await response.text());
         return await response.json();
     },
 
@@ -1349,6 +1300,191 @@ export const api = {
         return await response.json();
     },
 
+    async deleteMaterialLog(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock/logs?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async setFolderSectors(folder, sectors) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/folders/sectors`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ folder, sectors })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // --- Material Stock GT Management ---
+    async getMaterialGTStock() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMaterialGTStock(id, updates) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, ...updates })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialGTStock(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async createMaterialGTStock(item) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(item)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialGTHistory(materialId) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/logs?material_id=${materialId}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async addMaterialGTLog(materialId, action, details) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/logs`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ material_id: materialId, action, details })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialGTLog(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/logs?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialGTStockRequests() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/requests`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitMaterialGTStockRequest(materialId, payload) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ material_id: materialId, ...payload })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMaterialGTStockRequestStatus(requestId, status) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/requests`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id: requestId, status })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async lookupMaterialGTByRef(ref) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/lookup?ref=${encodeURIComponent(ref)}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async generateMaterialGTRefs() {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/generate-refs`, {
+            method: 'POST',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async uploadMaterialGTPhoto(materialId, file, isRequest = false) {
+        await checkVisitor();
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('materialId', materialId);
+        if (isRequest) formData.append('isRequest', 'true');
+        const response = await fetch(`${config.api.workerUrl}/admin/material-gt/photo`, {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: formData
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialGTPhoto(key) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material-gt/photo?key=${encodeURIComponent(key)}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async getPointageModificationRequest(week, year) {
         const response = await fetch(`${config.api.workerUrl}/pointage/modification-requests?week=${week}&year=${year}`, {
             headers: await getAuthHeaders()
@@ -1414,14 +1550,14 @@ export const api = {
         return await response.json();
     },
 
-    async submitCongeRequest(start_date, end_date, dates_list, days_requested, signature) {
+    async submitCongeRequest(start_date, end_date, dates_list, days_requested, signature, motif) {
         const response = await fetch(`${config.api.workerUrl}/conges/requests`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ start_date, end_date, dates_list, days_requested, signature })
+            body: JSON.stringify({ start_date, end_date, dates_list, days_requested, signature, motif })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
@@ -1497,6 +1633,112 @@ export const api = {
     async deleteCongeRequest(requestId) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/conges/delete-request`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ requestId })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    // RTT APIs
+    async getRTTSolde() {
+        const response = await fetch(`${config.api.workerUrl}/rtt/solde`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async initRTTSolde(initialSolde) {
+        const response = await fetch(`${config.api.workerUrl}/rtt/init`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ initial_solde: initialSolde })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitRTTRequest(start_date, end_date, dates_list, days_requested, signature) {
+        const response = await fetch(`${config.api.workerUrl}/rtt/requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ start_date, end_date, dates_list, days_requested, signature })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getRTTRequests() {
+        const response = await fetch(`${config.api.workerUrl}/rtt/requests`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminRTTRequests() {
+        const response = await fetch(`${config.api.workerUrl}/admin/rtt/requests`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async actionRTTRequest(id, action, adminName, pdfPath = null, comment = null, adminSignature = null) {
+        const response = await fetch(`${config.api.workerUrl}/admin/rtt/action`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, action, admin_name: adminName, pdf_path: pdfPath, admin_comment: comment, admin_signature: adminSignature })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminRTTUsers() {
+        const response = await fetch(`${config.api.workerUrl}/admin/rtt/users`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getAdminUserApprovedRTTRequests(userId) {
+        const response = await fetch(`${config.api.workerUrl}/admin/rtt/user-requests?userId=${encodeURIComponent(userId)}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async adjustRTTSolde(targetUserId, delta, reason) {
+        const response = await fetch(`${config.api.workerUrl}/admin/rtt/adjust-solde`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ targetUserId, delta, reason })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteRTTRequest(requestId) {
+        const response = await fetch(`${config.api.workerUrl}/admin/rtt/delete-request`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

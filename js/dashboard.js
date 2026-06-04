@@ -1374,6 +1374,10 @@ async function renderAdminView(session) {
                     <span>🌴 Congés</span>
                     <span id="conges-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminRTT()" id="nav-rtt" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>⚡ RTT</span>
+                    <span id="rtt-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📦 Demande de matériel</span>
                     <span id="mat-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
@@ -1385,6 +1389,10 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialTracking()" id="nav-material-stock" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📦 Statut du matériel ATS</span>
                     <span id="mat-stock-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialGTTracking()" id="nav-material-stock-gt" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🗄️ Statut du matériel GT</span>
+                    <span id="mat-stock-gt-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance">🛠️ Maintenance Matériel</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminHTTorques()" id="nav-ht-torques" style="display: flex; justify-content: space-between; align-items: center;">
@@ -1439,7 +1447,7 @@ async function renderAdminView(session) {
             // ─── Config onglets admin par secteur ───────────────────────────────────
             // Pour ajouter un nouveau secteur : ajouter une entrée avec les IDs à masquer.
             const SECTOR_HIDDEN_TABS = {
-                'HT': ['nav-material-stock', 'nav-maintenance'],
+                'HT': ['nav-material-stock', 'nav-material-stock-gt', 'nav-maintenance'],
                 // 'NOUVEAU_SECTEUR': ['nav-xyz', 'nav-abc'],
             };
             // ────────────────────────────────────────────────────────────────────────
@@ -1451,6 +1459,15 @@ async function renderAdminView(session) {
             // Si pas HT ou Tout, on masque l'onglet HT Torques
             if (secteur !== 'HT' && secteur !== 'Tout') {
                 hiddenTabs.push('nav-ht-torques');
+            }
+
+            // Restricted access to RTT for Patrick Prayez & Quentin Vert only
+            const userAllowedRTT = profile && (
+                ((profile.first_name || '').toLowerCase().trim() === 'patrick' && (profile.last_name || '').toLowerCase().trim() === 'prayez') ||
+                ((profile.first_name || '').toLowerCase().trim() === 'quentin' && (profile.last_name || '').toLowerCase().trim() === 'vert')
+            );
+            if (!userAllowedRTT) {
+                document.getElementById('nav-rtt')?.remove();
             }
 
             hiddenTabs.forEach(id => document.getElementById(id)?.remove());
@@ -1494,10 +1511,12 @@ async function renderAdminView(session) {
     window.updateMaterialBadge();
     window.updateMaterialStockBadge();
     window.updateCongesBadge();
+    window.updateRTTBadge();
     window.materialBadgeInterval = setInterval(() => {
         window.updateMaterialBadge();
         window.updateMaterialStockBadge();
         window.updateCongesBadge();
+        window.updateRTTBadge();
     }, 30000);
 }
 
@@ -10087,32 +10106,41 @@ window.openMaterialRequestsModal = async function () {
                     ${requests.map(req => `
                         <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                             <td style="padding: 16px 12px;">
-                                <div style="font-weight: 700;">${req.material_stock.designation}</div>
-                                <div style="font-size: 12px; color: #8E8E93;">Actuel: ${req.material_stock.stock_reel} à ${req.material_stock.lieu_de_stockage}</div>
+                                <div style="font-weight: 700; color: white;">${req.material_stock.designation}</div>
+                                <div style="font-size: 12px; color: #8E8E93; margin-top: 4px;">
+                                    <span>Réf QR: <b>${req.material_stock.qr_ref || '—'}</b></span> • 
+                                    <span>Réf Fournisseur: <b>${req.material_stock.reference_fournisseur || '—'}</b></span> • 
+                                    <span>Catégorie: <b>${req.material_stock.type || '—'}</b></span>
+                                </div>
+                                <div style="font-size: 12px; color: #8E8E93; margin-top: 4px;">Actuel: ${req.material_stock.stock_reel} à ${req.material_stock.lieu_de_stockage}</div>
                             </td>
                             <td style="padding: 16px 12px;">
                                 ${req.profiles.first_name} ${req.profiles.last_name}
                             </td>
                             <td style="padding: 16px 12px;">
+                                ${req.comment ? `
+                                <div style="margin-bottom: 10px; font-style: italic; color: #FF9500; font-size: 13px; background: rgba(255,149,0,0.05); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,149,0,0.1);">
+                                    <span>💬 Commentaire:</span> <strong>${req.comment}</strong>
+                                </div>` : ''}
                                 ${req.new_designation && req.new_designation !== req.material_stock.designation ?
-                `<div style="color: #34C759; font-weight: 800; background: rgba(52,199,89,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📝 Nom : ${req.material_stock.designation} ➔ <span style="font-size: 1.1em;">${req.new_designation}</span></div>` : ''
-            }
+                                    `<div style="color: #34C759; font-weight: 800; background: rgba(52,199,89,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📝 Nom : ${req.material_stock.designation} ➔ <span style="font-size: 1.1em;">${req.new_designation}</span></div>` : ''
+                                }
                                 ${req.new_reference_fournisseur && req.new_reference_fournisseur !== req.material_stock.reference_fournisseur ?
-                `<div style="color: #007AFF; font-weight: 800; background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">🔢 Réf : ${req.material_stock.reference_fournisseur || '—'} ➔ <span style="font-size: 1.1em;">${req.new_reference_fournisseur}</span></div>` : ''
-            }
+                                    `<div style="color: #007AFF; font-weight: 800; background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">🔢 Réf : ${req.material_stock.reference_fournisseur || '—'} ➔ <span style="font-size: 1.1em;">${req.new_reference_fournisseur}</span></div>` : ''
+                                }
                                 ${req.new_type && req.new_type !== req.material_stock.type ?
-                `<div style="color: #AF52DE; font-weight: 800; background: rgba(175,82,222,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📁 Cat : ${req.material_stock.type || '—'} ➔ <span style="font-size: 1.1em;">${req.new_type}</span></div>` : ''
-            }
+                                    `<div style="color: #AF52DE; font-weight: 800; background: rgba(175,82,222,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📁 Cat : ${req.material_stock.type || '—'} ➔ <span style="font-size: 1.1em;">${req.new_type}</span></div>` : ''
+                                }
                                 ${req.new_stock_reel !== req.material_stock.stock_reel ?
-                `<div style="color: #FF9500; font-weight: 800; background: rgba(255,149,0,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📦 Stock : ${req.material_stock.stock_reel} ➔ <span style="font-size: 1.1em;">${req.new_stock_reel}</span></div>` :
-                `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Stock : ${req.new_stock_reel} (inchangé)</div>`
-            }
+                                    `<div style="color: #FF9500; font-weight: 800; background: rgba(255,149,0,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📦 Stock : ${req.material_stock.stock_reel} ➔ <span style="font-size: 1.1em;">${req.new_stock_reel}</span></div>` :
+                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Stock : ${req.new_stock_reel} (inchangé)</div>`
+                                }
                                 ${req.new_lieu_de_stockage !== req.material_stock.lieu_de_stockage ?
-                `<div style="color: #5856D6; font-weight: 800; background: rgba(88,86,214,0.1); padding: 4px 8px; border-radius: 6px;">📍 Lieu : ${req.material_stock.lieu_de_stockage || '—'} ➔ <span style="font-size: 1.1em;">${req.new_lieu_de_stockage}</span></div>` :
-                `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Lieu : ${req.new_lieu_de_stockage} (inchangé)</div>`
-            }
+                                    `<div style="color: #5856D6; font-weight: 800; background: rgba(88,86,214,0.1); padding: 4px 8px; border-radius: 6px;">📍 Lieu : ${req.material_stock.lieu_de_stockage || '—'} ➔ <span style="font-size: 1.1em;">${req.new_lieu_de_stockage}</span></div>` :
+                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Lieu : ${req.new_lieu_de_stockage} (inchangé)</div>`
+                                }
                                 ${req.new_photo_url ?
-                `<div style="margin-top: 10px; background: rgba(88,86,214,0.1); border-radius: 12px; padding: 10px; border: 1px solid rgba(88,86,214,0.2);">
+                                    `<div style="margin-top: 10px; background: rgba(88,86,214,0.1); border-radius: 12px; padding: 10px; border: 1px solid rgba(88,86,214,0.2);">
                                         <div style="font-size: 11px; color: #5856D6; margin-bottom: 6px; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
                                             <span>📸 Nouvelle Photo</span>
                                             <span style="background: #5856D6; color: white; padding: 1px 4px; border-radius: 4px; font-size: 9px;">DÉTECTÉE</span>
@@ -10124,7 +10152,7 @@ window.openMaterialRequestsModal = async function () {
                                                  onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=color:#FF3B30;font-size:11px;padding:10px;text-align:center;>⚠️ Erreur de chargement<br><small style=opacity:0.7;>${req.new_photo_url}</small></div>'">
                                         </div>
                                      </div>` : ''
-            }
+                                }
                             </td>
                             <td style="padding: 16px 12px; text-align: right;">
                                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
@@ -11913,9 +11941,8 @@ window.generateCongePDFPlaceholder = async function (requestData) {
         };
 
         const du = formatStrDate(requestData.start_date);
-        const au = formatStrDate(requestData.end_date);
-        const joursCount = String(requestData.days_requested || '0');
-        const motif = "CP";
+
+        const motif = requestData.motif || "CP";
 
         const getLocalYYYYMMDD = (d) => {
             const year = d.getFullYear();
@@ -11933,21 +11960,136 @@ window.generateCongePDFPlaceholder = async function (requestData) {
             return getLocalYYYYMMDD(nextDate);
         };
 
-        const retour = formatStrDate(getReturnDate(requestData.end_date));
+        const groupConsecutiveDates = (dates) => {
+            if (!dates || dates.length === 0) return [];
+            const sorted = [...new Set(dates)].filter(d => typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}$/)).sort();
+            if (sorted.length === 0) return [];
+            const groups = [];
+            let currentGroup = [sorted[0]];
+            for (let i = 1; i < sorted.length; i++) {
+                const prev = new Date(sorted[i - 1] + 'T12:00:00');
+                const curr = new Date(sorted[i] + 'T12:00:00');
+                const diffTime = Math.abs(curr - prev);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                let isConsecutive = false;
+                if (diffDays === 1) {
+                    isConsecutive = true;
+                } else {
+                    let tempDate = new Date(prev);
+                    tempDate.setDate(tempDate.getDate() + 1);
+                    let onlyWeekendsOrHolidays = true;
+                    while (tempDate < curr) {
+                        const day = tempDate.getDay();
+                        const isWeekend = day === 0 || day === 6;
+                        const dateStr = getLocalYYYYMMDD(tempDate);
+                        const isHoliday = window.isJoursFerieFrance(dateStr);
+                        if (!isWeekend && !isHoliday) {
+                            onlyWeekendsOrHolidays = false;
+                            break;
+                        }
+                        tempDate.setDate(tempDate.getDate() + 1);
+                    }
+                    if (onlyWeekendsOrHolidays) {
+                        isConsecutive = true;
+                    }
+                }
+                if (isConsecutive) {
+                    currentGroup.push(sorted[i]);
+                } else {
+                    groups.push(currentGroup);
+                    currentGroup = [sorted[i]];
+                }
+            }
+            groups.push(currentGroup);
+            return groups;
+        };
 
-        // Remplir la période de congés selon les noms de champs spécifiques à chaque formulaire
-        if (societe === 'cepp') {
-            form.getTextField('Text4').setText(du);
-            form.getTextField('Text7').setText(au);
-            form.getTextField('Text10').setText(joursCount);
-            form.getTextField('Text14').setText(motif);
-            form.getTextField('Text17').setText(retour);
+        const countBusinessDays = (datesArray) => {
+            let count = 0;
+            datesArray.forEach(dStr => {
+                const d = new Date(dStr + 'T12:00:00');
+                const dayOfWeek = d.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                const isHoliday = window.isJoursFerieFrance(dStr);
+                if (!isWeekend && !isHoliday) {
+                    count++;
+                }
+            });
+            return count;
+        };
+
+        let datesList = requestData.dates_list;
+        if (typeof datesList === 'string') {
+            try { datesList = JSON.parse(datesList); } catch(e) { datesList = []; }
+        }
+
+        let dateGroups = [];
+        if (Array.isArray(datesList) && datesList.length > 0) {
+            try {
+                dateGroups = groupConsecutiveDates(datesList);
+            } catch (err) {
+                console.error("Error grouping dates:", err);
+            }
+        }
+
+        const maxRows = 3;
+        if (dateGroups && dateGroups.length > 0) {
+            for (let i = 0; i < Math.min(dateGroups.length, maxRows); i++) {
+                const group = dateGroups[i];
+                const groupStart = group[0];
+                const groupEnd = group[group.length - 1];
+                const groupJoursCount = String(countBusinessDays(group));
+                const groupRetour = formatStrDate(getReturnDate(groupEnd));
+
+                const duGroup = formatStrDate(groupStart);
+                const auGroup = formatStrDate(groupEnd);
+
+                if (societe === 'cepp') {
+                    const rowFields = [
+                        { du: 'Text4', au: 'Text7', jours: 'Text10', motif: 'Text14', retour: 'Text17' },
+                        { du: 'Text5', au: 'Text8', jours: 'Text12', motif: 'Text15', retour: 'Text18' },
+                        { du: 'Text6', au: 'Text9', jours: 'Text13', motif: 'Text16', retour: 'Text19' }
+                    ];
+                    const fields = rowFields[i];
+                    form.getTextField(fields.du).setText(duGroup);
+                    form.getTextField(fields.au).setText(auGroup);
+                    form.getTextField(fields.jours).setText(groupJoursCount);
+                    form.getTextField(fields.motif).setText(motif);
+                    form.getTextField(fields.retour).setText(groupRetour);
+                } else {
+                    const rowFields = [
+                        { du: 'Text4', au: 'Text5', jours: 'Text6', motif: 'Text7', retour: 'Text8' },
+                        { du: 'Text9', au: 'Text11', jours: 'Text12', motif: 'Text13', retour: 'Text14' },
+                        { du: 'Text15', au: 'Text16', jours: 'Text17', motif: 'Text18', retour: 'Text19' }
+                    ];
+                    const fields = rowFields[i];
+                    form.getTextField(fields.du).setText(duGroup);
+                    form.getTextField(fields.au).setText(auGroup);
+                    form.getTextField(fields.jours).setText(groupJoursCount);
+                    form.getTextField(fields.motif).setText(motif);
+                    form.getTextField(fields.retour).setText(groupRetour);
+                }
+            }
         } else {
-            form.getTextField('Text4').setText(du);
-            form.getTextField('Text5').setText(au);
-            form.getTextField('Text6').setText(joursCount);
-            form.getTextField('Text7').setText(motif);
-            form.getTextField('Text8').setText(retour);
+            // Robust fallback if no dates list available or calculation fails
+            const du = formatStrDate(requestData.start_date);
+            const au = formatStrDate(requestData.end_date);
+            const joursCount = String(requestData.days_requested || '0');
+            const retour = formatStrDate(getReturnDate(requestData.end_date));
+
+            if (societe === 'cepp') {
+                form.getTextField('Text4').setText(du);
+                form.getTextField('Text7').setText(au);
+                form.getTextField('Text10').setText(joursCount);
+                form.getTextField('Text14').setText(motif);
+                form.getTextField('Text17').setText(retour);
+            } else {
+                form.getTextField('Text4').setText(du);
+                form.getTextField('Text5').setText(au);
+                form.getTextField('Text6').setText(joursCount);
+                form.getTextField('Text7').setText(motif);
+                form.getTextField('Text8').setText(retour);
+            }
         }
 
         // Date de soumission du collaborateur
@@ -12037,10 +12179,14 @@ window.renderAdminConges = async function () {
     content.innerHTML = `<div style="text-align:center; padding: 50px;"><div class="loader-spinner"></div></div>`;
 
     try {
-        const [requests, users] = await Promise.all([
+        const [requests, usersData] = await Promise.all([
             api.getAdminCongeRequests(),
             api.getAdminCongeUsers()
         ]);
+        const users = usersData.filter(u => {
+            const nameLower = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
+            return nameLower.includes('patrick') || nameLower.includes('quentin') || nameLower.includes('partick');
+        });
 
         const adminSecteur = window.currentUserProfile?.secteur || 'AIA';
         const pendingRequests = requests.filter(r => r.status === 'pending');
@@ -12170,7 +12316,11 @@ function renderPendingRequestsSection(requests) {
                             <div style="color: white; font-size: 14px; font-weight: 600;">Du : <span style="font-weight: 500; color: #eee;">${startStr}</span></div>
                             <div style="color: white; font-size: 14px; font-weight: 600; margin-top: 4px;">Au : <span style="font-weight: 500; color: #eee;">${endStr}</span></div>
                             <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
-                                <span style="font-size: 13px; color: #8E8E93;">Jours déduits (ouvrés) :</span>
+                                <span style="font-size: 13px; color: #8E8E93;">Motif :</span>
+                                <strong style="font-size: 15px; color: #FF9500;">${r.motif || 'CP'}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                                <span style="font-size: 13px; color: #8E8E93;">Jours demandés (ouvrés) :</span>
                                 <strong style="font-size: 16px; color: #007AFF;">${r.days_requested} jours</strong>
                             </div>
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
@@ -12536,6 +12686,10 @@ window.viewUserCongeHistory = async function (userId, name) {
                             <span style="background: rgba(52, 199, 89, 0.15); color: #34C759; padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase;">Validée</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
+                            <span>Motif :</span>
+                            <strong style="color: #FF9500;">${r.motif || 'CP'}</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
                             <span>Durée décomptée :</span>
                             <strong style="color: white;">${r.days_requested} jours</strong>
                         </div>
@@ -12656,4 +12810,1578 @@ window.openAdjustSoldeModal = function (userId, name, currentSolde) {
     });
 };
 
-initDashboard();
+// ============================================================
+// --- STOCK GT TRACKING (Armoires Verticales Tours/Vertimags) ---
+// ============================================================
+
+// --- MODULE: GESTION DES RTT (Admin) ---
+window.updateRTTBadge = async function () {
+    try {
+        const requests = await api.getAdminRTTRequests();
+        const pendingCount = requests.filter(r => r.status === 'pending').length;
+        const badge = document.getElementById('rtt-badge');
+        if (badge) {
+            if (pendingCount > 0) {
+                badge.textContent = pendingCount;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (e) {
+        console.warn("Could not update rtt badge", e);
+    }
+};
+
+window.parseRTTAdminComment = function (commentStr) {
+    if (!commentStr) return { comment: '', admin_name: '', admin_signature: '' };
+    if (typeof commentStr === 'string' && commentStr.startsWith('{') && commentStr.endsWith('}')) {
+        try {
+            const data = JSON.parse(commentStr);
+            return {
+                comment: data.comment || '',
+                admin_name: data.admin_name || '',
+                admin_signature: data.admin_signature || null
+            };
+        } catch (e) {
+            return { comment: commentStr, admin_name: '', admin_signature: null };
+        }
+    }
+    return { comment: commentStr, admin_name: '', admin_signature: null };
+};
+
+window.generateRTTPDFPlaceholder = async function (requestData) {
+    console.log("PDF generation started for RTT request:", requestData);
+    try {
+        const parsedCommentData = window.parseRTTAdminComment(requestData.admin_comment);
+        let user = requestData.profiles || {};
+        if (Array.isArray(user)) {
+            user = user[0] || {};
+        }
+
+        if ((!user.first_name || !user.societe) && requestData.user_id) {
+            try {
+                const allUsers = await api.getAdminRTTUsers();
+                const matchedUser = allUsers.find(u => u.id === requestData.user_id);
+                if (matchedUser) {
+                    user = matchedUser;
+                }
+            } catch (err) {
+                console.error("Error fetching fallback user details:", err);
+            }
+        }
+
+        const first_name = user.first_name || requestData.first_name || '';
+        const last_name = user.last_name || requestData.last_name || '';
+        const secteur = user.secteur || requestData.secteur || '';
+        const societeVal = user.societe || requestData.societe || 'Pouchain';
+        const societe = societeVal.toLowerCase();
+
+        const templateName = societe === 'cepp'
+            ? 'MOD-GRH-04 Demande absence CEPP v2.pdf'
+            : 'MOD-GRH-05 Demande absence POUCHAIN v2.pdf';
+
+        const response = await fetch(`./${templateName}`);
+        if (!response.ok) throw new Error(`Impossible de charger le modèle ${templateName}`);
+        const templateBytes = await response.arrayBuffer();
+
+        const { PDFDocument } = PDFLib;
+        const pdfDoc = await PDFDocument.load(templateBytes);
+        const form = pdfDoc.getForm();
+        const pages = pdfDoc.getPages();
+        const firstPage = pages[0];
+
+        const nom = (last_name || '').toUpperCase();
+        const prenom = first_name || '';
+        const service = (societe === 'cepp') ? 'PAC' : ((!secteur || secteur === 'Tout') ? 'PAC' : secteur);
+
+        form.getTextField('Text1').setText(nom);
+        form.getTextField('Text2').setText(prenom);
+        form.getTextField('Text3').setText(service);
+
+        const formatStrDate = (dateStr) => {
+            if (!dateStr) return '';
+            const parts = dateStr.split('-');
+            if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            return dateStr;
+        };
+
+        const du = formatStrDate(requestData.start_date);
+
+        const motif = "RTT";
+
+        const getLocalYYYYMMDD = (d) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const getReturnDate = (endDateStr) => {
+            let nextDate = new Date(endDateStr + 'T12:00:00');
+            do {
+                nextDate.setDate(nextDate.getDate() + 1);
+            } while (nextDate.getDay() === 0 || nextDate.getDay() === 6 || window.isJoursFerieFrance(getLocalYYYYMMDD(nextDate)));
+            return getLocalYYYYMMDD(nextDate);
+        };
+
+        const groupConsecutiveDates = (dates) => {
+            if (!dates || dates.length === 0) return [];
+            const sorted = [...new Set(dates)].filter(d => typeof d === 'string' && d.match(/^\d{4}-\d{2}-\d{2}$/)).sort();
+            if (sorted.length === 0) return [];
+            const groups = [];
+            let currentGroup = [sorted[0]];
+            for (let i = 1; i < sorted.length; i++) {
+                const prev = new Date(sorted[i - 1] + 'T12:00:00');
+                const curr = new Date(sorted[i] + 'T12:00:00');
+                const diffTime = Math.abs(curr - prev);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                let isConsecutive = false;
+                if (diffDays === 1) {
+                    isConsecutive = true;
+                } else {
+                    let tempDate = new Date(prev);
+                    tempDate.setDate(tempDate.getDate() + 1);
+                    let onlyWeekendsOrHolidays = true;
+                    while (tempDate < curr) {
+                        const day = tempDate.getDay();
+                        const isWeekend = day === 0 || day === 6;
+                        const dateStr = getLocalYYYYMMDD(tempDate);
+                        const isHoliday = window.isJoursFerieFrance(dateStr);
+                        if (!isWeekend && !isHoliday) {
+                            onlyWeekendsOrHolidays = false;
+                            break;
+                        }
+                        tempDate.setDate(tempDate.getDate() + 1);
+                    }
+                    if (onlyWeekendsOrHolidays) {
+                        isConsecutive = true;
+                    }
+                }
+                if (isConsecutive) {
+                    currentGroup.push(sorted[i]);
+                } else {
+                    groups.push(currentGroup);
+                    currentGroup = [sorted[i]];
+                }
+            }
+            groups.push(currentGroup);
+            return groups;
+        };
+
+        const countBusinessDays = (datesArray) => {
+            let count = 0;
+            datesArray.forEach(dStr => {
+                const d = new Date(dStr + 'T12:00:00');
+                const dayOfWeek = d.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                const isHoliday = window.isJoursFerieFrance(dStr);
+                if (!isWeekend && !isHoliday) {
+                    count++;
+                }
+            });
+            return count;
+        };
+
+        let datesList = requestData.dates_list;
+        if (typeof datesList === 'string') {
+            try { datesList = JSON.parse(datesList); } catch(e) { datesList = []; }
+        }
+
+        let dateGroups = [];
+        if (Array.isArray(datesList) && datesList.length > 0) {
+            try {
+                dateGroups = groupConsecutiveDates(datesList);
+            } catch (err) {
+                console.error("Error grouping RTT dates:", err);
+            }
+        }
+
+        const maxRows = 3;
+        if (dateGroups && dateGroups.length > 0) {
+            for (let i = 0; i < Math.min(dateGroups.length, maxRows); i++) {
+                const group = dateGroups[i];
+                const groupStart = group[0];
+                const groupEnd = group[group.length - 1];
+                const groupJoursCount = String(countBusinessDays(group));
+                const groupRetour = formatStrDate(getReturnDate(groupEnd));
+
+                const duGroup = formatStrDate(groupStart);
+                const auGroup = formatStrDate(groupEnd);
+
+                if (societe === 'cepp') {
+                    const rowFields = [
+                        { du: 'Text4', au: 'Text7', jours: 'Text10', motif: 'Text14', retour: 'Text17' },
+                        { du: 'Text5', au: 'Text8', jours: 'Text12', motif: 'Text15', retour: 'Text18' },
+                        { du: 'Text6', au: 'Text9', jours: 'Text13', motif: 'Text16', retour: 'Text19' }
+                    ];
+                    const fields = rowFields[i];
+                    form.getTextField(fields.du).setText(duGroup);
+                    form.getTextField(fields.au).setText(auGroup);
+                    form.getTextField(fields.jours).setText(groupJoursCount);
+                    form.getTextField(fields.motif).setText(motif);
+                    form.getTextField(fields.retour).setText(groupRetour);
+                } else {
+                    const rowFields = [
+                        { du: 'Text4', au: 'Text5', jours: 'Text6', motif: 'Text7', retour: 'Text8' },
+                        { du: 'Text9', au: 'Text11', jours: 'Text12', motif: 'Text13', retour: 'Text14' },
+                        { du: 'Text15', au: 'Text16', jours: 'Text17', motif: 'Text18', retour: 'Text19' }
+                    ];
+                    const fields = rowFields[i];
+                    form.getTextField(fields.du).setText(duGroup);
+                    form.getTextField(fields.au).setText(auGroup);
+                    form.getTextField(fields.jours).setText(groupJoursCount);
+                    form.getTextField(fields.motif).setText(motif);
+                    form.getTextField(fields.retour).setText(groupRetour);
+                }
+            }
+        } else {
+            // Robust fallback if no dates list available or calculation fails
+            const du = formatStrDate(requestData.start_date);
+            const au = formatStrDate(requestData.end_date);
+            const joursCount = String(requestData.days_requested || '0');
+            const retour = formatStrDate(getReturnDate(requestData.end_date));
+
+            if (societe === 'cepp') {
+                form.getTextField('Text4').setText(du);
+                form.getTextField('Text7').setText(au);
+                form.getTextField('Text10').setText(joursCount);
+                form.getTextField('Text14').setText(motif);
+                form.getTextField('Text17').setText(retour);
+            } else {
+                form.getTextField('Text4').setText(du);
+                form.getTextField('Text5').setText(au);
+                form.getTextField('Text6').setText(joursCount);
+                form.getTextField('Text7').setText(motif);
+                form.getTextField('Text8').setText(retour);
+            }
+        }
+
+        const dateSoumission = formatStrDate(requestData.created_at ? requestData.created_at.split('T')[0] : getLocalYYYYMMDD(new Date()));
+        form.getTextField('Text20').setText(`Le ${dateSoumission}`);
+
+        try {
+            form.getRadioGroup('Group1').select('Choice1');
+        } catch (e) {}
+
+        const dateAcceptation = formatStrDate(getLocalYYYYMMDD(new Date()));
+        let adminName = requestData.admin_name || parsedCommentData.admin_name;
+        if (!adminName) {
+            const currentAdmin = window.currentUserProfile;
+            adminName = currentAdmin ? `${currentAdmin.first_name || ''} ${currentAdmin.last_name || ''}`.trim() : 'Admin';
+        }
+        const dateRespFieldName = societe === 'cepp' ? 'Text25' : 'Text24';
+        form.getTextField(dateRespFieldName).setText(`Le ${dateAcceptation} par ${adminName}`);
+
+        if (requestData.signature) {
+            try {
+                const blackSigUrl = await forceSignatureBlackColor(requestData.signature);
+                const sigImageBytes = await fetch(blackSigUrl).then(res => res.arrayBuffer());
+                const sigImage = await pdfDoc.embedPng(sigImageBytes);
+                const sigCoords = societe === 'cepp'
+                    ? { x: 430, y: 278, width: 90, height: 35 }
+                    : { x: 430, y: 250, width: 90, height: 35 };
+                firstPage.drawImage(sigImage, sigCoords);
+            } catch (sigErr) {}
+        }
+
+        const adminSignature = requestData.admin_signature || parsedCommentData.admin_signature;
+        if (adminSignature) {
+            try {
+                const blackSigUrl = await forceSignatureBlackColor(adminSignature);
+                const sigImageBytes = await fetch(blackSigUrl).then(res => res.arrayBuffer());
+                const sigImage = await pdfDoc.embedPng(sigImageBytes);
+                const adminSigCoords = societe === 'cepp'
+                    ? { x: 430, y: 130, width: 135, height: 52.5 }
+                    : { x: 430, y: 85, width: 135, height: 52.5 };
+                firstPage.drawImage(sigImage, adminSigCoords);
+            } catch (sigErr) {}
+        }
+
+        form.flatten();
+        const pdfBytes = await pdfDoc.save();
+        const blob = new Blob([pdfBytes], { type: "application/pdf" });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `Demande_RTT_${nom}_${prenom}_${du.replace(/\//g, '-')}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (err) {
+        console.error("Error during RTT PDF generation:", err);
+    }
+};
+
+window.renderAdminRTT = async function () {
+    const navItem = document.getElementById('nav-rtt');
+    if (navItem) {
+        document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+        navItem.classList.add('active');
+    }
+
+    const adminSecteur = window.currentUserProfile?.secteur || 'AIA';
+    const content = document.getElementById('admin-content');
+    content.innerHTML = `
+        <div style="padding: 30px; display:flex; flex-direction:column; gap: 30px; background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(40px); border-radius: 40px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 12px 40px rgba(0,0,0,0.4);">
+            <!-- Header -->
+            <div class="glass-header" style="display: flex; justify-content: space-between; align-items: center; padding: 25px; background: #121212; border-radius: 24px; border: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 30px; box-shadow: 0 8px 20px rgba(0,0,0,0.5);">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #FFD60A, #FF9500); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(255, 214, 10, 0.2);">
+                        <span style="font-size: 28px;">⚡</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Gestion des RTT</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Secteur : <strong style="color:#FFD60A;">${adminSecteur}</strong> | Validez les demandes de RTT et gérez les soldes</p>
+                    </div>
+                </div>
+                <div>
+                    <button onclick="window.renderAdminRTT()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div style="display: flex; gap: 10px; background: rgba(255,255,255,0.02); padding: 6px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); width: fit-content;">
+                <button class="tab-rtt-btn active" id="tab-rtt-balances-btn" onclick="window.switchRTTAdminTab('balances')" style="padding: 12px 24px; border-radius: 12px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; background: #007AFF; color: white;">
+                    👥 Soldes Collaborateurs
+                </button>
+                <button class="tab-rtt-btn" id="tab-rtt-pending-btn" onclick="window.switchRTTAdminTab('pending')" style="padding: 12px 24px; border-radius: 12px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; background: rgba(255,255,255,0.05); color: #8E8E93;">
+                    ⏳ Demandes en attente
+                </button>
+            </div>
+
+            <div id="rtt-tab-balances" class="rtt-tab-view">
+                <div style="text-align: center; padding: 40px;"><div class="loader-spinner"></div></div>
+            </div>
+            <div id="rtt-tab-pending" class="rtt-tab-view" style="display: none;">
+                <div style="text-align: center; padding: 40px;"><div class="loader-spinner"></div></div>
+            </div>
+        </div>
+    `;
+
+    window.loadAdminRTTTab();
+};
+
+window.loadAdminRTTTab = async function () {
+    try {
+        const [requests, usersData] = await Promise.all([
+            api.getAdminRTTRequests(),
+            api.getAdminRTTUsers()
+        ]);
+        const users = usersData.filter(u => {
+            const nameLower = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
+            return nameLower.includes('patrick') || nameLower.includes('quentin') || nameLower.includes('partick');
+        });
+
+        const balancesView = document.getElementById('rtt-tab-balances');
+        const pendingView = document.getElementById('rtt-tab-pending');
+
+        if (balancesView) balancesView.innerHTML = renderRTTBalancesSection(users);
+        if (pendingView) pendingView.innerHTML = renderRTTPendingRequestsSection(requests);
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+window.switchRTTAdminTab = (tab) => {
+    const pendingView = document.getElementById('rtt-tab-pending');
+    const balancesView = document.getElementById('rtt-tab-balances');
+    const pendingBtn = document.getElementById('tab-rtt-pending-btn');
+    const balancesBtn = document.getElementById('tab-rtt-balances-btn');
+
+    if (tab === 'pending') {
+        if (pendingView) pendingView.style.display = 'block';
+        if (balancesView) balancesView.style.display = 'none';
+        pendingBtn.className = 'tab-rtt-btn active';
+        pendingBtn.style.background = '#007AFF';
+        pendingBtn.style.color = 'white';
+        balancesBtn.className = 'tab-rtt-btn';
+        balancesBtn.style.background = 'rgba(255,255,255,0.05)';
+        balancesBtn.style.color = '#8E8E93';
+    } else {
+        if (pendingView) pendingView.style.display = 'none';
+        if (balancesView) balancesView.style.display = 'block';
+        balancesBtn.className = 'tab-rtt-btn active';
+        balancesBtn.style.background = '#007AFF';
+        balancesBtn.style.color = 'white';
+        pendingBtn.className = 'tab-rtt-btn';
+        pendingBtn.style.background = 'rgba(255,255,255,0.05)';
+        pendingBtn.style.color = '#8E8E93';
+    }
+};
+
+window.filterRTTBalances = () => {
+    const q = document.getElementById('rtt-search-input').value.toLowerCase().trim();
+    const rows = document.querySelectorAll('.rtt-balance-row');
+    rows.forEach(row => {
+        const name = row.getAttribute('data-name').toLowerCase();
+        const sector = row.getAttribute('data-sector').toLowerCase();
+        if (name.includes(q) || sector.includes(q)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+};
+
+function renderRTTBalancesSection(users) {
+    return `
+        <div class="glass-card" style="background: #121212; border-radius: 28px; padding: 24px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <div style="margin-bottom: 20px; position: relative;">
+                <input type="text" id="rtt-search-input" oninput="window.filterRTTBalances()" placeholder="Rechercher un salarié ou un secteur..." style="width: 100%; height: 46px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 16px 0 45px; font-size: 14px; outline: none;">
+                <span style="position: absolute; left: 16px; top: 13px; color: #8E8E93; font-size: 16px;">🔍</span>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Salarié</th>
+                            <th>Secteur</th>
+                            <th>Solde Restant (en jours)</th>
+                            <th>Initialisé</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${users.map(u => {
+                            const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Utilisateur';
+                            const initLabel = u.rtt_initialise ? 'Oui ✅' : 'Non ❌';
+                            const initColor = u.rtt_initialise ? '#34C759' : '#FF3B30';
+
+                            return `
+                                <tr class="rtt-balance-row" data-name="${window.escapeHTML(name)}" data-sector="${window.escapeHTML(u.secteur || 'AIA')}">
+                                    <td><div style="font-weight: 600; color: white;">${window.escapeHTML(name)}</div></td>
+                                    <td><span style="background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #bbb;">${u.secteur || 'AIA'}</span></td>
+                                    <td><div style="font-size: 16px; font-weight: 800; color: #007AFF;">${u.rtt_solde !== null ? u.rtt_solde : '0.00'}</div></td>
+                                    <td><span style="color: ${initColor}; font-weight: 700; font-size: 13px;">${initLabel}</span></td>
+                                    <td style="text-align: right;">
+                                        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                                            <button onclick="window.openAdjustRTTSoldeModal('${u.id}', '${window.escapeHTML(name)}', ${Number(u.rtt_solde || 0)})" class="btn-sm" style="background: rgba(175,82,222,0.12); border: 1px solid rgba(175,82,222,0.25); color: #AF52DE; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: 0.2s;">
+                                                ✏️ Modifier
+                                            </button>
+                                            <button onclick="window.viewUserRTTHistory('${u.id}', '${window.escapeHTML(name)}')" class="btn-sm" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: 0.2s;">
+                                                📜 Historique
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderRTTPendingRequestsSection(requests) {
+    if (requests.length === 0) {
+        return `
+            <div style="text-align:center; padding: 60px 20px; background: rgba(255,255,255,0.03); border-radius: 20px; border: 1px dashed rgba(255,255,255,0.1);">
+                <div style="font-size: 40px; margin-bottom: 12px;">🏝️</div>
+                <h3 style="color: white; margin: 0; font-size: 16px;">Aucune demande de RTT en attente</h3>
+            </div>
+        `;
+    }
+
+    return `
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; padding-bottom: 40px;">
+            ${requests.map(r => {
+                const name = [r.profiles?.first_name, r.profiles?.last_name].filter(Boolean).join(' ') || 'Salarié inconnu';
+                const startStr = new Date(r.start_date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                const endStr = new Date(r.end_date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                const requestDateStr = new Date(r.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+                return `
+                    <div class="conge-request-card" style="background: rgba(45, 45, 50, 0.4); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); border-radius: 24px; padding: 24px; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; transition: all 0.3s ease; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div>
+                                <h3 style="margin: 0; color: white; font-size: 17px; font-weight: 700;">${window.escapeHTML(name)}</h3>
+                                <span style="font-size: 12px; color: #8E8E93; background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; display: inline-block; margin-top: 4px;">Secteur : ${r.profiles?.secteur || 'Non défini'}</span>
+                            </div>
+                            <span style="font-size: 11px; color: #8E8E93;">Déposée le ${requestDateStr}</span>
+                        </div>
+
+                        <div style="background: rgba(255, 255, 255, 0.03); border-radius: 16px; padding: 16px; border: 1px solid rgba(255,255,255,0.03);">
+                            <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; letter-spacing: 0.5px;">Dates demandées</div>
+                            <div style="color: white; font-size: 14px; font-weight: 600;">Du : <span style="font-weight: 500; color: #eee;">${startStr}</span></div>
+                            <div style="color: white; font-size: 14px; font-weight: 600; margin-top: 4px;">Au : <span style="font-weight: 500; color: #eee;">${endStr}</span></div>
+                            <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                                <span style="font-size: 13px; color: #8E8E93;">Jours demandés (ouvrés) :</span>
+                                <strong style="font-size: 16px; color: #007AFF;">${r.days_requested} jours</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                                <span style="font-size: 13px; color: #8E8E93;">Solde restant actuel :</span>
+                                <strong style="font-size: 14px; color: #8E8E93;">${r.profiles?.rtt_solde} jours</strong>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style="font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.5px;">Signature du salarié</div>
+                            <div style="background: white; border-radius: 12px; height: 90px; display: flex; align-items: center; justify-content: center; padding: 8px;">
+                                <img src="${r.signature}" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Signature">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label style="display: block; font-size: 12px; color: #8E8E93; text-transform: uppercase; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.5px;">Commentaire / Justificatif Admin</label>
+                            <textarea id="rtt-comment-${r.id}" class="form-input" style="width: 100%; height: 60px; resize: none; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 8px; font-size: 13px;" placeholder="Ajouter une note facultative..."></textarea>
+                        </div>
+
+                        <div style="display: flex; gap: 12px; margin-top: 8px;">
+                            <button onclick="window.decideRTTRequest('${r.id}', 'refuse', this)" style="flex: 1; height: 44px; background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2); border-radius: 12px; color: #FF3B30; font-weight: 700; cursor: pointer;">
+                                Refuser ❌
+                            </button>
+                            <button onclick="window.decideRTTRequest('${r.id}', 'approve', this)" style="flex: 1.5; height: 44px; background: #007AFF; border: none; border-radius: 12px; color: white; font-weight: 800; cursor: pointer; box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);">
+                                Valider ✅
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+window.decideRTTRequest = async function (id, action, btn) {
+    const comment = document.getElementById(`rtt-comment-${id}`).value.trim();
+    const oldText = btn.innerText;
+
+    let adminSignature = null;
+    if (action === 'approve') {
+        adminSignature = await window.openAdminSignatureModal();
+        if (!adminSignature) return;
+    }
+
+    // Get request details BEFORE the status transition so it can be resolved from pending requests list
+    let reqObj = null;
+    if (action === 'approve') {
+        try {
+            const allReqs = await api.getAdminRTTRequests();
+            reqObj = allReqs.find(x => x.id === id);
+        } catch (err) {
+            console.error("Error fetching RTT request before action:", err);
+        }
+    }
+
+    btn.disabled = true;
+    btn.innerText = action === 'approve' ? "Validation..." : "Refus...";
+
+    try {
+        const profile = window.currentUserProfile;
+        const adminName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : 'Admin';
+
+        await api.actionRTTRequest(id, action, adminName, null, comment, adminSignature);
+
+        window.showToast(action === 'approve' ? "✅ Demande de RTT validée !" : "❌ Demande de RTT refusée.");
+
+        if (action === 'approve' && reqObj) {
+            try {
+                reqObj.admin_name = adminName;
+                reqObj.admin_signature = adminSignature;
+                window.generateRTTPDFPlaceholder(reqObj);
+            } catch (pdfErr) {
+                console.error("RTT PDF placeholder error", pdfErr);
+            }
+        }
+
+        window.renderAdminRTT();
+        window.updateRTTBadge();
+    } catch (e) {
+        alert("Erreur lors de l'action RTT : " + e.message);
+        btn.disabled = false;
+        btn.innerText = oldText;
+    }
+};
+
+window.viewUserRTTHistory = async function (userId, name) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10000";
+
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 500px; padding: 30px; display: flex; flex-direction: column; max-height: 80vh;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; font-weight: 800; color: white; font-size: 18px;">Historique RTT de ${window.escapeHTML(name)}</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; font-size: 24px; color: #8E8E93; cursor: pointer;">✕</button>
+            </div>
+            <div id="rtt-history-modal-content" style="flex: 1; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 16px; padding: 15px; display: flex; flex-direction: column; gap: 12px;">
+                <div style="text-align: center; padding: 20px;">
+                    <div class="loader-spinner"></div>
+                    <p style="color: #8E8E93; font-size: 13px; margin-top: 8px;">Chargement de l'historique...</p>
+                </div>
+            </div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    try {
+        const history = await api.getAdminUserApprovedRTTRequests(userId);
+        const container = document.getElementById('rtt-history-modal-content');
+
+        if (history.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; color: #8E8E93; font-style: italic; padding: 30px 10px;">
+                    Aucun historique RTT trouvé pour ce salarié.
+                </div>
+            `;
+            return;
+        }
+
+        window.rttHistoryCache = window.rttHistoryCache || {};
+        let html = '';
+        history.forEach(r => {
+            window.rttHistoryCache[r.id] = r;
+            const approvedStr = new Date(r.updated_at || r.created_at).toLocaleDateString('fr-FR');
+            const parsed = window.parseRTTAdminComment(r.admin_comment);
+
+            if (r.status === 'adjustment') {
+                const delta = Number(parsed.delta ?? r.days_requested ?? 0);
+                const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+                const deltaColor = delta >= 0 ? '#34C759' : '#FF3B30';
+                const soldeBefore = parsed.solde_before !== undefined ? parsed.solde_before : '?';
+                const soldeAfter = parsed.solde_after !== undefined ? parsed.solde_after : '?';
+                html += `
+                    <div style="background: rgba(175,82,222,0.06); padding: 14px; border-radius: 12px; border: 1px solid rgba(175,82,222,0.15); display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 700; color: white; font-size: 14px;">✏️ Ajustement manuel RTT</span>
+                            <span style="background: rgba(175,82,222,0.15); color: #AF52DE; padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase;">Ajustement</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
+                            <span>Modification :</span>
+                            <strong style="color: ${deltaColor}; font-size: 14px;">${deltaStr} jour(s)</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
+                            <span>Solde avant / après :</span>
+                            <span style="color: white;">${soldeBefore} → <strong>${soldeAfter}</strong></span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
+                            <span>Par :</span>
+                            <span>${window.escapeHTML(parsed.admin_name || 'Admin')}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
+                            <span>Le :</span>
+                            <span>${approvedStr}</span>
+                        </div>
+                        ${parsed.comment ? `
+                            <div style="font-size: 12px; color: #FF9500; background: rgba(255,149,0,0.05); padding: 6px 10px; border-radius: 8px; margin-top: 4px;">
+                                <strong>Raison :</strong> ${window.escapeHTML(parsed.comment)}
+                            </div>
+                        ` : ''}
+                        <div style="margin-top: 8px; text-align: right;">
+                            <button onclick="window.deleteRTTHistoryEntry('${r.id}', '${userId}', '${window.escapeHTML(name)}')" class="btn-sm" style="background: rgba(255,59,48,0.15); border: 1px solid rgba(255,59,48,0.25); color: #FF3B30; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; transition: background 0.2s;">
+                                🗑️ Supprimer
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const startStr = new Date(r.start_date).toLocaleDateString('fr-FR');
+                const endStr = new Date(r.end_date).toLocaleDateString('fr-FR');
+                html += `
+                    <div style="background: rgba(255, 255, 255, 0.03); padding: 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 700; color: white; font-size: 14px;">Du ${startStr} au ${endStr}</span>
+                            <span style="background: rgba(52, 199, 89, 0.15); color: #34C759; padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase;">Validée</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
+                            <span>Durée décomptée :</span>
+                            <strong style="color: white;">${r.days_requested} jours</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8E8E93;">
+                            <span>Validée le :</span>
+                            <span>${approvedStr}</span>
+                        </div>
+                        ${parsed.comment ? `
+                            <div style="font-size: 12px; color: #FF9500; background: rgba(255,149,0,0.05); padding: 6px 10px; border-radius: 8px; margin-top: 4px;">
+                                <strong>Note :</strong> ${window.escapeHTML(parsed.comment)}
+                            </div>
+                        ` : ''}
+                        <div style="margin-top: 8px; display: flex; justify-content: flex-end; gap: 8px;">
+                            <button onclick="window.deleteRTTHistoryEntry('${r.id}', '${userId}', '${window.escapeHTML(name)}')" class="btn-sm" style="background: rgba(255,59,48,0.15); border: 1px solid rgba(255,59,48,0.25); color: #FF3B30; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700;">
+                                🗑️ Supprimer
+                            </button>
+                            <button onclick="window.generateRTTPDFPlaceholder(window.rttHistoryCache['${r.id}'])" class="btn-sm" style="background: #007AFF; border: none; color: white; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+                                📄 Télécharger le PDF
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        document.getElementById('rtt-history-modal-content').innerHTML = `
+            <div style="color: #FF3B30; text-align: center; padding: 20px;">Erreur : ${e.message}</div>
+        `;
+    }
+};
+
+window.deleteRTTHistoryEntry = async function (requestId, userId, name) {
+    if (!confirm("Voulez-vous vraiment supprimer cet événement de l'historique RTT ? Cette action est irréversible.")) return;
+    try {
+        await api.deleteRTTRequest(requestId);
+        window.showToast("✅ Événement supprimé avec succès.");
+        if (typeof window.loadAdminRTTTab === 'function') window.loadAdminRTTTab();
+        window.viewUserRTTHistory(userId, name);
+    } catch (err) {
+        window.showToast("❌ Erreur de suppression : " + err.message);
+    }
+};
+
+window.openAdjustRTTSoldeModal = function (userId, name, currentSolde) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = "10500";
+    modal.style.backdropFilter = "blur(10px)";
+    modal.style.background = "rgba(0,0,0,0.6)";
+
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 420px; padding: 28px; display: flex; flex-direction: column; gap: 18px; border-radius: 24px; border: 1px solid rgba(175,82,222,0.2); background: rgba(28,28,30,0.97);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; font-weight: 800; color: white; font-size: 18px;">✏️ Modifier le solde RTT</h3>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; font-size: 22px; color: #8E8E93; cursor: pointer;">✕</button>
+            </div>
+
+            <div style="background: rgba(175,82,222,0.08); border: 1px solid rgba(175,82,222,0.15); border-radius: 14px; padding: 14px;">
+                <div style="font-size: 13px; color: #8E8E93; margin-bottom: 4px;">Salarié</div>
+                <div style="font-weight: 700; color: white; font-size: 15px;">${window.escapeHTML(name)}</div>
+                <div style="font-size: 12px; color: #AF52DE; margin-top: 6px;">Solde actuel : <strong>${currentSolde} jour(s)</strong></div>
+            </div>
+
+            <div>
+                <label style="font-size: 12px; font-weight: 700; color: #8E8E93; text-transform: uppercase; display: block; margin-bottom: 8px;">Ajustement (positif = ajout, négatif = retrait)</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input id="rtt-adj-delta" type="number" step="0.5" value="0" style="flex: 1; height: 44px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; color: white; padding: 0 14px; font-size: 16px; font-weight: 700; text-align: center;">
+                    <span style="color: #8E8E93; font-size: 13px;">jour(s)</span>
+                </div>
+                <div style="margin-top: 10px; font-size: 13px; color: #8E8E93;">Nouveau solde prévu : <strong id="rtt-adj-preview" style="color: #AF52DE;">${currentSolde}</strong> jour(s)</div>
+            </div>
+
+            <div>
+                <label style="font-size: 12px; font-weight: 700; color: #8E8E93; text-transform: uppercase; display: block; margin-bottom: 8px;">Raison (facultatif)</label>
+                <textarea id="rtt-adj-reason" rows="2" placeholder="Ex: Ajustement annuel..." style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 10px 14px; font-size: 13px; resize: none; box-sizing: border-box;"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 12px;">
+                <button onclick="this.closest('.modal-overlay').remove()" class="btn-secondary" style="flex: 1; height: 44px; border-radius: 12px;">Annuler</button>
+                <button id="rtt-adj-confirm-btn" style="flex: 1.5; height: 44px; background: #AF52DE; border: none; border-radius: 12px; color: white; font-weight: 800; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(175,82,222,0.3);">Confirmer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const deltaInput = document.getElementById('rtt-adj-delta');
+    const preview = document.getElementById('rtt-adj-preview');
+    deltaInput.addEventListener('input', () => {
+        const newVal = Math.round((currentSolde + Number(deltaInput.value || 0)) * 100) / 100;
+        preview.textContent = newVal;
+        preview.style.color = Number(deltaInput.value) >= 0 ? '#34C759' : '#FF3B30';
+    });
+
+    document.getElementById('rtt-adj-confirm-btn').addEventListener('click', async function () {
+        const delta = Number(deltaInput.value || 0);
+        if (delta === 0) { window.showToast('⚠️ Le delta est 0, aucune modification.'); return; }
+        const reason = document.getElementById('rtt-adj-reason').value.trim();
+        this.disabled = true;
+        this.textContent = 'Enregistrement...';
+        try {
+            const result = await api.adjustRTTSolde(userId, delta, reason);
+            modal.remove();
+            window.showToast(`✅ Solde RTT mis à jour : ${result.new_solde} jour(s)`);
+            if (typeof window.loadAdminRTTTab === 'function') window.loadAdminRTTTab();
+        } catch (err) {
+            this.disabled = false;
+            this.textContent = 'Confirmer';
+            window.showToast('❌ Erreur : ' + err.message);
+        }
+    });
+};
+
+window.updateMaterialGTStockBadge = async function () {
+    try {
+        const requests = await api.getMaterialGTStockRequests();
+        const badge = document.getElementById('mat-stock-gt-request-badge');
+        if (badge) {
+            if (requests && requests.length > 0) {
+                badge.style.display = 'flex';
+                badge.textContent = requests.length;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (e) { /* silent */ }
+};
+
+window.renderAdminMaterialGTTracking = async function () {
+    const content = document.getElementById('admin-content');
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    const navItem = document.getElementById('nav-material-stock-gt');
+    if (navItem) navItem.classList.add('active');
+
+    const GT_COMPAT = ['t1', 't2', 'v1', 'v2', 'v3', 'v4', 'v5'];
+    const GT_COMPAT_LABELS = { t1: 'T1', t2: 'T2', v1: 'V1', v2: 'V2', v3: 'V3', v4: 'V4', v5: 'V5' };
+
+    content.innerHTML = `
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #5856D6, #3634A3); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(88, 86, 214, 0.3);">
+                        <span style="font-size: 28px;">🗄️</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Statut du matériel GT</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Armoires de stockage vertical — Tours / Vertimags</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-primary" id="material-gt-requests-btn" onclick="window.openMaterialGTRequestsModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #5856D6; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s; position: relative;">
+                        <span style="font-size: 18px;">🔔</span> Demandes
+                        <span id="gt-requests-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: #FF3B30; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; border: 2px solid #1c1c1e;">0</span>
+                    </button>
+                    <button class="btn-primary" onclick="window.openEditMaterialGTModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #5856D6; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 18px;">+</span> Ajouter Pièce
+                    </button>
+                    <button onclick="window.openQrGTExportModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;" title="Exporter QR Codes PDF GT">
+                        <span style="font-size: 16px;">📱</span> QR Codes
+                    </button>
+                    <button onclick="window.exportMaterialGTToExcel()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(88, 86, 214, 0.1); border: 1px solid rgba(88, 86, 214, 0.2); display: flex; align-items: center; gap: 8px; color: #5856D6; font-weight: 700; cursor: pointer; transition: all 0.2s;" title="Exporter vers Excel (CSV)">
+                        <span style="font-size: 16px;">📊</span> Exporter
+                    </button>
+                    <button onclick="window.renderAdminMaterialGTTracking()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 24px; padding: 0 10px; flex-wrap: wrap;">
+                <div style="position: relative; flex: 1; min-width: 200px;">
+                    <input type="text" id="material-gt-search" placeholder="Rechercher par désignation, référence, QR..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 16px 0 45px; font-size: 14px; outline: none;">
+                    <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
+                </div>
+                <div style="position: relative; min-width: 180px;">
+                    <select id="material-gt-filter-location" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="" style="background: #1c1c1e;">📍 Tous les lieux</option>
+                    </select>
+                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
+                </div>
+                <div style="position: relative; min-width: 160px;">
+                    <select id="material-gt-filter-compat" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="" style="background: #1c1c1e;">🔧 Compatibilité</option>
+                        <option value="t1" style="background: #1c1c1e;">T1</option>
+                        <option value="t2" style="background: #1c1c1e;">T2</option>
+                        <option value="v1" style="background: #1c1c1e;">V1</option>
+                        <option value="v2" style="background: #1c1c1e;">V2</option>
+                        <option value="v3" style="background: #1c1c1e;">V3</option>
+                        <option value="v4" style="background: #1c1c1e;">V4</option>
+                        <option value="v5" style="background: #1c1c1e;">V5</option>
+                    </select>
+                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
+                </div>
+                <span id="material-gt-count-badge" style="font-size: 12px; color: #8E8E93; font-weight: 600; white-space: nowrap;">— articles</span>
+            </div>
+
+            <div id="material-gt-list-container" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                <div id="material-gt-list-loader" style="text-align:center; padding: 80px;">
+                    <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: #5856D6; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                </div>
+                <div id="material-gt-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; padding-bottom: 40px;"></div>
+            </div>
+        </div>
+    `;
+
+    window.updateMaterialGTStockBadge();
+
+    try {
+        const stock = await api.getMaterialGTStock();
+        window._currentGTStock = stock;
+
+        const locations = [...new Set(stock.map(s => s.lieu_de_stockage).filter(Boolean))].sort();
+        const filterSelect = document.getElementById('material-gt-filter-location');
+        locations.forEach(loc => {
+            const opt = document.createElement('option');
+            opt.value = loc;
+            opt.textContent = loc;
+            opt.style.background = '#1c1c1e';
+            opt.style.color = 'white';
+            filterSelect.appendChild(opt);
+        });
+
+        const GT_COMPAT = ['t1', 't2', 'v1', 'v2', 'v3', 'v4', 'v5'];
+
+        const renderGrid = (items) => {
+            const grid = document.getElementById('material-gt-grid');
+            const countBadge = document.getElementById('material-gt-count-badge');
+            if (countBadge) countBadge.innerText = `${items.length} article${items.length !== 1 ? 's' : ''}`;
+            if (items.length === 0) {
+                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #71717a; padding: 120px; font-size: 18px;">Aucune pièce trouvée</div>`;
+                return;
+            }
+            grid.innerHTML = items.map(item => {
+                const compatBadges = GT_COMPAT
+                    .map(k => item[k] ? `<span style="font-size: 10px; color: #5856D6; background: rgba(88,86,214,0.12); padding: 3px 7px; border-radius: 6px; font-weight: 800; border: 1px solid rgba(88,86,214,0.2);">${k.toUpperCase()}</span>` : '')
+                    .join('');
+                return `
+                    <div class="material-card" onclick="window.openEditMaterialGTModal('${item.id}')" style="background: rgba(45, 45, 50, 0.4); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); border-radius: 24px; padding: 24px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; gap: 16px; position: relative; overflow: hidden;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                            <div style="display: flex; gap: 15px; flex: 1;">
+                                <div style="width: 60px; height: 60px; border-radius: 14px; background: ${item.photo_url ? '#000' : 'rgba(255,255,255,0.03)'}; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+                                    ${item.photo_url ? `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 24px;">⚙️</span>`}
+                                </div>
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 800; color: white; font-size: 15px; line-height: 1.3; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${item.designation || 'Sans nom'}</div>
+                                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                        ${item.qr_ref ? `<span style="font-size: 9px; color: #FF9500; background: rgba(255,149,0,0.1); padding: 3px 6px; border-radius: 5px; font-weight: 800; font-family: monospace; letter-spacing: 0.5px; border: 1px solid rgba(255,149,0,0.15);">${item.qr_ref}</span>` : ''}
+                                        ${item.ref ? `<span style="font-size: 9px; color: #8E8E93; background: rgba(142,142,147,0.1); padding: 3px 6px; border-radius: 5px; font-weight: 700; border: 1px solid rgba(142,142,147,0.15);">${item.ref}</span>` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                                <div style="background: rgba(88,86,214,0.12); color: #5856D6; min-width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 900; border: 1px solid rgba(88,86,214,0.2); padding: 0 8px; text-align: center;">
+                                    ${item.quantite || '0'}
+                                </div>
+                                <div style="font-size: 10px; color: #8E8E93; margin-top: 6px; font-weight: 700; text-transform: uppercase;">Quantité</div>
+                            </div>
+                        </div>
+
+                        <!-- Compatibility badges -->
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            ${compatBadges || '<span style="font-size: 11px; color: #48484A;">Aucune compatibilité</span>'}
+                        </div>
+
+                        <!-- Location -->
+                        <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 14px;">
+                            <div style="display: flex; align-items: center; gap: 6px; color: #8E8E93; font-size: 12px; font-weight: 500;">
+                                <span style="font-size: 14px;">📍</span> ${item.lieu_de_stockage || 'Non localisé'}
+                            </div>
+                        </div>
+                        <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: #5856D6; opacity: 0.5;"></div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        const loader = document.getElementById('material-gt-list-loader');
+        if (loader) loader.remove();
+        renderGrid(stock);
+
+        const searchInput = document.getElementById('material-gt-search');
+        const locationFilter = document.getElementById('material-gt-filter-location');
+        const compatFilter = document.getElementById('material-gt-filter-compat');
+
+        const handleFilter = () => {
+            const search = searchInput.value.toLowerCase();
+            const location = locationFilter.value;
+            const compat = compatFilter.value;
+            const filtered = stock.filter(s => {
+                const matchesSearch = !search ||
+                    (s.designation || '').toLowerCase().includes(search) ||
+                    (s.ref || '').toLowerCase().includes(search) ||
+                    (s.qr_ref || '').toLowerCase().includes(search) ||
+                    (s.lieu_de_stockage || '').toLowerCase().includes(search);
+                const matchesLocation = !location || s.lieu_de_stockage === location;
+                const matchesCompat = !compat || s[compat] === true;
+                return matchesSearch && matchesLocation && matchesCompat;
+            });
+            renderGrid(filtered);
+        };
+
+        searchInput.oninput = handleFilter;
+        locationFilter.onchange = handleFilter;
+        compatFilter.onchange = handleFilter;
+
+        // Update badge in sidebar
+        const requests = await api.getMaterialGTStockRequests().catch(() => []);
+        const badge = document.getElementById('gt-requests-badge');
+        if (badge && requests.length > 0) {
+            badge.style.display = 'flex';
+            badge.textContent = requests.length;
+        }
+
+    } catch (e) {
+        console.error(e);
+        document.getElementById('material-gt-list-container').innerHTML = `<div style="color:red; padding: 20px;">Erreur lors du chargement: ${e.message}</div>`;
+    }
+};
+
+window.openEditMaterialGTModal = async function (id = null) {
+    const isMobile = window.innerWidth <= 768;
+    const GT_COMPAT = ['t1', 't2', 'v1', 'v2', 'v3', 'v4', 'v5'];
+
+    const item = id ? (window._currentGTStock || []).find(s => s.id === id) : {
+        designation: '', ref: '', quantite: '0', lieu_de_stockage: '',
+        t1: false, t2: false, v1: false, v2: false, v3: false, v4: false, v5: false
+    };
+    if (!item) return;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '1000000';
+    modal.style.backdropFilter = 'blur(8px)';
+
+    const compatCheckboxes = GT_COMPAT.map(k => `
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); transition: 0.2s;" onmouseover="this.style.background='rgba(88,86,214,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.03)'">
+            <input type="checkbox" id="gt-compat-${k}" name="${k}" ${item[k] ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: #5856D6; cursor: pointer;">
+            <span style="font-size: 14px; font-weight: 700; color: white;">${k.toUpperCase()}</span>
+        </label>
+    `).join('');
+
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 90%; max-width: 650px; padding: ${isMobile ? '24px' : '40px'}; border-radius: 32px; background: rgba(28,28,30,0.92); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); animation: modalPop 0.3s cubic-bezier(0.34,1.56,0.64,1); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                <h2 style="margin:0; font-size: ${isMobile ? '20px' : '24px'}; font-weight: 800;">${id ? 'Modifier' : 'Ajouter'} Pièce GT</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+
+            ${id && item.qr_ref ? `
+            <div style="margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #FF9500; text-transform: uppercase; font-weight: 700;">📱 QR Code — ${item.qr_ref}</h3>
+                <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                    <canvas id="qr-gt-canvas-modal" style="border-radius: 8px; background: white; padding: 8px;"></canvas>
+                    <div style="flex: 1;">
+                        <div style="font-family: monospace; font-size: 22px; color: #FF9500; font-weight: 900; margin-bottom: 8px;">${item.qr_ref}</div>
+                        <div style="font-size: 12px; color: #8E8E93; margin-bottom: 16px;">Scannez ce QR code pour accéder directement à cette fiche matériel GT.</div>
+                        <button type="button" onclick="window.downloadSingleQr('${item.qr_ref}', '${(item.designation || 'materiel').replace(/'/g, "\\\\'")}')" style="padding: 10px 16px; background: #FF9500; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 13px;">📥 Télécharger ce QR</button>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            <form id="edit-material-gt-form" style="display: flex; flex-direction: column; gap: 20px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Désignation *</label>
+                    <input type="text" name="designation" value="${item.designation || ''}" class="form-input" style="width:100%;" required>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Référence Fournisseur</label>
+                    <textarea name="ref" class="form-input" style="width:100%; height: 70px; resize: vertical; font-family: monospace; font-size: 12px;">${item.ref || ''}</textarea>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Quantité</label>
+                        <input type="text" name="quantite" value="${item.quantite || '0'}" class="form-input" style="width:100%;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Lieu de Stockage</label>
+                        <input type="text" name="lieu_de_stockage" value="${item.lieu_de_stockage || ''}" class="form-input" style="width:100%;">
+                    </div>
+                </div>
+
+                <!-- Compatibility Checkboxes -->
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:12px; font-weight:700; text-transform:uppercase;">Compatibilité Machines</label>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                        ${compatCheckboxes}
+                    </div>
+                </div>
+
+                <!-- Photo -->
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Photo</label>
+                    ${item.photo_url ? `
+                    <div style="margin-bottom: 12px; position: relative; display: inline-block;">
+                        <img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 120px; height: 90px; object-fit: cover; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);">
+                        <button type="button" onclick="if(confirm('Supprimer la photo ?')) { api.deleteMaterialGTPhoto('${item.photo_url}').then(() => api.updateMaterialGTStock('${item.id}', {photo_url: null})).then(() => { window.renderAdminMaterialGTTracking(); this.closest('.modal-overlay').remove(); }); }" style="position: absolute; top: -8px; right: -8px; background: #FF3B30; color: white; border: none; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer;">&times;</button>
+                    </div>
+                    ` : ''}
+                    <input type="file" id="gt-photo-input" accept="image/*" style="display: none;">
+                    <button type="button" onclick="document.getElementById('gt-photo-input').click()" style="padding: 10px 18px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: white; cursor: pointer; font-size: 13px; font-weight: 600;">
+                        📷 ${item.photo_url ? 'Changer la photo' : 'Ajouter une photo'}
+                    </button>
+                    <span id="gt-photo-label" style="font-size: 12px; color: #8E8E93; margin-left: 10px;"></span>
+                </div>
+
+                <!-- History (if editing) -->
+                ${id ? `
+                <div>
+                    <div style="font-size: 12px; color: #8E8E93; font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">📋 Historique</div>
+                    <div id="gt-history-container" style="max-height: 150px; overflow-y: auto; background: rgba(255,255,255,0.02); border-radius: 12px; padding: 10px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div style="color: #48484A; font-size: 12px; text-align: center; padding: 10px;">Chargement...</div>
+                    </div>
+                    <div style="margin-top: 12px; display: flex; gap: 10px;">
+                        <input type="text" id="gt-log-text" placeholder="Ajouter un commentaire..." class="form-input" style="flex: 1; height: 40px;">
+                        <button type="button" onclick="window.addGTLog('${item.id}', document.getElementById('gt-log-text').value)" style="padding: 0 18px; height: 40px; background: #5856D6; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;">Ajouter</button>
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- Actions -->
+                <div style="display: flex; gap: 12px; margin-top: 10px; ${id ? 'justify-content: space-between;' : 'justify-content: flex-end;'}">
+                    ${id ? `<button type="button" onclick="if(confirm('Supprimer cette pièce GT ?')) window.deleteGTItem('${item.id}')" style="padding: 14px 20px; background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.3); border-radius: 14px; color: #FF3B30; font-weight: 700; cursor: pointer; font-size: 14px; transition: 0.2s;">🗑️ Supprimer</button>` : ''}
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" onclick="this.closest('.modal-overlay').remove()" style="padding: 14px 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; color: white; font-weight: 700; cursor: pointer; font-size: 14px;">Annuler</button>
+                        <button type="submit" id="gt-save-btn" style="padding: 14px 30px; background: linear-gradient(135deg, #5856D6, #3634A3); border: none; border-radius: 14px; color: white; font-weight: 800; cursor: pointer; font-size: 14px; transition: 0.2s;">✓ Enregistrer</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+    // Generate QR code in modal if item has qr_ref
+    if (id && item.qr_ref && typeof QRCode !== 'undefined') {
+        const canvas = document.getElementById('qr-gt-canvas-modal');
+        if (canvas) {
+            const qrUrl = `${config.api.workerUrl}/material?ref=${item.qr_ref}`;
+            QRCode.toCanvas(canvas, qrUrl, { width: 140, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+        }
+    }
+
+    // Load history
+    if (id) {
+        window.loadMaterialGTHistory(id, 'gt-history-container');
+    }
+
+    // Photo label
+    document.getElementById('gt-photo-input').addEventListener('change', function () {
+        const label = document.getElementById('gt-photo-label');
+        if (this.files[0]) label.textContent = this.files[0].name;
+    });
+
+    // Form submit
+    document.getElementById('edit-material-gt-form').onsubmit = async function (e) {
+        e.preventDefault();
+        const btn = document.getElementById('gt-save-btn');
+        btn.disabled = true;
+        btn.textContent = 'Enregistrement...';
+        try {
+            const formData = new FormData(this);
+            const data = {
+                designation: formData.get('designation'),
+                ref: formData.get('ref') || null,
+                quantite: formData.get('quantite') || '0',
+                lieu_de_stockage: formData.get('lieu_de_stockage') || null,
+            };
+            // Get compat checkboxes
+            ['t1','t2','v1','v2','v3','v4','v5'].forEach(k => {
+                data[k] = document.getElementById(`gt-compat-${k}`).checked;
+            });
+
+            // Photo upload
+            const photoFile = document.getElementById('gt-photo-input').files[0];
+            if (photoFile) {
+                const uploadResult = await api.uploadMaterialGTPhoto(id || 'new', photoFile);
+                data.photo_url = uploadResult.key;
+            }
+
+            let savedItem;
+            if (id) {
+                savedItem = await api.updateMaterialGTStock(id, data);
+                await api.addMaterialGTLog(id, 'Modification', `Pièce modifiée par l'admin`);
+            } else {
+                savedItem = await api.createMaterialGTStock(data);
+            }
+
+            modal.remove();
+            window.showToast('✅ Pièce GT enregistrée avec succès');
+            window.renderAdminMaterialGTTracking();
+        } catch (err) {
+            btn.disabled = false;
+            btn.textContent = '✓ Enregistrer';
+            window.showToast('❌ Erreur: ' + err.message);
+        }
+    };
+};
+
+window.deleteGTItem = async function (id) {
+    try {
+        await api.deleteMaterialGTStock(id);
+        document.querySelector('.modal-overlay')?.remove();
+        window.showToast('✅ Pièce GT supprimée');
+        window.renderAdminMaterialGTTracking();
+    } catch (e) {
+        window.showToast('❌ Erreur: ' + e.message);
+    }
+};
+
+window.loadMaterialGTHistory = async function (materialId, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    try {
+        const logs = await api.getMaterialGTHistory(materialId);
+        if (logs.length === 0) {
+            container.innerHTML = '<div style="color: #48484A; font-size: 12px; text-align: center; padding: 10px;">Aucun historique</div>';
+            return;
+        }
+        container.innerHTML = logs.map(log => {
+            const date = new Date(log.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const userName = log.profiles ? `${log.profiles.first_name || ''} ${log.profiles.last_name || ''}`.trim() : 'Inconnu';
+            return `
+                <div style="padding: 8px 10px; border-left: 3px solid #5856D6; background: rgba(88,86,214,0.05); border-radius: 0 8px 8px 0; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                    <div>
+                        <div style="font-size: 10px; color: #8E8E93;">${date} • ${userName}</div>
+                        <div style="font-size: 12px; color: #D1D1D6; font-weight: 500; margin-top: 2px;">${log.details}</div>
+                    </div>
+                    <button onclick="window.deleteGTLog('${log.id}', '${materialId}', '${containerId}')" style="background: none; border: none; color: #FF3B30; opacity: 0.5; cursor: pointer; font-size: 14px;" title="Supprimer">🗑️</button>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = `<div style="color: red; font-size: 12px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.addGTLog = async function (materialId, text) {
+    if (!text || !text.trim()) return;
+    try {
+        await api.addMaterialGTLog(materialId, 'Commentaire', text.trim());
+        document.getElementById('gt-log-text').value = '';
+        window.loadMaterialGTHistory(materialId, 'gt-history-container');
+    } catch (e) {
+        window.showToast('❌ Erreur: ' + e.message);
+    }
+};
+
+window.deleteGTLog = async function (logId, materialId, containerId) {
+    if (!confirm('Supprimer ce log ?')) return;
+    try {
+        await api.deleteMaterialGTLog(logId);
+        window.loadMaterialGTHistory(materialId, containerId);
+    } catch (e) {
+        window.showToast('❌ Erreur: ' + e.message);
+    }
+};
+
+window.openMaterialGTRequestsModal = async function () {
+    try {
+        const requests = await api.getMaterialGTStockRequests();
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = '1000000';
+        modal.style.backdropFilter = 'blur(8px)';
+
+        if (requests.length === 0) {
+            modal.innerHTML = `
+                <div class="modal-box glass-panel" style="max-width: 480px; padding: 40px; border-radius: 32px; background: rgba(28,28,30,0.92); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.1); text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
+                    <h2 style="margin: 0 0 10px 0; font-size: 22px;">Aucune demande en attente</h2>
+                    <p style="color: #8E8E93;">Toutes les demandes GT ont été traitées.</p>
+                    <button onclick="this.closest('.modal-overlay').remove()" style="margin-top: 20px; padding: 14px 30px; background: #5856D6; color: white; border: none; border-radius: 14px; font-weight: 700; cursor: pointer;">Fermer</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+            return;
+        }
+
+        const requestCards = requests.map(req => {
+            const mat = req.material_stock_gt || {};
+            const user = req.profiles ? `${req.profiles.first_name || ''} ${req.profiles.last_name || ''}`.trim() : 'Inconnu';
+            const date = new Date(req.created_at).toLocaleDateString('fr-FR');
+            const compatList = ['t1', 't2', 'v1', 'v2', 'v3', 'v4', 'v5'].filter(k => mat[k]).map(k => k.toUpperCase()).join(', ');
+            return `
+                <div id="gt-req-${req.id}" style="padding: 20px; background: rgba(255,255,255,0.03); border-radius: 16px; border: 1px solid rgba(255,255,255,0.07); margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
+                        <div>
+                            <div style="font-weight: 800; color: white; font-size: 15px; margin-bottom: 4px;">${mat.designation || 'Pièce inconnue'}</div>
+                            <div style="font-size: 12px; color: #8E8E93; margin-bottom: 6px;">
+                                <span>Réf QR: <b>${mat.qr_ref || '—'}</b></span> • 
+                                <span>Réf Fournisseur: <b>${mat.ref || '—'}</b></span> • 
+                                <span>Compatibilité: <b>${compatList || 'Aucune'}</b></span>
+                            </div>
+                            <div style="font-size: 12px; color: #8E8E93;">Demande de ${user} • ${date}</div>
+                        </div>
+                        <span style="background: rgba(255,149,0,0.1); color: #FF9500; padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 800; border: 1px solid rgba(255,149,0,0.2);">EN ATTENTE</span>
+                    </div>
+                    ${req.comment ? `
+                    <div style="margin-top: 10px; font-style: italic; color: #FF9500; font-size: 13px; background: rgba(255,149,0,0.05); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,149,0,0.1); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                        <span>💬 Commentaire:</span> <strong>${req.comment}</strong>
+                    </div>` : ''}
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px; background: rgba(255,255,255,0.02); border-radius: 12px; margin-bottom: 14px; font-size: 13px;">
+                        ${req.new_quantite !== undefined ? `
+                        <div>
+                            <div style="color: #8E8E93; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Quantité actuelle → Nouvelle</div>
+                            <div style="color: white;">${mat.quantite || '0'} → <strong style="color: #34C759;">${req.new_quantite}</strong></div>
+                        </div>` : ''}
+                        ${req.new_lieu_de_stockage ? `
+                        <div>
+                            <div style="color: #8E8E93; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Lieu actuel → Nouveau</div>
+                            <div style="color: white;">${mat.lieu_de_stockage || '—'} → <strong style="color: #34C759;">${req.new_lieu_de_stockage}</strong></div>
+                        </div>` : ''}
+                        ${req.new_designation ? `
+                        <div style="grid-column: 1/-1;">
+                            <div style="color: #8E8E93; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Nouvelle désignation</div>
+                            <div style="color: white;">${req.new_designation}</div>
+                        </div>` : ''}
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="window.handleGTRequestDecision('${req.id}', 'approved')" style="flex: 1; padding: 12px; background: rgba(52,199,89,0.1); border: 1px solid rgba(52,199,89,0.3); border-radius: 12px; color: #34C759; font-weight: 700; cursor: pointer; font-size: 14px; transition: 0.2s;" onmouseover="this.style.background='rgba(52,199,89,0.2)'" onmouseout="this.style.background='rgba(52,199,89,0.1)'">✅ Approuver</button>
+                        <button onclick="window.handleGTRequestDecision('${req.id}', 'rejected')" style="flex: 1; padding: 12px; background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.3); border-radius: 12px; color: #FF3B30; font-weight: 700; cursor: pointer; font-size: 14px; transition: 0.2s;" onmouseover="this.style.background='rgba(255,59,48,0.2)'" onmouseout="this.style.background='rgba(255,59,48,0.1)'">❌ Refuser</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        modal.innerHTML = `
+            <div class="modal-box glass-panel" style="width: 90%; max-width: 620px; padding: 40px; border-radius: 32px; background: rgba(28,28,30,0.92); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); max-height: 88vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px;">
+                    <h2 style="margin: 0; font-size: 22px; font-weight: 800;">🔔 Demandes GT en attente</h2>
+                    <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
+                </div>
+                <div id="gt-requests-list">${requestCards}</div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    } catch (e) {
+        window.showToast('❌ Erreur: ' + e.message);
+    }
+};
+
+window.handleGTRequestDecision = async function (requestId, status) {
+    try {
+        await api.updateMaterialGTStockRequestStatus(requestId, status);
+        const card = document.getElementById(`gt-req-${requestId}`);
+        if (card) {
+            card.style.opacity = '0.4';
+            card.style.pointerEvents = 'none';
+            card.style.borderColor = status === 'approved' ? 'rgba(52,199,89,0.3)' : 'rgba(255,59,48,0.3)';
+        }
+        window.showToast(status === 'approved' ? '✅ Demande GT approuvée' : '❌ Demande GT refusée');
+        window.updateMaterialGTStockBadge();
+        if (window._currentGTStock) window.renderAdminMaterialGTTracking();
+    } catch (e) {
+        window.showToast('❌ Erreur: ' + e.message);
+    }
+};
+
+window.exportMaterialGTToExcel = function () {
+    const stock = window._currentGTStock;
+    if (!stock || stock.length === 0) { window.showToast('⚠️ Aucune donnée à exporter'); return; }
+    const GT_COMPAT = ['t1', 't2', 'v1', 'v2', 'v3', 'v4', 'v5'];
+    const headers = ['QR Ref', 'Désignation', 'Référence', 'Quantité', 'Lieu de stockage', ...GT_COMPAT.map(k => k.toUpperCase())];
+    const rows = stock.map(s => [
+        s.qr_ref || '', s.designation || '', s.ref || '', s.quantite || '0', s.lieu_de_stockage || '',
+        ...GT_COMPAT.map(k => s[k] ? 'Oui' : '')
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stock_gt_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    window.showToast('📊 Export GT téléchargé');
+};
+
+window.openQrGTExportModal = async function () {
+    const stock = window._currentGTStock || [];
+    const withRef = stock.filter(s => s.qr_ref);
+    const withoutRef = stock.filter(s => !s.qr_ref);
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '1000000';
+    modal.style.backdropFilter = 'blur(8px)';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 90%; max-width: 600px; padding: 40px; border-radius: 32px; background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                <h2 style="margin:0; font-size: 24px; font-weight: 800;">📱 Gestion QR Codes GT</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 30px;">
+                <div style="background: rgba(52, 199, 89, 0.1); border: 1px solid rgba(52, 199, 89, 0.2); border-radius: 16px; padding: 20px; text-align: center;">
+                    <div style="font-size: 32px; font-weight: 900; color: #34C759;">${withRef.length}</div>
+                    <div style="font-size: 12px; color: #8E8E93; font-weight: 600;">AVEC REF QR</div>
+                </div>
+                <div style="background: rgba(255, 149, 0, 0.1); border: 1px solid rgba(255, 149, 0, 0.2); border-radius: 16px; padding: 20px; text-align: center;">
+                    <div style="font-size: 32px; font-weight: 900; color: #FF9500;">${withoutRef.length}</div>
+                    <div style="font-size: 12px; color: #8E8E93; font-weight: 600;">SANS REF QR</div>
+                </div>
+            </div>
+
+            ${withoutRef.length > 0 ? `
+            <button onclick="window.batchGenerateGTRefs(this)" style="width: 100%; padding: 16px; background: linear-gradient(135deg, #FF9500, #FF3B30); color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; margin-bottom: 20px; transition: 0.2s;">
+                ⚡ Attribuer les références aux ${withoutRef.length} matériels manquants
+            </button>` : ''}
+
+            <div style="margin-bottom: 20px;">
+                <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:10px; font-weight:700; text-transform:uppercase;">Taille des QR codes sur le PDF</label>
+                <select id="qr-gt-size-select" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:12px; color:white; padding:12px; font-size:15px; outline:none;">
+                    <option value="30">Mini (30×30 mm)</option>
+                    <option value="60">Petit (60×60 mm) — 6 par page (2×3)</option>
+                    <option value="80" selected>Moyen (80×80 mm) — 4 par page (2×2)</option>
+                    <option value="100">Grand (100×100 mm) — 2 par page (1×2)</option>
+                    <option value="120">Très grand (120×120 mm) — 1 par page</option>
+                </select>
+            </div>
+
+            <button onclick="window.exportAllGTQrPdf(this)" style="width: 100%; padding: 16px; background: #5856D6; color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; transition: 0.2s;" ${withRef.length === 0 ? 'disabled style="opacity:0.5"' : ''}>
+                📥 Exporter tous les QR codes en PDF (${withRef.length} matériels)
+            </button>
+            <p style="font-size: 11px; color: #8E8E93; text-align: center; margin-top: 12px;">Les QR codes seront disposés automatiquement sur des feuilles A4</p>
+        </div>
+    `;
+    document.body.appendChild(modal);
+};
+
+window.batchGenerateGTRefs = async function (btn) {
+    btn.disabled = true;
+    btn.innerText = '⏳ Attribution en cours...';
+    try {
+        const result = await api.generateMaterialGTRefs();
+        showToast(result.message || `${result.count} références générées`);
+        btn.closest('.modal-overlay').remove();
+        renderAdminMaterialGTTracking();
+    } catch (err) {
+        alert('Erreur: ' + err.message);
+        btn.disabled = false;
+        btn.innerText = '⚡ Réessayer';
+    }
+};
+
+window.exportAllGTQrPdf = async function (btn) {
+    if (typeof QRCode === 'undefined') { alert('QR library not loaded'); return; }
+    const stock = (window._currentGTStock || []).filter(s => s.qr_ref);
+    if (stock.length === 0) { alert('Aucun matériel avec référence QR'); return; }
+
+    btn.disabled = true;
+    const origText = btn.innerText;
+    btn.innerText = '⏳ Génération du PDF...';
+
+    // Load Logo
+    const logoImg = new Image();
+    logoImg.src = 'logo-pouchain.svg';
+    await new Promise(r => logoImg.onload = r);
+
+    const sizeMm = parseInt(document.getElementById('qr-gt-size-select').value) || 80;
+    const pxPerMm = 11.81; // 300 DPI (300 / 25.4)
+
+    // Space allocations
+    const logoHMm = sizeMm < 40 ? 6 : 12;
+    const nameHMm = sizeMm < 40 ? 8 : 12;
+    const refHMm = sizeMm < 40 ? 5 : 8;
+    const paddingMm = 2;
+
+    const qrPx = Math.round(sizeMm * pxPerMm);
+    const logoPx = Math.round(logoHMm * pxPerMm);
+    const namePx = Math.round(nameHMm * pxPerMm);
+    const refPx = Math.round(refHMm * pxPerMm);
+    const padPx = Math.round(paddingMm * pxPerMm);
+
+    const cellW = qrPx;
+    const cellH = logoPx + namePx + qrPx + refPx + (padPx * 2);
+
+    const marginMm = sizeMm < 40 ? 5 : 10;
+    const margin = Math.round(marginMm * pxPerMm);
+    const pageW = Math.round(210 * pxPerMm); // A4 width
+    const pageH = Math.round(297 * pxPerMm); // A4 height
+
+    const cols = Math.floor((pageW - margin) / (cellW + margin)) || 1;
+    const rows = Math.floor((pageH - margin) / (cellH + margin)) || 1;
+    const perPage = cols * rows;
+    const totalPages = Math.ceil(stock.length / perPage);
+
+    const pages = [];
+
+    // Helper for text wrapping
+    const wrapText = (ctx, text, x, y, maxWidth, lineHeight) => {
+        const words = (text || '').split(' ');
+        let line = '';
+        let currentY = y;
+        for (let n = 0; n < words.length; n++) {
+            let testLine = line + words[n] + ' ';
+            let metrics = ctx.measureText(testLine);
+            if (metrics.width > maxWidth && n > 0) {
+                ctx.fillText(line, x, currentY);
+                line = words[n] + ' ';
+                currentY += lineHeight;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, x, currentY);
+    };
+
+    for (let page = 0; page < totalPages; page++) {
+        const canvas = document.createElement('canvas');
+        canvas.width = pageW;
+        canvas.height = pageH;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageW, pageH);
+
+        const startIdx = page * perPage;
+        const endIdx = Math.min(startIdx + perPage, stock.length);
+
+        for (let i = startIdx; i < endIdx; i++) {
+            const item = stock[i];
+            const localIdx = i - startIdx;
+            const col = localIdx % cols;
+            const row = Math.floor(localIdx / cols);
+            const x = margin + col * (cellW + margin);
+            const y = margin + row * (cellH + margin);
+
+            // Draw Cell Border
+            ctx.strokeStyle = '#eeeeee';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, cellW, cellH);
+
+            // 1. Draw Logo
+            const logoAspect = logoImg.width / logoImg.height;
+            let drawLogoW = cellW * 0.8;
+            let drawLogoH = drawLogoW / logoAspect;
+            if (drawLogoH > logoPx) {
+                drawLogoH = logoPx;
+                drawLogoW = drawLogoH * logoAspect;
+            }
+            ctx.drawImage(logoImg, x + (cellW - drawLogoW) / 2, y + padPx, drawLogoW, drawLogoH);
+
+            // 2. Draw Name (Above QR)
+            ctx.fillStyle = '#000000';
+            const fontSizeNamePx = Math.max(1.5, sizeMm * 0.08) * pxPerMm;
+            ctx.font = `700 ${Math.round(fontSizeNamePx)}px sans-serif`;
+            ctx.textAlign = 'center';
+            wrapText(ctx, item.designation, x + cellW / 2, y + logoPx + padPx + fontSizeNamePx, cellW - (2 * pxPerMm), fontSizeNamePx * 1.1);
+
+            // 3. Draw QR Code
+            const qrCanvas = document.createElement('canvas');
+            const qrUrl = `${config.api.workerUrl}/material?ref=${item.qr_ref}`;
+            await QRCode.toCanvas(qrCanvas, qrUrl, { width: qrPx - (2 * pxPerMm), margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+            ctx.drawImage(qrCanvas, x + (1 * pxPerMm), y + logoPx + namePx + padPx);
+
+            // 4. Draw Ref (Bottom)
+            ctx.fillStyle = '#000000';
+            const fontSizeRefPx = Math.max(2, sizeMm * 0.1) * pxPerMm;
+            ctx.font = `bold ${Math.round(fontSizeRefPx)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillText(item.qr_ref, x + cellW / 2, y + logoPx + namePx + qrPx + padPx + fontSizeRefPx);
+        }
+
+        // Footer
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Page ${page + 1}/${totalPages} — Pouchain App (GT)`, pageW - margin, pageH - 10);
+
+        pages.push(canvas);
+        btn.innerText = `⏳ Page ${page + 1}/${totalPages}...`;
+    }
+
+    // Export all pages into a single PDF using jsPDF
+    btn.innerText = '⏳ Création du PDF...';
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    for (let i = 0; i < pages.length; i++) {
+        if (i > 0) doc.addPage();
+        doc.addImage(pages[i].toDataURL('image/png'), 'PNG', 0, 0, 210, 297);
+    }
+    doc.save('QR_Codes_Pouchain_GT.pdf');
+
+    btn.disabled = false;
+    btn.innerText = origText;
+    showToast(`PDF exporté — ${pages.length} page(s), ${stock.length} QR codes`);
+};
+
+initDashboard();
