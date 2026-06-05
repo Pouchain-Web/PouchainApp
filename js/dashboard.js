@@ -2032,14 +2032,16 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                         </div>
                         <button onclick="changePlanningWeek('${startStr}', 7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #2da140; color: white; border: none; font-size: 16px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#258535'" onmouseout="this.style.background='#2da140'">▶</button>
                     </div>
-                    <div class="p-header-controls" style="display:flex; gap: 12px; align-items: center;">
-                        <div id="fullscreen-clock" style="font-size: 20px; font-weight: 800; color: #34C759; background: rgba(52, 199, 89, 0.1); border: 1px solid rgba(52, 199, 89, 0.2); padding: 6px 14px; border-radius: 10px; font-family: monospace; margin-right: 15px;">
+                    <div style="display:flex; align-items:center; gap: 20px;">
+                        <div id="fullscreen-clock" style="font-size: 24px; font-weight: 900; color: #2da140; background: rgba(45, 161, 64, 0.08); border: 1px solid rgba(45, 161, 64, 0.15); padding: 5px 15px; border-radius: 10px; font-family: monospace; display: flex; align-items: center; justify-content: center; height: 40px; box-sizing: border-box;">
                             ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </div>
-                        <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Export</button>
-                        <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ TV</button>
-                        <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ V2</button>
-                        <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Tâche</button>
+                        <div class="p-header-controls" style="display:flex; gap: 12px; align-items: center;">
+                            <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Export</button>
+                            <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ TV</button>
+                            <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ V2</button>
+                            <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Tâche</button>
+                        </div>
                     </div>
                 </header>
             `;
