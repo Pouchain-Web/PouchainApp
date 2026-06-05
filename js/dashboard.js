@@ -12179,14 +12179,10 @@ window.renderAdminConges = async function () {
     content.innerHTML = `<div style="text-align:center; padding: 50px;"><div class="loader-spinner"></div></div>`;
 
     try {
-        const [requests, usersData] = await Promise.all([
+        const [requests, users] = await Promise.all([
             api.getAdminCongeRequests(),
             api.getAdminCongeUsers()
         ]);
-        const users = usersData.filter(u => {
-            const nameLower = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
-            return nameLower.includes('patrick') || nameLower.includes('quentin') || nameLower.includes('partick');
-        });
 
         const adminSecteur = window.currentUserProfile?.secteur || 'AIA';
         const pendingRequests = requests.filter(r => r.status === 'pending');
