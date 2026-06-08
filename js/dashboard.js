@@ -11121,7 +11121,11 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
         const reqContainer = document.getElementById('modification-requests-container');
         if (!reqContainer) return;
         try {
-            const requests = await api.getPendingPointageModificationRequests();
+            const allRequests = await api.getPendingPointageModificationRequests();
+            const pointageAdminSecteur = window.currentUserProfile?.secteur || 'AIA';
+            const requests = pointageAdminSecteur === 'Tout'
+                ? allRequests
+                : allRequests.filter(r => r.profiles && r.profiles.secteur === pointageAdminSecteur);
             if (!Array.isArray(requests) || requests.length === 0) {
                 reqContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.3); font-size: 13px;">Aucune demande de modification en attente.</div>`;
                 return;
@@ -11181,11 +11185,16 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
     window.renderAdminModificationRequests();
 
     try {
-        const [users, pointages, activities] = await Promise.all([
+        const [allUsers, pointages, activities] = await Promise.all([
             api.listUsers(),
             api.getAllPointages(week, year),
             api.getPointageActivities()
         ]);
+        const pointageAdminSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const users = pointageAdminSecteur === 'Tout'
+            ? allUsers
+            : allUsers.filter(u => u.secteur === pointageAdminSecteur);
+
         window.adminPointagesCache = pointages;
         window.presetActivitiesFull = activities;
         window.presetActivities = activities.map(a => a.name);
@@ -11299,7 +11308,11 @@ window.notifyMissingPointages = async function () {
 
 window.exportPointageToExcel = async function (week, year) {
     try {
-        const [users, pointages] = await Promise.all([api.listUsers(), api.getAllPointages(week, year)]);
+        const [allUsers, pointages] = await Promise.all([api.listUsers(), api.getAllPointages(week, year)]);
+        const pointageAdminSecteur = window.currentUserProfile?.secteur || 'AIA';
+        const users = pointageAdminSecteur === 'Tout'
+            ? allUsers
+            : allUsers.filter(u => u.secteur === pointageAdminSecteur);
         if (pointages.length === 0) return alert("Aucun pointage pour cette semaine.");
 
         const wb = XLSX.utils.book_new();
