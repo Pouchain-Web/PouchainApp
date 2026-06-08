@@ -11509,7 +11509,7 @@ window.exportPointageToExcel = async function (week, year) {
                     { content: "GD", styles: { halign: 'center' } },
                     { content: "Repas", styles: { halign: 'center' } },
                     { content: "Transport", styles: { halign: 'center' } },
-                    { content: "Zone", styles: { halign: 'center' } },
+                    { content: "Trajet", styles: { halign: 'center' } },
                     { content: "Prime", styles: { halign: 'center' } }
                 ]],
                 body: bodyRows,
