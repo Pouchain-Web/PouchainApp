@@ -11482,8 +11482,42 @@ window.exportPointageToExcel = async function (week, year) {
                 </tr>
             `;
 
+            container.className = 'pdf-export-container';
             container.innerHTML = `
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;">
+                <style>
+                    .pdf-export-container {
+                        color: #000000 !important;
+                    }
+                    .pdf-export-container table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        color: #000000 !important;
+                        background-color: #ffffff !important;
+                    }
+                    .pdf-export-container td {
+                        color: #000000 !important;
+                        border: 1px solid #999999 !important;
+                        font-family: Arial, sans-serif;
+                    }
+                    .pdf-export-container th {
+                        color: #FFFFFF !important;
+                        background-color: #375623 !important;
+                        border: 1px solid #999999 !important;
+                        font-family: Arial, sans-serif;
+                        font-weight: bold;
+                    }
+                    .pdf-export-header td {
+                        background-color: #DDEBF7 !important;
+                        color: #1F4E78 !important;
+                        font-weight: bold;
+                    }
+                    .pdf-export-total td {
+                        background-color: #D9D9D9 !important;
+                        color: #000000 !important;
+                        font-weight: bold;
+                    }
+                </style>
+                <table class="pdf-export-header" style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;">
                     <tr>
                         <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; width: 40%;">SOCIÉTÉ: ${userSociete.toUpperCase()}</td>
                         <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; text-align: center; width: 30%;">SEMAINE: ${week}</td>
