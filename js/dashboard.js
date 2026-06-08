@@ -11338,17 +11338,23 @@ window.exportPointageToExcel = async function (week, year) {
                 `Vous allez exporter ${activeUsers.length} fichier(s) Excel (un par personne).\n\n` +
                 `Le chemin par défaut a été copié dans votre presse-papier :\n` +
                 `${defaultPath}\n\n` +
-                `Veuillez sélectionner le dossier de destination dans la fenêtre qui va s'ouvrir (collez le chemin dans la barre d'adresse si nécessaire).`
+                `⚠️ IMPORTANT : Ne sélectionnez pas directement la racine du lecteur (ex: Y:\\) sinon le navigateur refusera par sécurité.\n` +
+                `Double-cliquez pour entrer dans les dossiers jusqu'au dossier final '2026', ou collez le chemin complet dans la barre d'adresse de l'explorateur qui va s'ouvrir.`
             );
-            if (!confirmed) return;
-
-            try {
-                dirHandle = await window.showDirectoryPicker();
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    return; // User cancelled
+            
+            if (confirmed) {
+                try {
+                    dirHandle = await window.showDirectoryPicker();
+                } catch (err) {
+                    console.warn("Directory picker failed or was cancelled:", err);
+                    const fallback = confirm(
+                        `Impossible d'accéder au dossier ou action annulée.\n\n` +
+                        `Souhaitez-vous télécharger les ${activeUsers.length} fichiers Excel individuellement dans votre dossier 'Téléchargements' par défaut ?`
+                    );
+                    if (!fallback) return;
                 }
-                console.warn("Directory picker failed, falling back to individual downloads.", err);
+            } else {
+                return;
             }
         } else {
             const confirmed = confirm(
