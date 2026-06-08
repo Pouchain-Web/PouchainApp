@@ -1485,6 +1485,167 @@ export const api = {
         return await response.json();
     },
 
+    // --- Material Stock ASPI Management ---
+    async getMaterialAspiStock() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMaterialAspiStock(id, updates) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id, ...updates })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialAspiStock(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async createMaterialAspiStock(item) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(item)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialAspiHistory(materialId) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/logs?material_id=${materialId}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async addMaterialAspiLog(materialId, action, details) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/logs`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ material_id: materialId, action, details })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialAspiLog(id) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/logs?id=${id}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getMaterialAspiStockRequests() {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/requests`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async submitMaterialAspiStockRequest(materialId, payload) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ material_id: materialId, ...payload })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateMaterialAspiStockRequestStatus(requestId, status) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/requests`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id: requestId, status })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async lookupMaterialAspiByRef(ref) {
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/lookup?ref=${encodeURIComponent(ref)}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async generateMaterialAspiRefs() {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/generate-refs`, {
+            method: 'POST',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async uploadMaterialAspiPhoto(materialId, file, isRequest = false) {
+        await checkVisitor();
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('materialId', materialId);
+        if (isRequest) formData.append('isRequest', 'true');
+        const response = await fetch(`${config.api.workerUrl}/admin/material-aspi/photo`, {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: formData
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteMaterialAspiPhoto(key) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/material-aspi/photo?key=${encodeURIComponent(key)}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async getPointageModificationRequest(week, year) {
         const response = await fetch(`${config.api.workerUrl}/pointage/modification-requests?week=${week}&year=${year}`, {
             headers: await getAuthHeaders()

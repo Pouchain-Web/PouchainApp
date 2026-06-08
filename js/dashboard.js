@@ -278,10 +278,10 @@ async function initDashboard() {
                         if (!document.fullscreenElement) {
                             if (fsMode === '2') {
                                 const v2 = document.getElementById('planning-v2-container');
-                                if (v2) v2.requestFullscreen().catch(() => {});
+                                if (v2) v2.requestFullscreen().catch(() => { });
                             } else {
                                 const el = document.getElementById('integrated-planning-container');
-                                if (el) el.requestFullscreen().catch(() => {});
+                                if (el) el.requestFullscreen().catch(() => { });
                             }
                         }
                         tip.remove();
@@ -1394,6 +1394,13 @@ async function renderAdminView(session) {
                     <span>🗄️ Statut du matériel GT</span>
                     <span id="mat-stock-gt-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialAspiTracking()" id="nav-material-stock-aspi" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🧹 Statut du matériel Aspi</span>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <span id="mat-stock-aspi-alert-badge" style="background: #FFCC00; color: #ffffffff; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 204, 0, 0.4);">0</span>
+                        <span id="mat-stock-aspi-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                    </div>
+                </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance">🛠️ Maintenance Matériel</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminHTTorques()" id="nav-ht-torques" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>⚡ Couples de Serrage HT</span>
@@ -1447,10 +1454,9 @@ async function renderAdminView(session) {
             // ─── Config onglets admin par secteur ───────────────────────────────────
             // Pour ajouter un nouveau secteur : ajouter une entrée avec les IDs à masquer.
             const SECTOR_HIDDEN_TABS = {
-                'HT': ['nav-material-stock', 'nav-material-stock-gt', 'nav-maintenance'],
+                'HT': ['nav-material-stock', 'nav-material-stock-gt', 'nav-material-stock-aspi', 'nav-maintenance'],
                 // 'NOUVEAU_SECTEUR': ['nav-xyz', 'nav-abc'],
             };
-            // ────────────────────────────────────────────────────────────────────────
             const secteur = profile.secteur || 'AIA';
 
             // Masquage automatique des onglets non autorisés
@@ -1510,11 +1516,15 @@ async function renderAdminView(session) {
     if (window.materialBadgeInterval) clearInterval(window.materialBadgeInterval);
     window.updateMaterialBadge();
     window.updateMaterialStockBadge();
+    window.updateMaterialGTStockBadge();
+    window.updateMaterialAspiStockBadge();
     window.updateCongesBadge();
     window.updateRTTBadge();
     window.materialBadgeInterval = setInterval(() => {
         window.updateMaterialBadge();
         window.updateMaterialStockBadge();
+        window.updateMaterialGTStockBadge();
+        window.updateMaterialAspiStockBadge();
         window.updateCongesBadge();
         window.updateRTTBadge();
     }, 30000);
@@ -10128,24 +10138,24 @@ window.openMaterialRequestsModal = async function () {
                                     <span>💬 Commentaire:</span> <strong>${req.comment}</strong>
                                 </div>` : ''}
                                 ${req.new_designation && req.new_designation !== req.material_stock.designation ?
-                                    `<div style="color: #34C759; font-weight: 800; background: rgba(52,199,89,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📝 Nom : ${req.material_stock.designation} ➔ <span style="font-size: 1.1em;">${req.new_designation}</span></div>` : ''
-                                }
+                `<div style="color: #34C759; font-weight: 800; background: rgba(52,199,89,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📝 Nom : ${req.material_stock.designation} ➔ <span style="font-size: 1.1em;">${req.new_designation}</span></div>` : ''
+            }
                                 ${req.new_reference_fournisseur && req.new_reference_fournisseur !== req.material_stock.reference_fournisseur ?
-                                    `<div style="color: #007AFF; font-weight: 800; background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">🔢 Réf : ${req.material_stock.reference_fournisseur || '—'} ➔ <span style="font-size: 1.1em;">${req.new_reference_fournisseur}</span></div>` : ''
-                                }
+                `<div style="color: #007AFF; font-weight: 800; background: rgba(0,122,255,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">🔢 Réf : ${req.material_stock.reference_fournisseur || '—'} ➔ <span style="font-size: 1.1em;">${req.new_reference_fournisseur}</span></div>` : ''
+            }
                                 ${req.new_type && req.new_type !== req.material_stock.type ?
-                                    `<div style="color: #AF52DE; font-weight: 800; background: rgba(175,82,222,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📁 Cat : ${req.material_stock.type || '—'} ➔ <span style="font-size: 1.1em;">${req.new_type}</span></div>` : ''
-                                }
+                `<div style="color: #AF52DE; font-weight: 800; background: rgba(175,82,222,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📁 Cat : ${req.material_stock.type || '—'} ➔ <span style="font-size: 1.1em;">${req.new_type}</span></div>` : ''
+            }
                                 ${req.new_stock_reel !== req.material_stock.stock_reel ?
-                                    `<div style="color: #FF9500; font-weight: 800; background: rgba(255,149,0,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📦 Stock : ${req.material_stock.stock_reel} ➔ <span style="font-size: 1.1em;">${req.new_stock_reel}</span></div>` :
-                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Stock : ${req.new_stock_reel} (inchangé)</div>`
-                                }
+                `<div style="color: #FF9500; font-weight: 800; background: rgba(255,149,0,0.1); padding: 4px 8px; border-radius: 6px; margin-bottom: 4px;">📦 Stock : ${req.material_stock.stock_reel} ➔ <span style="font-size: 1.1em;">${req.new_stock_reel}</span></div>` :
+                `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Stock : ${req.new_stock_reel} (inchangé)</div>`
+            }
                                 ${req.new_lieu_de_stockage !== req.material_stock.lieu_de_stockage ?
-                                    `<div style="color: #5856D6; font-weight: 800; background: rgba(88,86,214,0.1); padding: 4px 8px; border-radius: 6px;">📍 Lieu : ${req.material_stock.lieu_de_stockage || '—'} ➔ <span style="font-size: 1.1em;">${req.new_lieu_de_stockage}</span></div>` :
-                                    `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Lieu : ${req.new_lieu_de_stockage} (inchangé)</div>`
-                                }
+                `<div style="color: #5856D6; font-weight: 800; background: rgba(88,86,214,0.1); padding: 4px 8px; border-radius: 6px;">📍 Lieu : ${req.material_stock.lieu_de_stockage || '—'} ➔ <span style="font-size: 1.1em;">${req.new_lieu_de_stockage}</span></div>` :
+                `<div style="color: #8E8E93; font-size: 12px; padding: 4px 8px;">Lieu : ${req.new_lieu_de_stockage} (inchangé)</div>`
+            }
                                 ${req.new_photo_url ?
-                                    `<div style="margin-top: 10px; background: rgba(88,86,214,0.1); border-radius: 12px; padding: 10px; border: 1px solid rgba(88,86,214,0.2);">
+                `<div style="margin-top: 10px; background: rgba(88,86,214,0.1); border-radius: 12px; padding: 10px; border: 1px solid rgba(88,86,214,0.2);">
                                         <div style="font-size: 11px; color: #5856D6; margin-bottom: 6px; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
                                             <span>📸 Nouvelle Photo</span>
                                             <span style="background: #5856D6; color: white; padding: 1px 4px; border-radius: 4px; font-size: 9px;">DÉTECTÉE</span>
@@ -10157,7 +10167,7 @@ window.openMaterialRequestsModal = async function () {
                                                  onerror="this.style.display='none'; this.parentElement.innerHTML = '<div style=color:#FF3B30;font-size:11px;padding:10px;text-align:center;>⚠️ Erreur de chargement<br><small style=opacity:0.7;>${req.new_photo_url}</small></div>'">
                                         </div>
                                      </div>` : ''
-                                }
+            }
                             </td>
                             <td style="padding: 16px 12px; text-align: right;">
                                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
@@ -11198,7 +11208,7 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
         window.adminPointagesCache = pointages;
         window.presetActivitiesFull = activities;
         window.presetActivities = activities.map(a => a.name);
-        
+
         // Render activities list now that we have loaded the dynamic list
         window.renderAdminActivitiesList();
 
@@ -11339,7 +11349,7 @@ window.exportPointageToExcel = async function (week, year) {
                 `⚠️ IMPORTANT : Ne sélectionnez pas directement la racine du lecteur (ex: Y:\\) sinon le navigateur refusera par sécurité.\n` +
                 `Double-cliquez pour entrer dans les dossiers jusqu'au dossier final '2026', ou collez le chemin complet dans la barre d'adresse de l'explorateur qui va s'ouvrir.`
             );
-            
+
             if (confirmed) {
                 try {
                     dirHandle = await window.showDirectoryPicker();
@@ -11406,7 +11416,7 @@ window.exportPointageToExcel = async function (week, year) {
 
         for (const user of activeUsers) {
             const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-            
+
             const up = pointages.filter(p => p.user_id === user.id);
             const userFullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
             const userSociete = user.societe || 'Pouchain';
@@ -11428,7 +11438,7 @@ window.exportPointageToExcel = async function (week, year) {
             drawHeaderCell(`SOCIÉTÉ: ${userSociete.toUpperCase()}`, 14, 14, 107.6, 8, bgBlue, textBlue);
             drawHeaderCell(`SEMAINE: ${week}`, 121.6, 14, 80.7, 8, bgBlue, textBlue);
             drawHeaderCell(`ANNÉE: ${year}`, 202.3, 14, 80.7, 8, bgBlue, textBlue);
-            
+
             drawHeaderCell(`COLLABORATEUR: ${userFullName}`, 14, 22, 107.6, 8, bgBlue, textBlue);
             drawHeaderCell(`PÉRIODE: ${periodStr}`, 121.6, 22, 161.4, 8, bgBlue, textBlue);
 
@@ -11477,7 +11487,7 @@ window.exportPointageToExcel = async function (week, year) {
                     if (isFirst) {
                         row.push({ content: dayLabel, rowSpan: numRows, styles: { fillColor: rowBgColor, fontStyle: 'bold', valign: 'middle', halign: 'center' } });
                     }
-                    
+
                     row.push({ content: act.activity_name || "", styles: { fillColor: rowBgColor, halign: 'left' } });
                     row.push({ content: act.hours !== undefined && act.hours !== null ? String(act.hours) : "", styles: { fillColor: rowBgColor, halign: 'center' } });
 
@@ -12025,7 +12035,7 @@ window.generateCongePDFPlaceholder = async function (requestData) {
 
         let datesList = requestData.dates_list;
         if (typeof datesList === 'string') {
-            try { datesList = JSON.parse(datesList); } catch(e) { datesList = []; }
+            try { datesList = JSON.parse(datesList); } catch (e) { datesList = []; }
         }
 
         let dateGroups = [];
@@ -12192,7 +12202,7 @@ window.renderAdminConges = async function () {
         const adminSecteur = window.currentUserProfile?.secteur || 'AIA';
         const pendingRequests = requests.filter(r => r.status === 'pending');
 
-    let html = `
+        let html = `
         <div style="padding: 30px; background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(40px); border-radius: 40px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 12px 40px rgba(0,0,0,0.4);">
             <!-- Header -->
             <div class="glass-header" style="display: flex; justify-content: space-between; align-items: center; padding: 25px; background: #121212; border-radius: 24px; border: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 30px; box-shadow: 0 8px 20px rgba(0,0,0,0.5);">
@@ -12986,7 +12996,7 @@ window.generateRTTPDFPlaceholder = async function (requestData) {
 
         let datesList = requestData.dates_list;
         if (typeof datesList === 'string') {
-            try { datesList = JSON.parse(datesList); } catch(e) { datesList = []; }
+            try { datesList = JSON.parse(datesList); } catch (e) { datesList = []; }
         }
 
         let dateGroups = [];
@@ -13063,7 +13073,7 @@ window.generateRTTPDFPlaceholder = async function (requestData) {
 
         try {
             form.getRadioGroup('Group1').select('Choice1');
-        } catch (e) {}
+        } catch (e) { }
 
         const dateAcceptation = formatStrDate(getLocalYYYYMMDD(new Date()));
         let adminName = requestData.admin_name || parsedCommentData.admin_name;
@@ -13083,7 +13093,7 @@ window.generateRTTPDFPlaceholder = async function (requestData) {
                     ? { x: 430, y: 278, width: 90, height: 35 }
                     : { x: 430, y: 250, width: 90, height: 35 };
                 firstPage.drawImage(sigImage, sigCoords);
-            } catch (sigErr) {}
+            } catch (sigErr) { }
         }
 
         const adminSignature = requestData.admin_signature || parsedCommentData.admin_signature;
@@ -13096,7 +13106,7 @@ window.generateRTTPDFPlaceholder = async function (requestData) {
                     ? { x: 430, y: 130, width: 135, height: 52.5 }
                     : { x: 430, y: 85, width: 135, height: 52.5 };
                 firstPage.drawImage(sigImage, adminSigCoords);
-            } catch (sigErr) {}
+            } catch (sigErr) { }
         }
 
         form.flatten();
@@ -13246,11 +13256,11 @@ function renderRTTBalancesSection(users) {
                     </thead>
                     <tbody>
                         ${users.map(u => {
-                            const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Utilisateur';
-                            const initLabel = u.rtt_initialise ? 'Oui ✅' : 'Non ❌';
-                            const initColor = u.rtt_initialise ? '#34C759' : '#FF3B30';
+        const name = [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Utilisateur';
+        const initLabel = u.rtt_initialise ? 'Oui ✅' : 'Non ❌';
+        const initColor = u.rtt_initialise ? '#34C759' : '#FF3B30';
 
-                            return `
+        return `
                                 <tr class="rtt-balance-row" data-name="${window.escapeHTML(name)}" data-sector="${window.escapeHTML(u.secteur || 'AIA')}">
                                     <td><div style="font-weight: 600; color: white;">${window.escapeHTML(name)}</div></td>
                                     <td><span style="background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #bbb;">${u.secteur || 'AIA'}</span></td>
@@ -13268,7 +13278,7 @@ function renderRTTBalancesSection(users) {
                                     </td>
                                 </tr>
                             `;
-                        }).join('')}
+    }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -13289,12 +13299,12 @@ function renderRTTPendingRequestsSection(requests) {
     return `
         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; padding-bottom: 40px;">
             ${requests.map(r => {
-                const name = [r.profiles?.first_name, r.profiles?.last_name].filter(Boolean).join(' ') || 'Salarié inconnu';
-                const startStr = new Date(r.start_date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-                const endStr = new Date(r.end_date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-                const requestDateStr = new Date(r.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        const name = [r.profiles?.first_name, r.profiles?.last_name].filter(Boolean).join(' ') || 'Salarié inconnu';
+        const startStr = new Date(r.start_date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const endStr = new Date(r.end_date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const requestDateStr = new Date(r.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-                return `
+        return `
                     <div class="conge-request-card" style="background: rgba(45, 45, 50, 0.4); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); border-radius: 24px; padding: 24px; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; transition: all 0.3s ease; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                             <div>
@@ -13340,7 +13350,7 @@ function renderRTTPendingRequestsSection(requests) {
                         </div>
                     </div>
                 `;
-            }).join('')}
+    }).join('')}
         </div>
     `;
 }
@@ -13962,7 +13972,7 @@ window.openEditMaterialGTModal = async function (id = null) {
                 lieu_de_stockage: formData.get('lieu_de_stockage') || null,
             };
             // Get compat checkboxes
-            ['t1','t2','v1','v2','v3','v4','v5'].forEach(k => {
+            ['t1', 't2', 'v1', 'v2', 'v3', 'v4', 'v5'].forEach(k => {
                 data[k] = document.getElementById(`gt-compat-${k}`).checked;
             });
 
@@ -14169,7 +14179,7 @@ window.exportMaterialGTToExcel = function () {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `stock_gt_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `stock_gt_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     window.showToast('📊 Export GT téléchargé');
@@ -14385,11 +14395,880 @@ window.exportAllGTQrPdf = async function (btn) {
     showToast(`PDF exporté — ${pages.length} page(s), ${stock.length} QR codes`);
 };
 
+window.updateMaterialAspiStockBadge = async function () {
+    try {
+        const requests = await api.getMaterialAspiStockRequests();
+        const badge = document.getElementById('mat-stock-aspi-request-badge');
+        if (badge) {
+            if (requests && requests.length > 0) {
+                badge.style.display = 'flex';
+                badge.textContent = requests.length;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (e) { /* silent */ }
+
+    try {
+        const stock = await api.getMaterialAspiStock();
+        let alertCount = 0;
+        stock.forEach(item => {
+            const currentQty = parseInt(item.quantite) || 0;
+            const targetQty = parseInt(item.cible) || 0;
+            if (currentQty < targetQty) {
+                alertCount++;
+            }
+        });
+        const alertBadge = document.getElementById('mat-stock-aspi-alert-badge');
+        if (alertBadge) {
+            if (alertCount > 0) {
+                alertBadge.style.display = 'flex';
+                alertBadge.textContent = alertCount;
+            } else {
+                alertBadge.style.display = 'none';
+            }
+        }
+    } catch (e) { /* silent */ }
+};
+
+window.renderAdminMaterialAspiTracking = async function () {
+    const content = document.getElementById('admin-content');
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    const navItem = document.getElementById('nav-material-stock-aspi');
+    if (navItem) navItem.classList.add('active');
+
+    content.innerHTML = `
+        <style>
+            @keyframes pulse-red-card {
+                0% { border-color: rgba(255, 59, 48, 0.35); box-shadow: 0 0 5px rgba(255, 59, 48, 0.1); }
+                50% { border-color: rgba(255, 59, 48, 0.85); box-shadow: 0 0 15px rgba(255, 59, 48, 0.4); background: rgba(255, 59, 48, 0.08); }
+                100% { border-color: rgba(255, 59, 48, 0.35); box-shadow: 0 0 5px rgba(255, 59, 48, 0.1); }
+            }
+            .pulse-red-card-anim {
+                animation: pulse-red-card 2s infinite !important;
+            }
+        </style>
+        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+            <!-- Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #FF9500, #FF3B30); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(255, 149, 0, 0.3);">
+                        <span style="font-size: 28px;">🧹</span>
+                    </div>
+                    <div>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Statut du matériel Aspirateur</h1>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Consommables et accessoires d'aspirateurs (Flexible, Sacs, Filtres, Cartouches...)</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-primary" id="material-aspi-requests-btn" onclick="window.openMaterialAspiRequestsModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #FF9500; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s; position: relative;">
+                        <span style="font-size: 18px;">🔔</span> Demandes
+                        <span id="aspi-requests-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: #FF3B30; color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; border: 2px solid #1c1c1e;">0</span>
+                    </button>
+                    <button class="btn-primary" onclick="window.openEditMaterialAspiModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #FF9500; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                        <span style="font-size: 18px;">+</span> Ajouter Pièce
+                    </button>
+                    <button onclick="window.openQrAspiExportModal()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; cursor: pointer; transition: all 0.2s;" title="Exporter QR Codes PDF Aspi">
+                        <span style="font-size: 16px;">📱</span> QR Codes
+                    </button>
+                    <button onclick="window.exportMaterialAspiToExcel()" style="border-radius: 12px; height: 46px; padding: 0 16px; background: rgba(255, 149, 0, 0.1); border: 1px solid rgba(255, 149, 0, 0.2); display: flex; align-items: center; gap: 8px; color: #FF9500; font-weight: 700; cursor: pointer; transition: all 0.2s;" title="Exporter vers Excel (CSV)">
+                        <span style="font-size: 16px;">📊</span> Exporter
+                    </button>
+                    <button onclick="window.renderAdminMaterialAspiTracking()" title="Rafraîchir" style="width: 46px; height: 46px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 24px; padding: 0 10px; flex-wrap: wrap;">
+                <div style="position: relative; flex: 1; min-width: 200px;">
+                    <input type="text" id="material-aspi-search" placeholder="Rechercher par désignation, référence, QR..." style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 16px 0 45px; font-size: 14px; outline: none;">
+                    <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; opacity: 0.5;">🔍</span>
+                </div>
+                <div style="position: relative; min-width: 180px;">
+                    <select id="material-aspi-filter-location" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="" style="background: #1c1c1e;">📍 Tous les lieux</option>
+                    </select>
+                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
+                </div>
+                <div style="position: relative; min-width: 220px;">
+                    <select id="material-aspi-filter-compat" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="" style="background: #1c1c1e;">🧹 Modèle d'aspirateur</option>
+                        <option value="aspi_h13" style="background: #1c1c1e;">H13 HZ200/HZ200</option>
+                        <option value="aspi_hz390" style="background: #1c1c1e;">HZ 390S-2 / HZ 390S</option>
+                        <option value="aspi_hzd900" style="background: #1c1c1e;">HZD 900 / HZDQ900</option>
+                    </select>
+                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
+                </div>
+                <div style="position: relative; min-width: 160px;">
+                    <select id="material-aspi-filter-cat" style="width: 100%; height: 48px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; padding: 0 35px 0 16px; font-size: 14px; appearance: none; cursor: pointer; outline: none; font-weight: 600;">
+                        <option value="" style="background: #1c1c1e;">📁 Toutes catégories</option>
+                        <option value="FLEXIBLE" style="background: #1c1c1e;">FLEXIBLE</option>
+                        <option value="BEC SUCEUR" style="background: #1c1c1e;">BEC SUCEUR</option>
+                        <option value="FILTRE PRIMAIRE" style="background: #1c1c1e;">FILTRE PRIMAIRE</option>
+                        <option value="SACS" style="background: #1c1c1e;">SACS</option>
+                        <option value="CARTOUCHE" style="background: #1c1c1e;">CARTOUCHE</option>
+                        <option value="Autre" style="background: #1c1c1e;">Autre</option>
+                    </select>
+                    <span style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; opacity: 0.5;">▼</span>
+                </div>
+                <span id="material-aspi-count-badge" style="font-size: 12px; color: #8E8E93; font-weight: 600; white-space: nowrap;">— articles</span>
+            </div>
+
+            <div id="material-aspi-list-container" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                <div id="material-aspi-list-loader" style="text-align:center; padding: 80px;">
+                    <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: #FF9500; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                </div>
+                <div id="material-aspi-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; padding-bottom: 40px;"></div>
+            </div>
+        </div>
+    `;
+
+    window.updateMaterialAspiStockBadge();
+
+    try {
+        const stock = await api.getMaterialAspiStock();
+        window._currentAspiStock = stock;
+
+        const locations = [...new Set(stock.map(s => s.lieu_de_stockage).filter(Boolean))].sort();
+        const filterSelect = document.getElementById('material-aspi-filter-location');
+        locations.forEach(loc => {
+            const opt = document.createElement('option');
+            opt.value = loc;
+            opt.textContent = loc;
+            opt.style.background = '#1c1c1e';
+            opt.style.color = 'white';
+            filterSelect.appendChild(opt);
+        });
+
+        const ASPI_COMPAT = ['aspi_h13', 'aspi_hz390', 'aspi_hzd900'];
+        const ASPI_COMPAT_LABELS = { aspi_h13: 'H13 HZ200/HZ200', aspi_hz390: 'HZ 390S-2 / HZ 390S', aspi_hzd900: 'HZD 900 / HZDQ900' };
+
+        const renderGrid = (items) => {
+            const grid = document.getElementById('material-aspi-grid');
+            const countBadge = document.getElementById('material-aspi-count-badge');
+            if (countBadge) countBadge.innerText = `${items.length} article${items.length !== 1 ? 's' : ''}`;
+            if (items.length === 0) {
+                grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #71717a; padding: 120px; font-size: 18px;">Aucune pièce trouvée</div>`;
+                return;
+            }
+            grid.innerHTML = items.map(item => {
+                const compatBadges = ASPI_COMPAT
+                    .map(k => item[k] ? `<span style="font-size: 10px; color: #FF9500; background: rgba(255,149,0,0.12); padding: 3px 7px; border-radius: 6px; font-weight: 800; border: 1px solid rgba(255,149,0,0.2);">${ASPI_COMPAT_LABELS[k]}</span>` : '')
+                    .join('');
+
+                const currentQty = parseInt(item.quantite) || 0;
+                const targetQty = parseInt(item.cible) || 0;
+                const isUnderTarget = currentQty < targetQty;
+
+                const cardBorder = isUnderTarget ? '1px solid rgba(255, 59, 48, 0.35)' : '1px solid rgba(255,255,255,0.05)';
+                const cardBg = isUnderTarget ? 'rgba(255, 59, 48, 0.04)' : 'rgba(45, 45, 50, 0.4)';
+                const cardClass = isUnderTarget ? 'material-card pulse-red-card-anim' : 'material-card';
+                const qtyBadgeBg = isUnderTarget ? 'rgba(255, 59, 48, 0.15)' : 'rgba(255,149,0,0.12)';
+                const qtyBadgeColor = isUnderTarget ? '#FF3B30' : '#FF9500';
+                const qtyBadgeBorder = isUnderTarget ? '1px solid rgba(255, 59, 48, 0.3)' : '1px solid rgba(255,149,0,0.2)';
+                const bottomLineColor = isUnderTarget ? '#FF3B30' : '#FF9500';
+
+                return `
+                    <div class="${cardClass}" onclick="window.openEditMaterialAspiModal('${item.id}')" style="background: ${cardBg}; backdrop-filter: blur(20px); border: ${cardBorder}; border-radius: 24px; padding: 24px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; gap: 16px; position: relative; overflow: hidden;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                            <div style="display: flex; gap: 15px; flex: 1;">
+                                <div style="width: 60px; height: 60px; border-radius: 14px; background: ${item.photo_url ? '#000' : 'rgba(255,255,255,0.03)'}; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+                                    ${item.photo_url ? `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 24px;">🧹</span>`}
+                                </div>
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 800; color: white; font-size: 15px; line-height: 1.3; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${item.designation || 'Sans nom'}</div>
+                                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                        ${item.qr_ref ? `<span style="font-size: 9px; color: #FF9500; background: rgba(255,149,0,0.1); padding: 3px 6px; border-radius: 5px; font-weight: 800; font-family: monospace; letter-spacing: 0.5px; border: 1px solid rgba(255,149,0,0.15);">${item.qr_ref}</span>` : ''}
+                                        ${item.ref ? `<span style="font-size: 9px; color: #8E8E93; background: rgba(142,142,147,0.1); padding: 3px 6px; border-radius: 5px; font-weight: 700; border: 1px solid rgba(142,142,147,0.15);">${item.ref}</span>` : ''}
+                                        ${item.categorie ? `<span style="font-size: 9px; color: #5856D6; background: rgba(88,86,214,0.1); padding: 3px 6px; border-radius: 5px; font-weight: 700; border: 1px solid rgba(88,86,214,0.15);">${item.categorie}</span>` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+                                <div style="display: flex; gap: 8px;">
+                                    <div style="display: flex; flex-direction: column; align-items: center;">
+                                        <div style="background: ${qtyBadgeBg}; color: ${qtyBadgeColor}; min-width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 900; border: ${qtyBadgeBorder}; padding: 0 8px; text-align: center;">
+                                            ${item.quantite || '0'}
+                                        </div>
+                                        <div style="font-size: 9px; color: #8E8E93; margin-top: 4px; font-weight: 700; text-transform: uppercase;">Stock</div>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; align-items: center;">
+                                        <div style="background: rgba(255,255,255,0.05); color: #FFFFFF; min-width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 900; border: 1px solid rgba(255,255,255,0.1); padding: 0 8px; text-align: center;">
+                                            ${item.cible || '0'}
+                                        </div>
+                                        <div style="font-size: 9px; color: #8E8E93; margin-top: 4px; font-weight: 700; text-transform: uppercase;">Cible</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Compatibility badges -->
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            ${compatBadges || '<span style="font-size: 11px; color: #48484A;">Aucune compatibilité</span>'}
+                        </div>
+
+                        <!-- Location -->
+                        <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 14px;">
+                            <div style="display: flex; align-items: center; gap: 6px; color: #8E8E93; font-size: 12px; font-weight: 500;">
+                                <span style="font-size: 14px;">📍</span> ${item.lieu_de_stockage || 'Non localisé'}
+                            </div>
+                        </div>
+                        <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: ${bottomLineColor}; opacity: 0.5;"></div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        const loader = document.getElementById('material-aspi-list-loader');
+        if (loader) loader.remove();
+        renderGrid(stock);
+
+        const searchInput = document.getElementById('material-aspi-search');
+        const locationFilter = document.getElementById('material-aspi-filter-location');
+        const compatFilter = document.getElementById('material-aspi-filter-compat');
+        const catFilter = document.getElementById('material-aspi-filter-cat');
+
+        const handleFilter = () => {
+            const search = searchInput.value.toLowerCase();
+            const location = locationFilter.value;
+            const compat = compatFilter.value;
+            const category = catFilter.value;
+            const filtered = stock.filter(s => {
+                const matchesSearch = !search ||
+                    (s.designation || '').toLowerCase().includes(search) ||
+                    (s.ref || '').toLowerCase().includes(search) ||
+                    (s.qr_ref || '').toLowerCase().includes(search) ||
+                    (s.lieu_de_stockage || '').toLowerCase().includes(search);
+                const matchesLocation = !location || s.lieu_de_stockage === location;
+                const matchesCompat = !compat || s[compat] === true;
+                const matchesCategory = !category || s.categorie === category;
+                return matchesSearch && matchesLocation && matchesCompat && matchesCategory;
+            });
+            renderGrid(filtered);
+        };
+
+        searchInput.oninput = handleFilter;
+        locationFilter.onchange = handleFilter;
+        compatFilter.onchange = handleFilter;
+        catFilter.onchange = handleFilter;
+
+        // Update badge in sidebar
+        const requests = await api.getMaterialAspiStockRequests().catch(() => []);
+        const badge = document.getElementById('aspi-requests-badge');
+        if (badge && requests.length > 0) {
+            badge.style.display = 'flex';
+            badge.textContent = requests.length;
+        }
+
+    } catch (e) {
+        console.error(e);
+        document.getElementById('material-aspi-list-container').innerHTML = `<div style="color:red; padding: 20px;">Erreur lors du chargement: ${e.message}</div>`;
+    }
+};
+
+window.openEditMaterialAspiModal = async function (id = null) {
+    const isMobile = window.innerWidth <= 768;
+    const ASPI_COMPAT = ['aspi_h13', 'aspi_hz390', 'aspi_hzd900'];
+    const ASPI_COMPAT_LABELS = { aspi_h13: 'H13 HZ200/HZ200', aspi_hz390: 'HZ 390S-2 / HZ 390S', aspi_hzd900: 'HZD 900 / HZDQ900' };
+
+    const item = id ? (window._currentAspiStock || []).find(s => s.id === id) : {
+        designation: '', ref: '', quantite: '0', lieu_de_stockage: '', categorie: '',
+        aspi_h13: false, aspi_hz390: false, aspi_hzd900: false, cible: '0'
+    };
+    if (!item) return;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '1000000';
+    modal.style.backdropFilter = 'blur(8px)';
+
+    const compatCheckboxes = ASPI_COMPAT.map(k => `
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); transition: 0.2s;" onmouseover="this.style.background='rgba(255,149,0,0.08)'" onmouseout="this.style.background='rgba(255,255,255,0.03)'">
+            <input type="checkbox" id="aspi-compat-${k}" name="${k}" ${item[k] ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: #FF9500; cursor: pointer;">
+            <span style="font-size: 14px; font-weight: 700; color: white;">${ASPI_COMPAT_LABELS[k]}</span>
+        </label>
+    `).join('');
+
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 90%; max-width: 650px; padding: ${isMobile ? '24px' : '40px'}; border-radius: 32px; background: rgba(28,28,30,0.92); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); animation: modalPop 0.3s cubic-bezier(0.34,1.56,0.64,1); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                <h2 style="margin:0; font-size: ${isMobile ? '20px' : '24px'}; font-weight: 800;">${id ? 'Modifier' : 'Ajouter'} Pièce Aspi</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+
+            ${id && item.qr_ref ? `
+            <div style="margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 20px;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #FF9500; text-transform: uppercase; font-weight: 700;">📱 QR Code — ${item.qr_ref}</h3>
+                <div style="display: flex; align-items: center; gap: 20px; background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                    <canvas id="qr-aspi-canvas-modal" style="border-radius: 8px; background: white; padding: 8px;"></canvas>
+                    <div style="flex: 1;">
+                        <div style="font-family: monospace; font-size: 22px; color: #FF9500; font-weight: 900; margin-bottom: 8px;">${item.qr_ref}</div>
+                        <div style="font-size: 12px; color: #8E8E93; margin-bottom: 16px;">Scannez ce QR code pour accéder directement à cette fiche matériel Aspi.</div>
+                        <button type="button" onclick="window.downloadSingleQr('${item.qr_ref}', '${(item.designation || 'materiel').replace(/'/g, "\\\\'")}')" style="padding: 10px 16px; background: #FF9500; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 13px;">📥 Télécharger ce QR</button>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+
+            <form id="edit-material-aspi-form" style="display: flex; flex-direction: column; gap: 20px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Désignation *</label>
+                    <input type="text" name="designation" value="${item.designation || ''}" class="form-input" style="width:100%;" required>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Référence Fournisseur</label>
+                        <input type="text" name="ref" value="${item.ref || ''}" class="form-input" style="width:100%; font-family: monospace;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Catégorie</label>
+                        <select name="categorie" class="form-input" style="width:100%;">
+                            <option value="FLEXIBLE" ${item.categorie === 'FLEXIBLE' ? 'selected' : ''}>FLEXIBLE</option>
+                            <option value="BEC SUCEUR" ${item.categorie === 'BEC SUCEUR' ? 'selected' : ''}>BEC SUCEUR</option>
+                            <option value="FILTRE PRIMAIRE" ${item.categorie === 'FILTRE PRIMAIRE' ? 'selected' : ''}>FILTRE PRIMAIRE</option>
+                            <option value="SACS" ${item.categorie === 'SACS' ? 'selected' : ''}>SACS</option>
+                            <option value="CARTOUCHE" ${item.categorie === 'CARTOUCHE' ? 'selected' : ''}>CARTOUCHE</option>
+                            <option value="Autre" ${item.categorie === 'Autre' || !item.categorie ? 'selected' : ''}>Autre</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Quantité</label>
+                        <input type="text" name="quantite" value="${item.quantite || '0'}" class="form-input" style="width:100%;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Quantité Cible</label>
+                        <input type="text" name="cible" value="${item.cible || '0'}" class="form-input" style="width:100%;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Lieu de Stockage</label>
+                        <input type="text" name="lieu_de_stockage" value="${item.lieu_de_stockage || ''}" class="form-input" style="width:100%;">
+                    </div>
+                </div>
+
+                <!-- Compatibility Checkboxes -->
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:12px; font-weight:700; text-transform:uppercase;">Compatibilité Modèles</label>
+                    <div style="display:flex; flex-wrap:wrap; gap:10px;">
+                        ${compatCheckboxes}
+                    </div>
+                </div>
+
+                <!-- Image Picker -->
+                <div>
+                    <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:8px; font-weight:700; text-transform:uppercase;">Photo</label>
+                    <div style="display:flex; gap:15px; align-items:center;">
+                        <div id="aspi-photo-preview" style="width:70px; height:70px; border-radius:12px; border:2px dashed rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; overflow:hidden; background:rgba(0,0,0,0.2);">
+                            ${item.photo_url ? `<img src="${config.api.workerUrl}/get/${item.photo_url}" style="width:100%; height:100%; object-fit:cover;">` : '<span style="font-size: 24px;">📷</span>'}
+                        </div>
+                        <input type="file" id="aspi-photo-input" accept="image/*" style="display:none;">
+                        <button type="button" class="btn-secondary" onclick="document.getElementById('aspi-photo-input').click()" style="height: 40px; padding: 0 16px; font-size: 13px; border-radius: 10px;">Choisir une image</button>
+                        ${item.photo_url ? `<button type="button" id="aspi-photo-delete-btn" class="btn-secondary" style="height: 40px; padding: 0 16px; font-size: 13px; border-radius: 10px; background: rgba(255,59,48,0.1); border-color: rgba(255,59,48,0.2); color: #FF3B30;">Supprimer la photo</button>` : ''}
+                    </div>
+                </div>
+
+                <!-- Action buttons -->
+                <div style="display:flex; gap:15px; margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:25px;">
+                    ${id ? `<button type="button" id="aspi-delete-btn" style="padding:0 24px; height:48px; border-radius:12px; background:rgba(255,59,48,0.15); border:1px solid rgba(255,59,48,0.25); color:#FF3B30; font-weight:700; cursor:pointer; font-size:14px; transition: 0.2s;">Supprimer</button>` : ''}
+                    <button type="button" onclick="this.closest('.modal-overlay').remove()" class="btn-secondary" style="flex:1; height:48px; border-radius:12px; font-size:14px;">Annuler</button>
+                    <button type="submit" class="btn-primary" style="flex:1.5; height:48px; border-radius:12px; font-size:14px; font-weight:800; background:#FF9500; border:none; color:white; cursor:pointer; box-shadow:0 8px 16px rgba(255,149,0,0.25);">${id ? 'Enregistrer' : 'Ajouter'}</button>
+                </div>
+            </form>
+
+            ${id ? `
+            <div style="margin-top: 30px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 25px;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 14px; color: #8E8E93; text-transform: uppercase; font-weight: 700;">📋 Historique des modifications</h3>
+                <div id="aspi-history-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 200px; overflow-y: auto;">
+                    <div style="text-align: center; color: #8E8E93; padding: 20px;">Chargement...</div>
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Render Modal QR code if exists
+    if (id && item.qr_ref) {
+        setTimeout(() => {
+            const qrCanvas = document.getElementById('qr-aspi-canvas-modal');
+            if (qrCanvas) {
+                const qrUrl = `${config.api.workerUrl}/material?ref=${item.qr_ref}`;
+                QRCode.toCanvas(qrCanvas, qrUrl, { width: 100, margin: 1 });
+            }
+        }, 100);
+    }
+
+    // Load History if exists
+    if (id) {
+        api.getMaterialAspiHistory(id).then(logs => {
+            const container = document.getElementById('aspi-history-list');
+            if (!container) return;
+            if (logs.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: #8E8E93; font-size: 13px;">Aucun historique pour cette pièce.</div>`;
+                return;
+            }
+            container.innerHTML = logs.map(l => {
+                const date = new Date(l.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                const userName = l.profiles ? `${l.profiles.first_name || ''} ${l.profiles.last_name || ''}`.trim() : 'Admin';
+                return `
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; font-size: 12px;">
+                        <div style="flex:1;">
+                            <div style="color:white; font-weight: 600; margin-bottom: 2px;">${l.details}</div>
+                            <div style="color:#8E8E93; font-size:11px;">Par ${userName} • Action: ${l.action}</div>
+                        </div>
+                        <div style="color:#8E8E93; font-size: 10px; font-family: monospace;">${date}</div>
+                    </div>
+                `;
+            }).join('');
+        }).catch(() => {
+            const container = document.getElementById('aspi-history-list');
+            if (container) container.innerHTML = `<div style="color:red; text-align:center;">Erreur historique</div>`;
+        });
+    }
+
+    // Photo picker logic
+    const photoInput = document.getElementById('aspi-photo-input');
+    const photoPreview = document.getElementById('aspi-photo-preview');
+    let selectedPhotoFile = null;
+
+    photoInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            selectedPhotoFile = file;
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                photoPreview.innerHTML = `<img src="${re.target.result}" style="width:100%; height:100%; object-fit:cover;">`;
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    // Photo delete button
+    const photoDeleteBtn = document.getElementById('aspi-photo-delete-btn');
+    if (photoDeleteBtn) {
+        photoDeleteBtn.onclick = async () => {
+            if (confirm('Voulez-vous supprimer définitivement la photo de cette pièce ?')) {
+                try {
+                    await api.deleteMaterialAspiPhoto(item.photo_url);
+                    await api.updateMaterialAspiStock(item.id, { photo_url: null });
+                    photoPreview.innerHTML = '<span style="font-size: 24px;">📷</span>';
+                    photoDeleteBtn.remove();
+                    window.showToast('✅ Photo supprimée');
+                    window.renderAdminMaterialAspiTracking();
+                } catch (err) {
+                    alert('Erreur: ' + err.message);
+                }
+            }
+        };
+    }
+
+    // Delete piece button
+    const deleteBtn = document.getElementById('aspi-delete-btn');
+    if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+            if (confirm('Voulez-vous vraiment supprimer définitivement cette pièce du stock ?')) {
+                try {
+                    if (item.photo_url) {
+                        await api.deleteMaterialAspiPhoto(item.photo_url).catch(() => { });
+                    }
+                    await api.deleteMaterialAspiStock(item.id);
+                    modal.remove();
+                    window.showToast('🗑️ Pièce supprimée');
+                    window.renderAdminMaterialAspiTracking();
+                } catch (err) {
+                    alert('Erreur de suppression: ' + err.message);
+                }
+            }
+        };
+    }
+
+    // Form Submit
+    const form = document.getElementById('edit-material-aspi-form');
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerText = 'Enregistrement...';
+
+        try {
+            const formData = new FormData(form);
+            const updates = {
+                designation: formData.get('designation').trim(),
+                ref: formData.get('ref').trim(),
+                categorie: formData.get('categorie'),
+                quantite: formData.get('quantite').trim(),
+                cible: formData.get('cible').trim(),
+                lieu_de_stockage: formData.get('lieu_de_stockage').trim(),
+                aspi_h13: document.getElementById('aspi-compat-aspi_h13').checked,
+                aspi_hz390: document.getElementById('aspi-compat-aspi_hz390').checked,
+                aspi_hzd900: document.getElementById('aspi-compat-aspi_hzd900').checked
+            };
+
+            let savedItem;
+            if (id) {
+                // Update
+                savedItem = await api.updateMaterialAspiStock(id, updates);
+                await api.addMaterialAspiLog(id, 'Edition', `Modification de la pièce par l'administrateur`);
+            } else {
+                // Creation
+                savedItem = await api.createMaterialAspiStock(updates);
+                await api.addMaterialAspiLog(savedItem.id, 'Création', `Création initiale de la pièce dans le stock`);
+            }
+
+            // If photo selected, upload it
+            if (selectedPhotoFile) {
+                submitBtn.innerText = 'Upload photo...';
+                const uploadResult = await api.uploadMaterialAspiPhoto(savedItem.id, selectedPhotoFile, false);
+                await api.updateMaterialAspiStock(savedItem.id, { photo_url: uploadResult.key });
+            }
+
+            modal.remove();
+            window.showToast('💾 Modifications enregistrées avec succès');
+            window.renderAdminMaterialAspiTracking();
+        } catch (err) {
+            alert('Erreur lors de l\'enregistrement : ' + err.message);
+            submitBtn.disabled = false;
+            submitBtn.innerText = id ? 'Enregistrer' : 'Ajouter';
+        }
+    };
+};
+
+window.openMaterialAspiRequestsModal = async function () {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '100000';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 90%; max-width: 750px; padding: 40px; border-radius: 32px; background: rgba(28,28,30,0.95); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); max-height: 85vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-shrink: 0;">
+                <h2 style="margin: 0; font-size: 22px; font-weight: 800;">🔔 Demandes de modifications - Stock Aspi</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+            <div id="aspi-requests-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-right: 5px;">
+                <div style="text-align: center; color: #8E8E93; padding: 40px;">Chargement...</div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    try {
+        const requests = await api.getMaterialAspiStockRequests();
+        const container = document.getElementById('aspi-requests-list');
+        if (!container) return;
+
+        if (requests.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 60px; color: #8E8E93; font-style: italic;">
+                    Aucune demande de modification en attente pour le stock Aspirateur.
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = requests.map(r => {
+            const dateStr = new Date(r.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+            const userFullName = r.profiles ? `${r.profiles.first_name || ''} ${r.profiles.last_name || ''}`.trim() : 'Utilisateur inconnu';
+            const aspi = r.material_stock_aspirateur || {};
+            return `
+                <div id="aspi-req-${r.id}" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 15px; transition: 0.2s;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <span style="font-size: 11px; background: rgba(255,149,0,0.15); color: #FF9500; font-weight: 800; padding: 3px 8px; border-radius: 6px; text-transform: uppercase;">Aspirateur</span>
+                            <h3 style="margin: 6px 0 2px 0; font-size: 16px; font-weight: 700; color: white;">${aspi.designation || 'Sans nom'}</h3>
+                            <div style="font-size: 12px; color: #8E8E93;">Demandé par <b>${userFullName}</b> • le ${dateStr}</div>
+                        </div>
+                        ${r.new_photo_url ? `<a href="${config.api.workerUrl}/get/${r.new_photo_url}" target="_blank" style="width: 50px; height: 50px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);"><img src="${config.api.workerUrl}/get/${r.new_photo_url}" style="width:100%; height:100%; object-fit:cover;"></a>` : ''}
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: rgba(0,0,0,0.2); padding: 12px 16px; border-radius: 14px; font-size: 13px;">
+                        <div>
+                            <div style="color: #8E8E93; margin-bottom: 4px; font-weight: 600;">Quantité</div>
+                            <div style="color: white; font-weight: 700;">${aspi.quantite || '0'} ➔ <span style="color: #FF9500; font-size: 15px;">${r.new_quantite}</span></div>
+                        </div>
+                        <div>
+                            <div style="color: #8E8E93; margin-bottom: 4px; font-weight: 600;">Emplacement</div>
+                            <div style="color: white; font-weight: 700;">${aspi.lieu_de_stockage || 'Non défini'} ➔ <span style="color: #34C759;">${r.new_lieu_de_stockage}</span></div>
+                        </div>
+                    </div>
+
+                    ${r.comment ? `
+                    <div style="font-size: 13px; color: #FF9500; background: rgba(255,149,0,0.06); border: 1px solid rgba(255,149,0,0.1); padding: 10px 14px; border-radius: 12px; line-height: 1.4;">
+                        <b>Motif :</b> "${r.comment}"
+                    </div>
+                    ` : ''}
+
+                    <div style="display: flex; gap: 12px; align-items: center; justify-content: flex-end; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px; margin-top: 5px;">
+                        <button onclick="window.handleAspiRequestDecision('${r.id}', 'rejected')" style="padding: 10px 18px; border-radius: 10px; background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.2); color: #FF3B30; font-weight: 700; cursor: pointer; font-size: 13px;">Refuser</button>
+                        <button onclick="window.handleAspiRequestDecision('${r.id}', 'approved')" style="padding: 10px 18px; border-radius: 10px; background: #FF9500; border: none; color: white; font-weight: 800; cursor: pointer; font-size: 13px; box-shadow: 0 4px 10px rgba(255,149,0,0.25);">Approuver</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error(e);
+        const container = document.getElementById('aspi-requests-list');
+        if (container) container.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Erreur lors du chargement.</div>`;
+    }
+};
+
+window.handleAspiRequestDecision = async function (requestId, status) {
+    try {
+        await api.updateMaterialAspiStockRequestStatus(requestId, status);
+        const card = document.getElementById(`aspi-req-${requestId}`);
+        if (card) {
+            card.style.opacity = '0.4';
+            card.style.pointerEvents = 'none';
+            card.style.borderColor = status === 'approved' ? 'rgba(52,199,89,0.3)' : 'rgba(255,59,48,0.3)';
+        }
+        window.showToast(status === 'approved' ? '✅ Demande Aspi approuvée' : '❌ Demande Aspi refusée');
+        window.updateMaterialAspiStockBadge();
+        if (window._currentAspiStock) window.renderAdminMaterialAspiTracking();
+    } catch (e) {
+        window.showToast('❌ Erreur: ' + e.message);
+    }
+};
+
+window.openQrAspiExportModal = function () {
+    const stock = window._currentAspiStock;
+    if (!stock || stock.length === 0) { window.showToast('⚠️ Aucun matériel chargé'); return; }
+    window.openQrExportModalWithOptions('aspi', stock);
+};
+
+window.openQrExportModalWithOptions = async function (type, stock) {
+    const withRef = stock.filter(s => s.qr_ref);
+    const withoutRef = stock.filter(s => !s.qr_ref);
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '1000000';
+    modal.style.backdropFilter = 'blur(8px)';
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 90%; max-width: 600px; padding: 40px; border-radius: 32px; background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(30px); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+                <h2 style="margin:0; font-size: 24px; font-weight: 800;">📱 Gestion QR Codes ${type.toUpperCase()}</h2>
+                <button onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; color: #8E8E93; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 30px;">
+                <div style="background: rgba(52, 199, 89, 0.1); border: 1px solid rgba(52, 199, 89, 0.2); border-radius: 16px; padding: 20px; text-align: center;">
+                    <div style="font-size: 32px; font-weight: 900; color: #34C759;">${withRef.length}</div>
+                    <div style="font-size: 12px; color: #8E8E93; font-weight: 600;">AVEC REF QR</div>
+                </div>
+                <div style="background: rgba(255, 149, 0, 0.1); border: 1px solid rgba(255, 149, 0, 0.2); border-radius: 16px; padding: 20px; text-align: center;">
+                    <div style="font-size: 32px; font-weight: 900; color: #FF9500;">${withoutRef.length}</div>
+                    <div style="font-size: 12px; color: #8E8E93; font-weight: 600;">SANS REF QR</div>
+                </div>
+            </div>
+
+            ${withoutRef.length > 0 ? `
+            <button onclick="window.batchGenerate${type === 'aspi' ? 'Aspi' : 'GT'}Refs(this)" style="width: 100%; padding: 16px; background: linear-gradient(135deg, #FF9500, #FF3B30); color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; margin-bottom: 20px; transition: 0.2s;">
+                ⚡ Attribuer les références aux ${withoutRef.length} matériels manquants
+            </button>` : ''}
+
+            <div style="margin-bottom: 20px;">
+                <label style="display:block; font-size:12px; color:#8E8E93; margin-bottom:10px; font-weight:700; text-transform:uppercase;">Taille des QR codes sur le PDF</label>
+                <select id="qr-${type}-size-select" style="width:100%; background:#2C2C2E; border:1px solid rgba(255,255,255,0.1); border-radius:12px; color:white; padding:12px; font-size:15px; outline:none;">
+                    <option value="30">Mini (30×30 mm)</option>
+                    <option value="60">Petit (60×60 mm) — 6 par page (2×3)</option>
+                    <option value="80" selected>Moyen (80×80 mm) — 4 par page (2×2)</option>
+                    <option value="100">Grand (100×100 mm) — 2 par page (1×2)</option>
+                    <option value="120">Très grand (120×120 mm) — 1 par page</option>
+                </select>
+            </div>
+
+            <button onclick="window.exportAll${type === 'aspi' ? 'Aspi' : 'GT'}QrPdf(this)" style="width: 100%; padding: 16px; background: #FF9500; color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; transition: 0.2s;" ${withRef.length === 0 ? 'disabled style="opacity:0.5"' : ''}>
+                📥 Exporter tous les QR codes en PDF (${withRef.length} matériels)
+            </button>
+            <p style="font-size: 11px; color: #8E8E93; text-align: center; margin-top: 12px;">Les QR codes seront disposés automatiquement sur des feuilles A4</p>
+        </div>
+    `;
+    document.body.appendChild(modal);
+};
+
+window.batchGenerateAspiRefs = async function (btn) {
+    btn.disabled = true;
+    btn.innerText = '⏳ Attribution en cours...';
+    try {
+        const result = await api.generateMaterialAspiRefs();
+        showToast(result.message || `${result.count} références générées`);
+        btn.closest('.modal-overlay').remove();
+        renderAdminMaterialAspiTracking();
+    } catch (err) {
+        alert('Erreur: ' + err.message);
+        btn.disabled = false;
+        btn.innerText = '⚡ Réessayer';
+    }
+};
+
+window.exportAllAspiQrPdf = async function (btn) {
+    if (typeof QRCode === 'undefined') { alert('QR library not loaded'); return; }
+    const stock = (window._currentAspiStock || []).filter(s => s.qr_ref);
+    if (stock.length === 0) { alert('Aucun matériel avec référence QR'); return; }
+
+    btn.disabled = true;
+    const origText = btn.innerText;
+    btn.innerText = '⏳ Génération du PDF...';
+
+    // Load Logo
+    const logoImg = new Image();
+    logoImg.src = 'logo-pouchain.svg';
+    await new Promise(r => logoImg.onload = r);
+
+    const sizeMm = parseInt(document.getElementById('qr-aspi-size-select').value) || 80;
+    const pxPerMm = 11.81; // 300 DPI (300 / 25.4)
+
+    // Space allocations
+    const logoHMm = sizeMm < 40 ? 6 : 12;
+    const nameHMm = sizeMm < 40 ? 8 : 12;
+    const refHMm = sizeMm < 40 ? 5 : 8;
+    const paddingMm = 2;
+
+    const qrPx = Math.round(sizeMm * pxPerMm);
+    const logoPx = Math.round(logoHMm * pxPerMm);
+    const namePx = Math.round(nameHMm * pxPerMm);
+    const refPx = Math.round(refHMm * pxPerMm);
+    const padPx = Math.round(paddingMm * pxPerMm);
+
+    const cellW = qrPx;
+    const cellH = logoPx + namePx + qrPx + refPx + (padPx * 2);
+
+    const marginMm = sizeMm < 40 ? 5 : 10;
+    const margin = Math.round(marginMm * pxPerMm);
+    const pageW = Math.round(210 * pxPerMm); // A4 width
+    const pageH = Math.round(297 * pxPerMm); // A4 height
+
+    const cols = Math.floor((pageW - margin) / (cellW + margin)) || 1;
+    const rows = Math.floor((pageH - margin) / (cellH + margin)) || 1;
+    const perPage = cols * rows;
+    const totalPages = Math.ceil(stock.length / perPage);
+
+    const pages = [];
+
+    // Helper for text wrapping
+    const wrapText = (ctx, text, x, y, maxWidth, lineHeight) => {
+        const words = (text || '').split(' ');
+        let line = '';
+        let currentY = y;
+        for (let n = 0; n < words.length; n++) {
+            let testLine = line + words[n] + ' ';
+            let metrics = ctx.measureText(testLine);
+            if (metrics.width > maxWidth && n > 0) {
+                ctx.fillText(line, x, currentY);
+                line = words[n] + ' ';
+                currentY += lineHeight;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, x, currentY);
+    };
+
+    for (let page = 0; page < totalPages; page++) {
+        const canvas = document.createElement('canvas');
+        canvas.width = pageW;
+        canvas.height = pageH;
+        const ctx = canvas.getContext('2d');
+
+        // Fill background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageW, pageH);
+
+        const pageStock = stock.slice(page * perPage, (page + 1) * perPage);
+
+        for (let idx = 0; idx < pageStock.length; idx++) {
+            const item = pageStock[idx];
+            const col = idx % cols;
+            const row = Math.floor(idx / cols);
+
+            // Compute positions
+            const x = margin + col * (cellW + margin);
+            const y = margin + row * (cellH + margin);
+
+            // Draw outer border (light gray)
+            ctx.strokeStyle = '#e1e1e1';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, cellW, cellH);
+
+            // 1. Draw logo
+            ctx.drawImage(logoImg, x + cellW / 2 - (35 * pxPerMm) / 2, y + padPx, 35 * pxPerMm, logoPx - padPx);
+
+            // 2. Draw Designation
+            ctx.fillStyle = '#000000';
+            const fontSizeNamePx = Math.max(3, sizeMm * 0.08) * pxPerMm;
+            ctx.font = `bold ${Math.round(fontSizeNamePx)}px sans-serif`;
+            ctx.textAlign = 'center';
+            wrapText(ctx, item.designation, x + cellW / 2, y + logoPx + padPx + fontSizeNamePx, cellW - (2 * pxPerMm), fontSizeNamePx * 1.1);
+
+            // 3. Draw QR Code
+            const qrCanvas = document.createElement('canvas');
+            const qrUrl = `${config.api.workerUrl}/material?ref=${item.qr_ref}`;
+            await QRCode.toCanvas(qrCanvas, qrUrl, { width: qrPx - (2 * pxPerMm), margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+            ctx.drawImage(qrCanvas, x + (1 * pxPerMm), y + logoPx + namePx + padPx);
+
+            // 4. Draw Ref (Bottom)
+            ctx.fillStyle = '#000000';
+            const fontSizeRefPx = Math.max(2, sizeMm * 0.1) * pxPerMm;
+            ctx.font = `bold ${Math.round(fontSizeRefPx)}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillText(item.qr_ref, x + cellW / 2, y + logoPx + namePx + qrPx + padPx + fontSizeRefPx);
+        }
+
+        // Footer
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Page ${page + 1}/${totalPages} — Pouchain App (Aspi)`, pageW - margin, pageH - 10);
+
+        pages.push(canvas);
+        btn.innerText = `⏳ Page ${page + 1}/${totalPages}...`;
+    }
+
+    // Export all pages into a single PDF using jsPDF
+    btn.innerText = '⏳ Création du PDF...';
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    for (let i = 0; i < pages.length; i++) {
+        if (i > 0) doc.addPage();
+        doc.addImage(pages[i].toDataURL('image/png'), 'PNG', 0, 0, 210, 297);
+    }
+    doc.save('QR_Codes_Pouchain_Aspi.pdf');
+
+    btn.disabled = false;
+    btn.innerText = origText;
+    showToast(`PDF exporté — ${pages.length} page(s), ${stock.length} QR codes`);
+};
+
+window.exportMaterialAspiToExcel = function () {
+    const stock = window._currentAspiStock;
+    if (!stock || stock.length === 0) { window.showToast('⚠️ Aucune donnée à exporter'); return; }
+    const ASPI_COMPAT = ['aspi_h13', 'aspi_hz390', 'aspi_hzd900'];
+    const ASPI_COMPAT_LABELS = { aspi_h13: 'H13 HZ200/HZ200', aspi_hz390: 'HZ 390S-2 / HZ 390S', aspi_hzd900: 'HZD 900 / HZDQ900' };
+    const headers = ['QR Ref', 'Désignation', 'Référence', 'Catégorie', 'Quantité', 'Lieu de stockage', ...ASPI_COMPAT.map(k => ASPI_COMPAT_LABELS[k])];
+    const rows = stock.map(s => [
+        s.qr_ref || '', s.designation || '', s.ref || '', s.categorie || '', s.quantite || '0', s.lieu_de_stockage || '',
+        ...ASPI_COMPAT.map(k => s[k] ? 'Oui' : '')
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stock_aspirateurs_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    window.showToast('📊 Export Aspirateurs téléchargé');
+};
+
 initDashboard();
+
+
 
 setInterval(() => {
     const el = document.getElementById('fullscreen-clock');
     if (el) {
         el.innerText = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
-}, 1000);
+}, 1000);
