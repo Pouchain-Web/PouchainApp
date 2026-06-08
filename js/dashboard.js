@@ -11669,8 +11669,8 @@ window.openAdminPointageEditModal = function (user, week, year) {
             night_hours: 0,
             grand_deplacement: false,
             vehicule_pouchain: false,
-            repas: "Panier Chantier",
-            trajet: "Z1"
+            repas: "Aucun",
+            trajet: "Aucune"
         };
 
         const isWeekend = i >= 5;
