@@ -11315,7 +11315,50 @@ window.exportPointageToExcel = async function (week, year) {
             : allUsers.filter(u => u.secteur === pointageAdminSecteur);
         if (pointages.length === 0) return alert("Aucun pointage pour cette semaine.");
 
-        const wb = XLSX.utils.book_new();
+        // Filter users who have at least one pointage in this week
+        const activeUsers = users.filter(user => pointages.some(p => p.user_id === user.id));
+
+        if (activeUsers.length === 0) {
+            return alert("Aucun pointage n'a été trouvé pour cette semaine.");
+        }
+
+        // Try to copy the default path to clipboard for convenience
+        const defaultPath = `Y:\\Archive\\Doc personnel et Sécurité\\Pointages\\2026\\`;
+        try {
+            await navigator.clipboard.writeText(defaultPath);
+        } catch (err) {
+            console.warn("Could not copy path to clipboard:", err);
+        }
+
+        let dirHandle = null;
+        const useDirectoryPicker = typeof window.showDirectoryPicker === 'function';
+
+        if (useDirectoryPicker) {
+            const confirmed = confirm(
+                `Vous allez exporter ${activeUsers.length} fichier(s) Excel (un par personne).\n\n` +
+                `Le chemin par défaut a été copié dans votre presse-papier :\n` +
+                `${defaultPath}\n\n` +
+                `Veuillez sélectionner le dossier de destination dans la fenêtre qui va s'ouvrir (collez le chemin dans la barre d'adresse si nécessaire).`
+            );
+            if (!confirmed) return;
+
+            try {
+                dirHandle = await window.showDirectoryPicker();
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    return; // User cancelled
+                }
+                console.warn("Directory picker failed, falling back to individual downloads.", err);
+            }
+        } else {
+            const confirmed = confirm(
+                `Votre navigateur ne prend pas en charge la sélection directe de dossier.\n` +
+                `${activeUsers.length} fichiers Excel vont être téléchargés individuellement dans votre dossier Téléchargements.\n\n` +
+                `Continuer ?`
+            );
+            if (!confirmed) return;
+        }
+
         const monday = window.getMondayOfISOWeek(week, year);
 
         // Helper to format date as DD/MM
@@ -11362,42 +11405,23 @@ window.exportPointageToExcel = async function (week, year) {
                 }
             };
 
-            if (styleOpts.bg) {
-                s.fill = { fgColor: { rgb: styleOpts.bg } };
-            }
-            if (styleOpts.bold) {
-                s.font.bold = true;
-            }
-            if (styleOpts.color) {
-                s.font.color = { rgb: styleOpts.color };
-            }
-            if (styleOpts.size) {
-                s.font.sz = styleOpts.size;
-            }
-            if (styleOpts.align) {
-                s.alignment.horizontal = styleOpts.align;
-            }
-            if (styleOpts.wrap) {
-                s.alignment.wrapText = true;
-            }
+            if (styleOpts.bg) s.fill = { fgColor: { rgb: styleOpts.bg } };
+            if (styleOpts.bold) s.font.bold = true;
+            if (styleOpts.color) s.font.color = { rgb: styleOpts.color };
+            if (styleOpts.size) s.font.sz = styleOpts.size;
+            if (styleOpts.align) s.alignment.horizontal = styleOpts.align;
+            if (styleOpts.wrap) s.alignment.wrapText = true;
 
             cell.s = s;
             return cell;
         };
 
-        // We will stack all users in one main worksheet
-        const sheetData = [];
-        const merges = [];
-        let currentRow = 0;
+        for (const user of activeUsers) {
+            const wb = XLSX.utils.book_new();
+            const sheetData = [];
+            const merges = [];
+            let currentRow = 0;
 
-        // Filter users who have at least one pointage in this week
-        const activeUsers = users.filter(user => pointages.some(p => p.user_id === user.id));
-
-        if (activeUsers.length === 0) {
-            return alert("Aucun pointage n'a été trouvé pour cette semaine.");
-        }
-
-        activeUsers.forEach(user => {
             const up = pointages.filter(p => p.user_id === user.id);
             const userFullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
             const userSociete = user.societe || 'Pouchain';
@@ -11478,7 +11502,6 @@ window.exportPointageToExcel = async function (week, year) {
                 totalWeekNightHours += parseFloat(p.night_hours) || 0;
 
                 // Color coding for alternating days
-                // Green for Tuesday, Thursday, Saturday; White for Monday, Wednesday, Friday, Sunday
                 const isGreenDay = (dayIdx % 2 === 1);
                 const dayBg = isGreenDay ? "E2EFDA" : "FFFFFF";
 
@@ -11495,25 +11518,15 @@ window.exportPointageToExcel = async function (week, year) {
                     const transportVal = p.vehicule_pouchain ? "" : zoneVal;
 
                     const rowCells = [
-                        // Col 0: Jour (Merged)
                         isFirst ? makeCell(dayLabel, { bg: dayBg, bold: true }) : makeCell("", { bg: dayBg }),
-                        // Col 1: Activité
                         makeCell(act.activity_name || "", { bg: dayBg, align: "left" }),
-                        // Col 2: Heures
                         makeCell(act.hours || "", { bg: dayBg }),
-                        // Col 3: Durée totale (Merged)
                         isFirst ? makeCell(dayTotalHours || 0, { bg: dayBg, bold: true }) : makeCell("", { bg: dayBg }),
-                        // Col 4: Nuit (Merged)
                         isFirst ? makeCell(p.night_hours || 0, { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        // Col 5: GD (Merged)
                         isFirst ? makeCell(p.grand_deplacement ? "OUI" : "NON", { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        // Col 6: Repas (Merged)
                         isFirst ? makeCell(p.repas || "", { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        // Col 7: Transport (Merged)
                         isFirst ? makeCell(transportVal, { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        // Col 8: Zone (Merged)
                         isFirst ? makeCell(zoneVal, { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        // Col 9: Prime (Merged)
                         isFirst ? makeCell("", { bg: dayBg }) : makeCell("", { bg: dayBg })
                     ];
 
@@ -11546,39 +11559,48 @@ window.exportPointageToExcel = async function (week, year) {
                 makeCell("", { bg: "D9D9D9" })
             ]);
             merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 2 } });
-            currentRow++;
 
-            // 2 separator empty rows
-            sheetData.push([makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell("")]);
-            sheetData.push([makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell("")]);
-            currentRow += 2;
-        });
+            // Create sheet
+            const ws = XLSX.utils.aoa_to_sheet(sheetData);
 
-        // Create sheet
-        const ws = XLSX.utils.aoa_to_sheet(sheetData);
+            // Add merges
+            ws['!merges'] = merges;
 
-        // Add merges
-        ws['!merges'] = merges;
+            // Add column widths
+            ws['!cols'] = [
+                { wch: 15 }, // Jour
+                { wch: 35 }, // Activité
+                { wch: 8 },  // Heures
+                { wch: 12 }, // Durée totale
+                { wch: 14 }, // Heures de Nuit
+                { wch: 8 },  // GD
+                { wch: 18 }, // Repas
+                { wch: 12 }, // Transport
+                { wch: 10 }, // Trajet
+                { wch: 8 }   // Prime
+            ];
 
-        // Add column widths
-        ws['!cols'] = [
-            { wch: 15 }, // Jour
-            { wch: 35 }, // Activité
-            { wch: 8 },  // Heures
-            { wch: 12 }, // Durée totale
-            { wch: 14 }, // Heures de Nuit
-            { wch: 8 },  // GD
-            { wch: 18 }, // Repas
-            { wch: 12 }, // Transport
-            { wch: 10 }, // Trajet
-            { wch: 8 }   // Prime
-        ];
+            // Append to workbook
+            XLSX.utils.book_append_sheet(wb, ws, `Pointages S${week}`);
 
-        // Append to workbook
-        XLSX.utils.book_append_sheet(wb, ws, `Pointages S${week}`);
+            const formattedName = `${user.last_name || ''}_${user.first_name || ''}`.trim() || user.email;
+            const safeName = formattedName.replace(/[^a-zA-Z0-9_ -]/g, "");
+            const filename = `Recap_Hebdo_S${week}_${year}_${safeName}.xlsx`;
 
-        // Write file
-        XLSX.writeFile(wb, `Recap_Hebdo_S${week}_${year}.xlsx`);
+            if (dirHandle) {
+                const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+                const writable = await fileHandle.createWritable();
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                await writable.write(wbout);
+                await writable.close();
+            } else {
+                XLSX.writeFile(wb, filename);
+            }
+        }
+
+        if (dirHandle) {
+            window.showToast("🚀 Export par personne terminé avec succès !");
+        }
     } catch (e) {
         alert("Erreur lors de l'export Excel: " + e.message);
         console.error(e);
