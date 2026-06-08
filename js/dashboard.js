@@ -11188,6 +11188,7 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
         ]);
         window.adminPointagesCache = pointages;
         window.presetActivitiesFull = activities;
+        window.presetActivities = activities.map(a => a.name);
         
         // Render activities list now that we have loaded the dynamic list
         window.renderAdminActivitiesList();
