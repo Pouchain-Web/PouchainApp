@@ -11500,11 +11500,11 @@ window.exportPointageToExcel = async function (week, year) {
                     .pdf-export-container td, .pdf-export-container th {
                         color: #000000 !important;
                         border: 1px solid #999999 !important;
-                        font-family: Arial, sans-serif;
-                        line-height: 1.4 !important;
+                        font-family: Arial, sans-serif !important;
+                        line-height: normal !important;
                         height: auto !important;
-                        padding: 8px 6px !important;
-                        vertical-align: middle !important;
+                        padding: 10px 6px 6px 6px !important;
+                        vertical-align: top !important;
                         box-sizing: border-box !important;
                     }
                     .pdf-export-container th {
