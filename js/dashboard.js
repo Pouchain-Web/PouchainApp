@@ -11315,14 +11315,12 @@ window.exportPointageToExcel = async function (week, year) {
             : allUsers.filter(u => u.secteur === pointageAdminSecteur);
         if (pointages.length === 0) return alert("Aucun pointage pour cette semaine.");
 
-        // Filter users who have at least one pointage in this week
         const activeUsers = users.filter(user => pointages.some(p => p.user_id === user.id));
 
         if (activeUsers.length === 0) {
             return alert("Aucun pointage n'a été trouvé pour cette semaine.");
         }
 
-        // Try to copy the default path to clipboard for convenience
         const defaultPath = `Y:\\Archive\\Doc personnel et Sécurité\\Pointages\\2026\\`;
         try {
             await navigator.clipboard.writeText(defaultPath);
@@ -11335,7 +11333,7 @@ window.exportPointageToExcel = async function (week, year) {
 
         if (useDirectoryPicker) {
             const confirmed = confirm(
-                `Vous allez exporter ${activeUsers.length} fichier(s) Excel (un par personne).\n\n` +
+                `Vous allez exporter ${activeUsers.length} fichier(s) PDF (un par personne).\n\n` +
                 `Le chemin par défaut a été copié dans votre presse-papier :\n` +
                 `${defaultPath}\n\n` +
                 `⚠️ IMPORTANT : Ne sélectionnez pas directement la racine du lecteur (ex: Y:\\) sinon le navigateur refusera par sécurité.\n` +
@@ -11349,7 +11347,7 @@ window.exportPointageToExcel = async function (week, year) {
                     console.warn("Directory picker failed or was cancelled:", err);
                     const fallback = confirm(
                         `Impossible d'accéder au dossier ou action annulée.\n\n` +
-                        `Souhaitez-vous télécharger les ${activeUsers.length} fichiers Excel individuellement dans votre dossier 'Téléchargements' par défaut ?`
+                        `Souhaitez-vous télécharger les ${activeUsers.length} fichiers PDF individuellement dans votre dossier 'Téléchargements' par défaut ?`
                     );
                     if (!fallback) return;
                 }
@@ -11359,15 +11357,24 @@ window.exportPointageToExcel = async function (week, year) {
         } else {
             const confirmed = confirm(
                 `Votre navigateur ne prend pas en charge la sélection directe de dossier.\n` +
-                `${activeUsers.length} fichiers Excel vont être téléchargés individuellement dans votre dossier Téléchargements.\n\n` +
+                `${activeUsers.length} fichiers PDF vont être téléchargés individuellement dans votre dossier Téléchargements.\n\n` +
                 `Continuer ?`
             );
             if (!confirmed) return;
         }
 
+        if (typeof html2pdf === 'undefined') {
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
         const monday = window.getMondayOfISOWeek(week, year);
 
-        // Helper to format date as DD/MM
         const formatDM = (d) => {
             const dd = String(d.getUTCDate()).padStart(2, '0');
             const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -11388,98 +11395,20 @@ window.exportPointageToExcel = async function (week, year) {
 
         const periodStr = getPeriodString(monday);
 
-        // Styling helpers
-        const makeCell = (val, styleOpts = {}) => {
-            const cell = { v: val === null || val === undefined ? "" : val };
-            if (typeof val === "number") {
-                cell.t = "n";
-                if (val % 1 !== 0) {
-                    cell.z = "0.00";
-                }
-            } else {
-                cell.t = "s";
-            }
-
-            const s = {
-                font: { name: "Arial", sz: 10 },
-                alignment: { vertical: "center", horizontal: "center" },
-                border: {
-                    top: { style: "thin", color: { rgb: "BFBFBF" } },
-                    bottom: { style: "thin", color: { rgb: "BFBFBF" } },
-                    left: { style: "thin", color: { rgb: "BFBFBF" } },
-                    right: { style: "thin", color: { rgb: "BFBFBF" } }
-                }
-            };
-
-            if (styleOpts.bg) s.fill = { fgColor: { rgb: styleOpts.bg } };
-            if (styleOpts.bold) s.font.bold = true;
-            if (styleOpts.color) s.font.color = { rgb: styleOpts.color };
-            if (styleOpts.size) s.font.sz = styleOpts.size;
-            if (styleOpts.align) s.alignment.horizontal = styleOpts.align;
-            if (styleOpts.wrap) s.alignment.wrapText = true;
-
-            cell.s = s;
-            return cell;
-        };
-
         for (const user of activeUsers) {
-            const wb = XLSX.utils.book_new();
-            const sheetData = [];
-            const merges = [];
-            let currentRow = 0;
-
             const up = pointages.filter(p => p.user_id === user.id);
             const userFullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
             const userSociete = user.societe || 'Pouchain';
 
-            // User Header Row 1: Société, Semaine, Année
-            sheetData.push([
-                makeCell(`SOCIÉTÉ: ${userSociete.toUpperCase()}`, { bg: "DDEBF7", bold: true, color: "1F4E78", align: "left" }),
-                makeCell(""), makeCell(""), makeCell(""),
-                makeCell(`SEMAINE: ${week}`, { bg: "DDEBF7", bold: true, color: "1F4E78" }),
-                makeCell(""), makeCell(""),
-                makeCell(`ANNÉE: ${year}`, { bg: "DDEBF7", bold: true, color: "1F4E78" }),
-                makeCell(""), makeCell("")
-            ]);
-            merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 3 } });
-            merges.push({ s: { r: currentRow, c: 4 }, e: { r: currentRow, c: 6 } });
-            merges.push({ s: { r: currentRow, c: 7 }, e: { r: currentRow, c: 9 } });
-            currentRow++;
+            const container = document.createElement('div');
+            container.style.width = '275mm';
+            container.style.padding = '10mm';
+            container.style.background = '#FFFFFF';
+            container.style.color = '#000000';
+            container.style.fontFamily = 'Arial, sans-serif';
+            container.style.boxSizing = 'border-box';
 
-            // User Header Row 2: Collaborateur, Période
-            sheetData.push([
-                makeCell(`COLLABORATEUR: ${userFullName}`, { bg: "DDEBF7", bold: true, color: "1F4E78", align: "left" }),
-                makeCell(""), makeCell(""), makeCell(""),
-                makeCell(`PÉRIODE: ${periodStr}`, { bg: "DDEBF7", bold: true, color: "1F4E78" }),
-                makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell("")
-            ]);
-            merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 3 } });
-            merges.push({ s: { r: currentRow, c: 4 }, e: { r: currentRow, c: 9 } });
-            currentRow++;
-
-            // Spacer row
-            sheetData.push([
-                makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell(""),
-                makeCell(""), makeCell(""), makeCell(""), makeCell(""), makeCell("")
-            ]);
-            currentRow++;
-
-            // Table Headers
-            const headerStyle = { bg: "375623", color: "FFFFFF", bold: true, size: 10 };
-            sheetData.push([
-                makeCell("Jour", headerStyle),
-                makeCell("Activité", headerStyle),
-                makeCell("Heures", headerStyle),
-                makeCell("Durée totale", headerStyle),
-                makeCell("Heures de Nuit", headerStyle),
-                makeCell("GD", headerStyle),
-                makeCell("Repas", headerStyle),
-                makeCell("Transport", headerStyle),
-                makeCell("Zone", headerStyle),
-                makeCell("Prime", headerStyle)
-            ]);
-            currentRow++;
-
+            let rowsHtml = '';
             const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
             let totalWeekHours = 0;
             let totalWeekNightHours = 0;
@@ -11489,7 +11418,6 @@ window.exportPointageToExcel = async function (week, year) {
                 date.setUTCDate(monday.getUTCDate() + dayIdx);
                 const isoDate = date.toISOString().split('T')[0];
 
-                // Find pointage
                 const p = up.find(pt => pt.date === isoDate) || {
                     date: isoDate,
                     activities: [],
@@ -11507,14 +11435,9 @@ window.exportPointageToExcel = async function (week, year) {
                 totalWeekHours += dayTotalHours;
                 totalWeekNightHours += parseFloat(p.night_hours) || 0;
 
-                // Color coding for alternating days
                 const isGreenDay = (dayIdx % 2 === 1);
-                const dayBg = isGreenDay ? "E2EFDA" : "FFFFFF";
-
+                const dayBg = isGreenDay ? "#E2EFDA" : "#FFFFFF";
                 const dayLabel = `${dayName} ${formatDM(date)}`;
-
-                // Generate sub-rows for the day
-                const startDayRow = currentRow;
 
                 for (let subIdx = 0; subIdx < numRows; subIdx++) {
                     const act = activities[subIdx] || {};
@@ -11523,92 +11446,108 @@ window.exportPointageToExcel = async function (week, year) {
                     const zoneVal = (p.trajet === "Aucune" || p.trajet === "Aucun") ? "" : (p.trajet || "");
                     const transportVal = p.vehicule_pouchain ? "" : zoneVal;
 
-                    const rowCells = [
-                        isFirst ? makeCell(dayLabel, { bg: dayBg, bold: true }) : makeCell("", { bg: dayBg }),
-                        makeCell(act.activity_name || "", { bg: dayBg, align: "left" }),
-                        makeCell(act.hours || "", { bg: dayBg }),
-                        isFirst ? makeCell(dayTotalHours || 0, { bg: dayBg, bold: true }) : makeCell("", { bg: dayBg }),
-                        isFirst ? makeCell(p.night_hours || 0, { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        isFirst ? makeCell(p.grand_deplacement ? "OUI" : "NON", { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        isFirst ? makeCell(p.repas || "", { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        isFirst ? makeCell(transportVal, { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        isFirst ? makeCell(zoneVal, { bg: dayBg }) : makeCell("", { bg: dayBg }),
-                        isFirst ? makeCell("", { bg: dayBg }) : makeCell("", { bg: dayBg })
-                    ];
+                    rowsHtml += `<tr style="background: ${dayBg}; text-align: center;">`;
+                    if (isFirst) {
+                        rowsHtml += `
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; font-weight: bold; vertical-align: middle; font-size: 11px;">${dayLabel}</td>
+                        `;
+                    }
 
-                    sheetData.push(rowCells);
-                    currentRow++;
+                    rowsHtml += `
+                        <td style="padding: 6px; border: 1px solid #BFBFBF; text-align: left; font-size: 11px;">${act.activity_name || ""}</td>
+                        <td style="padding: 6px; border: 1px solid #BFBFBF; font-size: 11px;">${act.hours || ""}</td>
+                    `;
+
+                    if (isFirst) {
+                        rowsHtml += `
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; font-weight: bold; vertical-align: middle; font-size: 11px;">${dayTotalHours || 0}</td>
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${p.night_hours || 0}</td>
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${p.grand_deplacement ? "OUI" : "NON"}</td>
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${p.repas || ""}</td>
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${transportVal}</td>
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${zoneVal}</td>
+                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;"></td>
+                        `;
+                    }
+                    rowsHtml += `</tr>`;
                 }
-
-                // Add Merges for the day
-                merges.push({ s: { r: startDayRow, c: 0 }, e: { r: startDayRow + numRows - 1, c: 0 } }); // Jour
-                merges.push({ s: { r: startDayRow, c: 3 }, e: { r: startDayRow + numRows - 1, c: 3 } }); // Durée totale
-                merges.push({ s: { r: startDayRow, c: 4 }, e: { r: startDayRow + numRows - 1, c: 4 } }); // Nuit
-                merges.push({ s: { r: startDayRow, c: 5 }, e: { r: startDayRow + numRows - 1, c: 5 } }); // GD
-                merges.push({ s: { r: startDayRow, c: 6 }, e: { r: startDayRow + numRows - 1, c: 6 } }); // Repas
-                merges.push({ s: { r: startDayRow, c: 7 }, e: { r: startDayRow + numRows - 1, c: 7 } }); // Transport
-                merges.push({ s: { r: startDayRow, c: 8 }, e: { r: startDayRow + numRows - 1, c: 8 } }); // Trajet
-                merges.push({ s: { r: startDayRow, c: 9 }, e: { r: startDayRow + numRows - 1, c: 9 } }); // Prime
             });
 
-            // Totals Row
-            sheetData.push([
-                makeCell("TOTAL HEURES SEMAINE", { bg: "D9D9D9", bold: true }),
-                makeCell("", { bg: "D9D9D9" }),
-                makeCell("", { bg: "D9D9D9" }),
-                makeCell(totalWeekHours, { bg: "D9D9D9", bold: true }),
-                makeCell(totalWeekNightHours, { bg: "D9D9D9", bold: true }),
-                makeCell("", { bg: "D9D9D9" }),
-                makeCell("", { bg: "D9D9D9" }),
-                makeCell("", { bg: "D9D9D9" }),
-                makeCell("", { bg: "D9D9D9" }),
-                makeCell("", { bg: "D9D9D9" })
-            ]);
-            merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 2 } });
+            rowsHtml += `
+                <tr style="background: #D9D9D9; font-weight: bold; text-align: center;">
+                    <td colspan="3" style="padding: 8px; border: 1px solid #BFBFBF; text-align: left; font-size: 11px;">TOTAL HEURES SEMAINE</td>
+                    <td style="padding: 8px; border: 1px solid #BFBFBF; font-size: 11px;">${totalWeekHours}</td>
+                    <td style="padding: 8px; border: 1px solid #BFBFBF; font-size: 11px;">${totalWeekNightHours}</td>
+                    <td colspan="5" style="padding: 8px; border: 1px solid #BFBFBF; background: #D9D9D9;"></td>
+                </tr>
+            `;
 
-            // Create sheet
-            const ws = XLSX.utils.aoa_to_sheet(sheetData);
+            container.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;">
+                    <tr>
+                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; width: 40%;">SOCIÉTÉ: ${userSociete.toUpperCase()}</td>
+                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; text-align: center; width: 30%;">SEMAINE: ${week}</td>
+                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; text-align: center; width: 30%;">ANNÉE: ${year}</td>
+                    </tr>
+                    <tr>
+                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF;">COLLABORATEUR: ${userFullName}</td>
+                        <td colspan="2" style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; text-align: center;">PÉRIODE: ${periodStr}</td>
+                    </tr>
+                </table>
 
-            // Add merges
-            ws['!merges'] = merges;
-
-            // Add column widths
-            ws['!cols'] = [
-                { wch: 15 }, // Jour
-                { wch: 35 }, // Activité
-                { wch: 8 },  // Heures
-                { wch: 12 }, // Durée totale
-                { wch: 14 }, // Heures de Nuit
-                { wch: 8 },  // GD
-                { wch: 18 }, // Repas
-                { wch: 12 }, // Transport
-                { wch: 10 }, // Trajet
-                { wch: 8 }   // Prime
-            ];
-
-            // Append to workbook
-            XLSX.utils.book_append_sheet(wb, ws, `Pointages S${week}`);
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #375623; color: #FFFFFF; font-weight: bold; text-align: center;">
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 12%; font-size: 11px;">Jour</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 28%; font-size: 11px;">Activité</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 8%; font-size: 11px;">Heures</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 10%; font-size: 11px;">Durée totale</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 10%; font-size: 11px;">Heures de Nuit</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 6%; font-size: 11px;">GD</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 10%; font-size: 11px;">Repas</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 8%; font-size: 11px;">Transport</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 8%; font-size: 11px;">Zone</th>
+                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 6%; font-size: 11px;">Prime</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+            `;
 
             const formattedName = `${user.last_name || ''}_${user.first_name || ''}`.trim() || user.email;
             const safeName = formattedName.replace(/[^a-zA-Z0-9_ -]/g, "");
-            const filename = `Recap_Hebdo_S${week}_${year}_${safeName}.xlsx`;
+            const filename = `Recap_Hebdo_S${week}_${year}_${safeName}.pdf`;
+
+            const pdfBlob = await html2pdf().from(container).set({
+                margin: 0,
+                filename: filename,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+            }).output('blob');
 
             if (dirHandle) {
                 const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
                 const writable = await fileHandle.createWritable();
-                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                await writable.write(wbout);
+                await writable.write(pdfBlob);
                 await writable.close();
             } else {
-                XLSX.writeFile(wb, filename);
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(pdfBlob);
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
             }
         }
 
         if (dirHandle) {
-            window.showToast("🚀 Export par personne terminé avec succès !");
+            window.showToast("🚀 Export PDF par personne terminé avec succès !");
         }
     } catch (e) {
-        alert("Erreur lors de l'export Excel: " + e.message);
+        alert("Erreur lors de l'export PDF: " + e.message);
         console.error(e);
     }
 };
