@@ -11487,6 +11487,8 @@ window.exportPointageToExcel = async function (week, year) {
                 <style>
                     .pdf-export-container {
                         color: #000000 !important;
+                        background-color: #ffffff !important;
+                        box-sizing: border-box !important;
                     }
                     .pdf-export-container table {
                         width: 100%;
@@ -11501,26 +11503,33 @@ window.exportPointageToExcel = async function (week, year) {
                         color: #000000 !important;
                         border: 1px solid #999999 !important;
                         font-family: Arial, sans-serif !important;
-                        line-height: normal !important;
+                        line-height: 1.15 !important;
                         height: auto !important;
-                        padding: 10px 6px 6px 6px !important;
-                        vertical-align: top !important;
+                        padding: 4px 5px !important;
+                        vertical-align: middle !important;
                         box-sizing: border-box !important;
+                        font-size: 9.5px !important;
                     }
                     .pdf-export-container th {
                         color: #FFFFFF !important;
                         background-color: #375623 !important;
                         font-weight: bold;
+                        font-size: 9.5px !important;
+                        padding: 6px 5px !important;
                     }
                     .pdf-export-header td {
                         background-color: #DDEBF7 !important;
                         color: #1F4E78 !important;
                         font-weight: bold;
+                        font-size: 10.5px !important;
+                        padding: 6px 8px !important;
                     }
                     .pdf-export-total td {
                         background-color: #D9D9D9 !important;
                         color: #000000 !important;
                         font-weight: bold;
+                        font-size: 9.5px !important;
+                        padding: 6px 5px !important;
                     }
                 </style>
                 <table class="pdf-export-header" style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;">
