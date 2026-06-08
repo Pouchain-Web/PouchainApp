@@ -11494,16 +11494,22 @@ window.exportPointageToExcel = async function (week, year) {
                         color: #000000 !important;
                         background-color: #ffffff !important;
                     }
-                    .pdf-export-container td {
+                    .pdf-export-container tr {
+                        height: auto !important;
+                    }
+                    .pdf-export-container td, .pdf-export-container th {
                         color: #000000 !important;
                         border: 1px solid #999999 !important;
                         font-family: Arial, sans-serif;
+                        line-height: 1.4 !important;
+                        height: auto !important;
+                        padding: 8px 6px !important;
+                        vertical-align: middle !important;
+                        box-sizing: border-box !important;
                     }
                     .pdf-export-container th {
                         color: #FFFFFF !important;
                         background-color: #375623 !important;
-                        border: 1px solid #999999 !important;
-                        font-family: Arial, sans-serif;
                         font-weight: bold;
                     }
                     .pdf-export-header td {
