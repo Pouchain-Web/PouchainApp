@@ -11363,11 +11363,18 @@ window.exportPointageToExcel = async function (week, year) {
             if (!confirmed) return;
         }
 
-        if (typeof html2pdf === 'undefined') {
+        // Load jspdf-autotable dynamically if not present
+        if (!window.jspdf || !window.jspdf.jsPDF.API.autoTable) {
             await new Promise((resolve, reject) => {
                 const script = document.createElement('script');
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-                script.onload = resolve;
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                script.onload = () => {
+                    const script2 = document.createElement('script');
+                    script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+                    script2.onload = resolve;
+                    script2.onerror = reject;
+                    document.head.appendChild(script2);
+                };
                 script.onerror = reject;
                 document.head.appendChild(script);
             });
@@ -11395,20 +11402,37 @@ window.exportPointageToExcel = async function (week, year) {
 
         const periodStr = getPeriodString(monday);
 
+        const { jsPDF } = window.jspdf;
+
         for (const user of activeUsers) {
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            
             const up = pointages.filter(p => p.user_id === user.id);
             const userFullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
             const userSociete = user.societe || 'Pouchain';
 
-            const container = document.createElement('div');
-            container.style.width = '275mm';
-            container.style.padding = '10mm';
-            container.style.background = '#FFFFFF';
-            container.style.color = '#000000';
-            container.style.fontFamily = 'Arial, sans-serif';
-            container.style.boxSizing = 'border-box';
+            const drawHeaderCell = (text, x, y, w, h, bgColor, textColor) => {
+                doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+                doc.rect(x, y, w, h, "F");
+                doc.setDrawColor(191, 191, 191);
+                doc.rect(x, y, w, h, "S");
+                doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+                doc.setFont("Helvetica", "bold");
+                doc.setFontSize(8.5);
+                doc.text(text, x + 3, y + 5);
+            };
 
-            let rowsHtml = '';
+            const bgBlue = [221, 235, 247];
+            const textBlue = [31, 78, 120];
+
+            drawHeaderCell(`SOCIÉTÉ: ${userSociete.toUpperCase()}`, 14, 14, 107.6, 8, bgBlue, textBlue);
+            drawHeaderCell(`SEMAINE: ${week}`, 121.6, 14, 80.7, 8, bgBlue, textBlue);
+            drawHeaderCell(`ANNÉE: ${year}`, 202.3, 14, 80.7, 8, bgBlue, textBlue);
+            
+            drawHeaderCell(`COLLABORATEUR: ${userFullName}`, 14, 22, 107.6, 8, bgBlue, textBlue);
+            drawHeaderCell(`PÉRIODE: ${periodStr}`, 121.6, 22, 161.4, 8, bgBlue, textBlue);
+
+            const bodyRows = [];
             const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
             let totalWeekHours = 0;
             let totalWeekNightHours = 0;
@@ -11430,165 +11454,107 @@ window.exportPointageToExcel = async function (week, year) {
 
                 const activities = p.activities || [];
                 const numRows = Math.max(3, activities.length);
-
                 const dayTotalHours = activities.reduce((acc, act) => acc + (parseFloat(act.hours) || 0), 0);
                 totalWeekHours += dayTotalHours;
                 totalWeekNightHours += parseFloat(p.night_hours) || 0;
 
                 const isGreenDay = (dayIdx % 2 === 1);
-                const dayBg = isGreenDay ? "#E2EFDA" : "#FFFFFF";
+                const rowBgColor = isGreenDay ? [226, 239, 218] : [255, 255, 255];
                 const dayLabel = `${dayName} ${formatDM(date)}`;
 
                 for (let subIdx = 0; subIdx < numRows; subIdx++) {
                     const act = activities[subIdx] || {};
                     const isFirst = (subIdx === 0);
-
                     const zoneVal = (p.trajet === "Aucune" || p.trajet === "Aucun") ? "" : (p.trajet || "");
                     const transportVal = p.vehicule_pouchain ? "" : zoneVal;
 
-                    rowsHtml += `<tr style="background: ${dayBg}; text-align: center;">`;
-                    if (isFirst) {
-                        rowsHtml += `
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; font-weight: bold; vertical-align: middle; font-size: 11px;">${dayLabel}</td>
-                        `;
-                    }
-
-                    rowsHtml += `
-                        <td style="padding: 6px; border: 1px solid #BFBFBF; text-align: left; font-size: 11px;">${act.activity_name || ""}</td>
-                        <td style="padding: 6px; border: 1px solid #BFBFBF; font-size: 11px;">${act.hours || ""}</td>
-                    `;
+                    const row = [];
 
                     if (isFirst) {
-                        rowsHtml += `
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; font-weight: bold; vertical-align: middle; font-size: 11px;">${dayTotalHours || 0}</td>
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${p.night_hours || 0}</td>
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${p.grand_deplacement ? "OUI" : "NON"}</td>
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${p.repas || ""}</td>
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${transportVal}</td>
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;">${zoneVal}</td>
-                            <td rowspan="${numRows}" style="padding: 6px; border: 1px solid #BFBFBF; vertical-align: middle; font-size: 11px;"></td>
-                        `;
+                        row.push({ content: dayLabel, rowSpan: numRows, styles: { fillColor: rowBgColor, fontStyle: 'bold', valign: 'middle', halign: 'center' } });
                     }
-                    rowsHtml += `</tr>`;
+                    
+                    row.push({ content: act.activity_name || "", styles: { fillColor: rowBgColor, halign: 'left' } });
+                    row.push({ content: act.hours !== undefined && act.hours !== null ? String(act.hours) : "", styles: { fillColor: rowBgColor, halign: 'center' } });
+
+                    if (isFirst) {
+                        row.push({ content: String(dayTotalHours || 0), rowSpan: numRows, styles: { fillColor: rowBgColor, fontStyle: 'bold', valign: 'middle', halign: 'center' } });
+                        row.push({ content: String(p.night_hours || 0), rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                        row.push({ content: p.grand_deplacement ? "OUI" : "NON", rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                        row.push({ content: p.repas || "", rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                        row.push({ content: transportVal, rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                        row.push({ content: zoneVal, rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                        row.push({ content: "", rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                    }
+
+                    bodyRows.push(row);
                 }
             });
 
-            rowsHtml += `
-                <tr style="background: #D9D9D9; font-weight: bold; text-align: center;">
-                    <td colspan="3" style="padding: 8px; border: 1px solid #BFBFBF; text-align: left; font-size: 11px;">TOTAL HEURES SEMAINE</td>
-                    <td style="padding: 8px; border: 1px solid #BFBFBF; font-size: 11px;">${totalWeekHours}</td>
-                    <td style="padding: 8px; border: 1px solid #BFBFBF; font-size: 11px;">${totalWeekNightHours}</td>
-                    <td colspan="5" style="padding: 8px; border: 1px solid #BFBFBF; background: #D9D9D9;"></td>
-                </tr>
-            `;
+            bodyRows.push([
+                { content: "TOTAL HEURES SEMAINE", colSpan: 3, styles: { fillColor: [217, 217, 217], fontStyle: 'bold', halign: 'left' } },
+                { content: String(totalWeekHours), styles: { fillColor: [217, 217, 217], fontStyle: 'bold', halign: 'center' } },
+                { content: String(totalWeekNightHours), styles: { fillColor: [217, 217, 217], fontStyle: 'bold', halign: 'center' } },
+                { content: "", colSpan: 5, styles: { fillColor: [217, 217, 217] } }
+            ]);
 
-            container.className = 'pdf-export-container';
-            container.innerHTML = `
-                <style>
-                    .pdf-export-container {
-                        color: #000000 !important;
-                        background-color: #ffffff !important;
-                        box-sizing: border-box !important;
-                    }
-                    .pdf-export-container table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        color: #000000 !important;
-                        background-color: #ffffff !important;
-                    }
-                    .pdf-export-container tr {
-                        height: auto !important;
-                    }
-                    .pdf-export-container td, .pdf-export-container th {
-                        color: #000000 !important;
-                        border: 1px solid #999999 !important;
-                        font-family: Arial, sans-serif !important;
-                        line-height: 1.15 !important;
-                        height: auto !important;
-                        padding: 4px 5px !important;
-                        vertical-align: middle !important;
-                        box-sizing: border-box !important;
-                        font-size: 9.5px !important;
-                    }
-                    .pdf-export-container th {
-                        color: #FFFFFF !important;
-                        background-color: #375623 !important;
-                        font-weight: bold;
-                        font-size: 9.5px !important;
-                        padding: 6px 5px !important;
-                    }
-                    .pdf-export-header td {
-                        background-color: #DDEBF7 !important;
-                        color: #1F4E78 !important;
-                        font-weight: bold;
-                        font-size: 10.5px !important;
-                        padding: 6px 8px !important;
-                    }
-                    .pdf-export-total td {
-                        background-color: #D9D9D9 !important;
-                        color: #000000 !important;
-                        font-weight: bold;
-                        font-size: 9.5px !important;
-                        padding: 6px 5px !important;
-                    }
-                </style>
-                <table class="pdf-export-header" style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;">
-                    <tr>
-                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; width: 40%;">SOCIÉTÉ: ${userSociete.toUpperCase()}</td>
-                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; text-align: center; width: 30%;">SEMAINE: ${week}</td>
-                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; text-align: center; width: 30%;">ANNÉE: ${year}</td>
-                    </tr>
-                    <tr>
-                        <td style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF;">COLLABORATEUR: ${userFullName}</td>
-                        <td colspan="2" style="background: #DDEBF7; font-weight: bold; color: #1F4E78; padding: 8px; border: 1px solid #BFBFBF; text-align: center;">PÉRIODE: ${periodStr}</td>
-                    </tr>
-                </table>
-
-                <table style="width: 100%; border-collapse: collapse;">
-                    <thead>
-                        <tr style="background: #375623; color: #FFFFFF; font-weight: bold; text-align: center;">
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 12%; font-size: 11px;">Jour</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 28%; font-size: 11px;">Activité</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 8%; font-size: 11px;">Heures</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 10%; font-size: 11px;">Durée totale</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 10%; font-size: 11px;">Heures de Nuit</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 6%; font-size: 11px;">GD</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 10%; font-size: 11px;">Repas</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 8%; font-size: 11px;">Transport</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 8%; font-size: 11px;">Zone</th>
-                            <th style="padding: 8px; border: 1px solid #BFBFBF; width: 6%; font-size: 11px;">Prime</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rowsHtml}
-                    </tbody>
-                </table>
-            `;
+            doc.autoTable({
+                startY: 34,
+                head: [[
+                    { content: "Jour", styles: { halign: 'center' } },
+                    { content: "Activité", styles: { halign: 'center' } },
+                    { content: "Heures", styles: { halign: 'center' } },
+                    { content: "Durée totale", styles: { halign: 'center' } },
+                    { content: "Heures de Nuit", styles: { halign: 'center' } },
+                    { content: "GD", styles: { halign: 'center' } },
+                    { content: "Repas", styles: { halign: 'center' } },
+                    { content: "Transport", styles: { halign: 'center' } },
+                    { content: "Zone", styles: { halign: 'center' } },
+                    { content: "Prime", styles: { halign: 'center' } }
+                ]],
+                body: bodyRows,
+                theme: 'grid',
+                styles: {
+                    fontSize: 7.5,
+                    cellPadding: 1.8,
+                    lineColor: [153, 153, 153],
+                    lineWidth: 0.15,
+                    textColor: [0, 0, 0]
+                },
+                headStyles: {
+                    fillColor: [55, 86, 35],
+                    textColor: [255, 255, 255],
+                    fontSize: 8,
+                    fontStyle: 'bold',
+                    lineWidth: 0.15,
+                    lineColor: [153, 153, 153]
+                },
+                columnStyles: {
+                    0: { cellWidth: 32 },
+                    1: { cellWidth: 78 },
+                    2: { cellWidth: 15 },
+                    3: { cellWidth: 22 },
+                    4: { cellWidth: 26 },
+                    5: { cellWidth: 14 },
+                    6: { cellWidth: 28 },
+                    7: { cellWidth: 20 },
+                    8: { cellWidth: 18 },
+                    9: { cellWidth: 16 }
+                },
+                margin: { left: 14, right: 14 }
+            });
 
             const formattedName = `${user.last_name || ''}_${user.first_name || ''}`.trim() || user.email;
             const safeName = formattedName.replace(/[^a-zA-Z0-9_ -]/g, "");
             const filename = `Recap_Hebdo_S${week}_${year}_${safeName}.pdf`;
 
-            const pdfBlob = await html2pdf().from(container).set({
-                margin: 0,
-                filename: filename,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
-            }).output('blob');
-
             if (dirHandle) {
                 const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
                 const writable = await fileHandle.createWritable();
-                await writable.write(pdfBlob);
+                await writable.write(doc.output('blob'));
                 await writable.close();
             } else {
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(pdfBlob);
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                doc.save(filename);
             }
         }
 
