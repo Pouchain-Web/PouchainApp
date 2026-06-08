@@ -11453,6 +11453,10 @@ window.exportPointageToExcel = async function (week, year) {
                 };
 
                 const activities = p.activities || [];
+                if ((dayIdx === 5 || dayIdx === 6) && activities.length === 0) {
+                    return; // Ignorer samedi / dimanche s'il n'y a pas d'activité
+                }
+
                 const numRows = Math.max(3, activities.length);
                 const dayTotalHours = activities.reduce((acc, act) => acc + (parseFloat(act.hours) || 0), 0);
                 totalWeekHours += dayTotalHours;
