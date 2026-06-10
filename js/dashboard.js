@@ -2239,10 +2239,10 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
         const slideshowConfigHTML = `
             <div id="integrated-fs-config" style="display: flex; align-items: center; gap: 40px; width: 100%;">
                 <div style="display: flex; flex-direction: column; gap: 4px; min-width: 250px;">
-                    <h2 style="margin: 0; font-size: 16px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">📺 Slideshow <small style="font-weight: 400; opacity: 0.5;">(V2)</small></h2>
+                    <h2 style="margin: 0; font-size: 16px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">📺 Slideshow</h2>
                     <div style="display: flex; gap: 8px; margin-top: 8px;">
-                        <button class="btn-sm btn-secondary" onclick="openFSDocPicker()" style="background: rgba(255,255,255,0.05); font-size: 10px; padding: 4px 10px;">Cloud</button>
-                        <button class="btn-sm btn-primary" onclick="document.getElementById('fs-upload-input').click()" style="font-size: 10px; padding: 4px 10px;">Upload</button>
+                        <button class="btn-sm btn-secondary" onclick="window.openFSDocsManagerModal()" style="background: rgba(255,255,255,0.05); font-size: 11px; padding: 6px 14px; border-radius: 8px; color: #fff; border: 1px solid rgba(255,255,255,0.1); cursor: pointer;">Voir les documents</button>
+                        <button class="btn-sm btn-primary" onclick="document.getElementById('fs-upload-input').click()" style="font-size: 11px; padding: 6px 14px; border-radius: 8px; cursor: pointer;">Upload</button>
                         <input type="file" id="fs-upload-input" style="display:none;" multiple accept="image/*,application/pdf" onchange="handleFSDirectUpload(this)">
                     </div>
                 </div>
@@ -2253,19 +2253,11 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                     <button class="btn-primary" onclick="saveFSConfig()" style="height: 30px; font-size: 11px; padding: 0 15px;">💾</button>
                 </div>
 
-                <div id="fs-files-mini-grid" style="flex: 1; display: flex; gap: 10px; overflow-x: auto; padding: 5px; scrollbar-width: thin;">
-                    ${(fsConfig.files || []).map((f, i) => {
-            const isPdf = f.toLowerCase().endsWith('.pdf');
-            const url = `${config.api.workerUrl}/get/${f}`;
-            return `
-                            <div style="position: relative; height: 60px; aspect-ratio: 16/10; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
-                                ${isPdf ? `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; background: #1a1a1a; font-size: 14px;">📕</div>` : `<img src="${url}" loading="lazy" style="width:100%; height:100%; object-fit: cover;">`}
-                                <button onclick="removeFSFile(${i})" style="position:absolute; top:2px; right:2px; background: rgba(220,38,38,0.9); border:none; color:white; width:18px; height:18px; border-radius:4px; cursor:pointer; font-size:9px;">✕</button>
-                            </div>
-                        `;
-        }).join('')}
-                    ${(fsConfig.files || []).length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
+                <div id="fs-files-mini-grid" style="flex: 1; display: flex; align-items: center; gap: 10px; color: #aaa; font-size: 13px;">
+                    <span style="font-size: 18px;">📁</span>
+                    <span><strong>${(fsConfig.files || []).length}</strong> document(s) configuré(s) pour le diaporama</span>
                 </div>
+
 
                 <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-left: auto; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
                     <label style="font-weight: 800; color: #ff3b30; font-size: 12px; text-transform: uppercase;">🔒 Jours Fermés (Général)</label>
@@ -2763,10 +2755,12 @@ function stopSlideshow() {
 window.handleFSDirectUpload = async function (input) {
     if (!input.files || input.files.length === 0) return;
 
-    const btn = document.querySelector('button[onclick*="fs-upload-input"]');
-    const originalText = btn.innerText;
-    btn.disabled = true;
-    btn.innerText = "Téléchargement...";
+    const btns = document.querySelectorAll('button[onclick*="fs-upload-input"]');
+    const originalTexts = Array.from(btns).map(btn => btn.innerText);
+    btns.forEach(btn => {
+        btn.disabled = true;
+        btn.innerText = "Téléchargement...";
+    });
 
     try {
         const config = window.currentSlideshowConfig || { timer: 40, files: [] };
@@ -2787,6 +2781,12 @@ window.handleFSDirectUpload = async function (input) {
         }
         showSuccessModal(`${input.files.length} fichier(s) ajouté(s) au diaporama.`);
 
+        // If the modal is currently open, refresh its content
+        const overlay = document.getElementById('fs-docs-manager-modal');
+        if (overlay) {
+            window.renderFSDocsManagerModalContent(overlay, config.files || []);
+        }
+
         if (document.getElementById('planning-tv-container')) {
             stopSlideshow();
             startSlideshow();
@@ -2796,90 +2796,88 @@ window.handleFSDirectUpload = async function (input) {
     } catch (e) {
         alert("Erreur lors du téléchargement : " + e.message);
     } finally {
-        btn.disabled = false;
-        btn.innerText = originalText;
+        btns.forEach((btn, idx) => {
+            btn.disabled = false;
+            btn.innerText = originalTexts[idx] || "Upload";
+        });
         input.value = '';
     }
 };
 
-window.openFSDocPicker = async function () {
-    const allFiles = await api.listFiles();
-    const images = allFiles.filter(f => {
-        const ext = f.key.split('.').pop().toLowerCase();
-        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'].includes(ext);
-    });
+window.openFSDocsManagerModal = function () {
+    const config = window.currentSlideshowConfig || { timer: 40, files: [] };
+    const files = config.files || [];
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '1000001';
-    overlay.innerHTML = `
-        <div class="modal-box glass-panel" style="width: 700px; max-height: 85vh; display: flex; flex-direction: column; padding:0; border: 1px solid rgba(255,255,255,0.1); background: #1a1a1a;">
-            <div class="modal-header" style="padding: 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight:800; font-size:18px;">☁️ Documents sur Cloudflare</div>
-            <div style="overflow-y: auto; flex: 1; padding: 20px 30px;">
-                <input type="text" id="fs-picker-search" placeholder="Rechercher un fichier..." class="form-input" style="margin-bottom: 20px; width: 100%;" oninput="window.filterFSPicker(this.value)">
-                
-                <div style="margin-bottom: 15px; font-size: 11px; text-transform: uppercase; color: var(--primary); font-weight: 800; letter-spacing: 1px;">📁 Dossier : fullscreen_slides/</div>
-                <div id="fs-picker-list-preferred" style="margin-bottom: 30px; display: grid; grid-template-columns: 1fr; gap: 8px;">
-                    ${images.filter(f => f.key.startsWith('fullscreen_slides/')).map(f => `
-                        <label style="display:flex; align-items:center; gap:12px; padding: 12px 15px; border-radius: 8px; cursor: pointer; background: rgba(45, 161, 64, 0.05); border: 1px solid rgba(45, 161, 64, 0.1); transition: 0.2s;">
-                            <input type="checkbox" class="fs-pick-cb" value="${f.key}">
-                            <span style="font-size: 14px; color: #eee; font-family: monospace;">${f.key.replace('fullscreen_slides/', '')}</span>
-                        </label>
-                    `).join('') || '<div style="color: #444; font-style: italic; padding-left: 15px;">Aucun fichier dans ce dossier</div>'}
-                </div>
+    overlay.id = 'fs-docs-manager-modal';
+    
+    window.renderFSDocsManagerModalContent(overlay, files);
+    document.body.appendChild(overlay);
+};
 
-                <div style="margin-bottom: 15px; font-size: 11px; text-transform: uppercase; color: #666; font-weight: 800; letter-spacing: 1px;">📂 Autres fichiers</div>
-                <div id="fs-picker-list-other" style="display: grid; grid-template-columns: 1fr; gap: 4px;">
-                    ${images.filter(f => !f.key.startsWith('fullscreen_slides/')).map(f => `
-                        <label style="display:flex; align-items:center; gap:12px; padding: 8px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 1px solid transparent;">
-                            <input type="checkbox" class="fs-pick-cb" value="${f.key}">
-                            <span style="font-size: 12px; color: #888;">${f.key}</span>
-                        </label>
-                    `).join('')}
-                </div>
+window.renderFSDocsManagerModalContent = function (overlay, files) {
+    const workerUrl = (config && config.api && config.api.workerUrl) ? config.api.workerUrl : 'https://worker.pouchain.fr';
+    overlay.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 600px; max-height: 80vh; display: flex; flex-direction: column; padding: 0; border: 1px solid rgba(255,255,255,0.1); background: #1a1a1a;">
+            <div class="modal-header" style="padding: 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.05); font-weight:800; font-size:18px; display:flex; justify-content:space-between; align-items:center;">
+                <span>📺 Documents du Diaporama</span>
+                <span style="font-size: 13px; color: #888; font-weight: normal;">${files.length} document(s)</span>
             </div>
-            <div class="modal-footer" style="padding: 20px 30px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: flex-end; gap: 12px; background: rgba(0,0,0,0.1);">
-                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                <button class="btn-primary" onclick="window.addSelectedFSDocs()">Ajouter la sélection</button>
+            
+            <div style="overflow-y: auto; flex: 1; padding: 20px 30px; display: flex; flex-direction: column; gap: 12px;">
+                ${files.map((f, i) => {
+                    const isPdf = f.toLowerCase().endsWith('.pdf');
+                    const cleanName = f.replace('fullscreen_slides/', '');
+                    const url = `${workerUrl}/get/${f}`;
+                    return `
+                        <div style="display: flex; align-items: center; gap: 15px; padding: 12px 15px; border-radius: 10px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); justify-content: space-between;">
+                            <div style="display: flex; align-items: center; gap: 15px; flex: 1; min-width: 0;">
+                                <div style="width: 48px; height: 48px; border-radius: 6px; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;">
+                                    ${isPdf ? `<span style="font-size: 20px;">📕</span>` : `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;">`}
+                                </div>
+                                <div style="display: flex; flex-direction: column; min-width: 0; flex: 1;">
+                                    <span style="font-size: 14px; font-weight: 600; color: #eee; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" title="${cleanName}">${cleanName}</span>
+                                    <span style="font-size: 11px; color: #666; text-transform: uppercase;">${isPdf ? 'Document PDF' : 'Image'}</span>
+                                </div>
+                            </div>
+                            <button onclick="window.removeFSFileFromModal(${i})" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #ef4444; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.2)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.1)'">
+                                🗑️
+                            </button>
+                        </div>
+                    `;
+                }).join('')}
+                
+                ${files.length === 0 ? `
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: #666; text-align: center;">
+                        <span style="font-size: 40px; margin-bottom: 15px;">📁</span>
+                        <p style="margin: 0; font-size: 14px; font-style: italic;">Aucun document configuré pour le diaporama</p>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div class="modal-footer" style="padding: 20px 30px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.1);">
+                <button class="btn-sm btn-primary" onclick="document.getElementById('fs-upload-input').click();" style="padding: 8px 16px; font-size: 12px; cursor: pointer;">
+                    📤 Téléverser un document
+                </button>
+                <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 8px 16px; font-size: 12px; cursor: pointer;">
+                    Fermer
+                </button>
             </div>
         </div>
     `;
-    document.body.appendChild(overlay);
-
-    window.filterFSPicker = (val) => {
-        const q = val.toLowerCase();
-        document.querySelectorAll('#fs-picker-list-preferred label, #fs-picker-list-other label').forEach(l => {
-            const txt = l.innerText.toLowerCase();
-            l.style.display = txt.includes(q) ? 'flex' : 'none';
-        });
-    };
 };
 
-window.addSelectedFSDocs = async function () {
-    const selected = Array.from(document.querySelectorAll('.fs-pick-cb:checked')).map(cb => cb.value);
-    const config = window.currentSlideshowConfig || { timer: 40, files: [] };
-
-    config.files = [...new Set([...config.files, ...selected])];
-    window.currentSlideshowConfig = config;
-    localStorage.setItem('planning_fs_config', JSON.stringify(config));
-    try {
-        await api.setPlanningSlideshowConfig(config);
-    } catch (e) {
-        console.error("Could not save config to R2:", e);
+window.removeFSFileFromModal = async function (index) {
+    await window.removeFSFile(index);
+    const overlay = document.getElementById('fs-docs-manager-modal');
+    if (overlay) {
+        const updatedConfig = window.currentSlideshowConfig || { timer: 40, files: [] };
+        window.renderFSDocsManagerModalContent(overlay, updatedConfig.files || []);
     }
-
-    const overlay = document.querySelector('.modal-overlay');
-    if (overlay) overlay.remove();
-
-    showSuccessModal(`${selected.length} document(s) ajouté(s).`);
-
-    if (document.getElementById('planning-tv-container')) {
-        stopSlideshow();
-        startSlideshow();
-    }
-
-    renderAdminPlanning(window.currentPlanningMonday);
 };
+
 
 window.removeFSFile = async function (index) {
     const config = window.currentSlideshowConfig || { timer: 40, files: [] };
