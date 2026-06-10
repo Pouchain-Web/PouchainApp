@@ -472,7 +472,7 @@ export const api = {
         return await response.json();
     },
 
-    async updateMaterialRequestStatus(id, status, adminName = null) {
+    async updateMaterialRequestStatus(id, status, adminName = null, adminComment = '') {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/requests`, {
             method: 'PATCH',
@@ -480,7 +480,7 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, status, adminName })
+            body: JSON.stringify({ id, status, adminName, adminComment })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

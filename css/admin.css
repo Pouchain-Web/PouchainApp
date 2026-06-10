@@ -985,6 +985,10 @@ td:last-child {
     background: linear-gradient(135deg, #69db7c 0%, #40c057 100%);
 }
 
+.mat-btn.requested {
+    background: linear-gradient(135deg, #ffd43b 0%, #f59f00 100%);
+}
+
 .mat-btn.restore {
     background: rgba(255, 255, 255, 0.1);
     color: #bbb !important;

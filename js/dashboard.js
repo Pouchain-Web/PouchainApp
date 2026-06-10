@@ -5602,9 +5602,10 @@ window.renderAdminMaterialRequests = async function () {
                             <td style="font-size: 13px; color: #888;">${new Date(req.created_at).toLocaleString('fr-FR')}</td>
                             <td style="text-align: right;">
                                 <div class="mat-btn-group">
-                                    <button class="mat-btn ordered" onclick="updateReqStatus('${req.id}', 'ordered')" title="Commander">📦 Commander</button>
-                                    <button class="mat-btn refused" onclick="updateReqStatus('${req.id}', 'refused')" title="Refuser">❌ Refuser</button>
-                                    <button class="mat-btn received" onclick="updateReqStatus('${req.id}', 'received')" title="Livrer">✅ Livrer</button>
+                                    <button class="mat-btn requested" onclick="openConfirmStatusModal('${req.id}', 'requested')" title="En attente">⏳ En attente</button>
+                                    <button class="mat-btn ordered" onclick="openConfirmStatusModal('${req.id}', 'ordered')" title="Commander">📦 Commander</button>
+                                    <button class="mat-btn refused" onclick="openConfirmStatusModal('${req.id}', 'refused')" title="Refuser">❌ Refuser</button>
+                                    <button class="mat-btn received" onclick="openConfirmStatusModal('${req.id}', 'received')" title="Livrer">✅ Livrer</button>
                                 </div>
                             </td>
                         </tr>
@@ -5693,13 +5694,51 @@ window.renderAdminMaterialRequests = async function () {
             }
         };
 
-        window.updateReqStatus = async (id, status) => {
+        window.openConfirmStatusModal = function (id, status) {
+            const statusLabels = {
+                'requested': { label: 'En attente ⏳', color: '#ffd43b' },
+                'ordered': { label: 'Commandée 📦', color: '#4dabf7' },
+                'refused': { label: 'Refusée ❌', color: '#ff8787' },
+                'received': { label: 'Livrée ✅', color: '#69db7c' }
+            };
+            const info = statusLabels[status];
+
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.style.zIndex = '1000002';
+            modal.innerHTML = `
+                <div class="modal-box glass-panel" style="width: 450px; padding: 30px; animation: modalPop 0.3s ease-out; background: #1C1C1E; color: white; border-radius: 24px; border: 1px solid rgba(255,255,255,0.1);">
+                    <h3 style="margin-top: 0; font-size: 18px; font-weight: 800; color: ${status === 'requested' ? '#f59f00' : (status === 'ordered' ? '#228be6' : (status === 'refused' ? '#fa5252' : '#40c057'))};">
+                        Changer le statut en : ${info.label}
+                    </h3>
+                    <p style="font-size: 14px; color: #aaa; margin: 15px 0;">
+                        Vous pouvez ajouter un commentaire (optionnel) qui sera envoyé à l'utilisateur dans sa notification :
+                    </p>
+                    <textarea id="status-admin-comment" class="form-input" style="width: 100%; height: 80px; resize: none; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px; color: white; font-size: 14px; margin-bottom: 20px;" placeholder="Votre commentaire ici..."></textarea>
+                    
+                    <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 8px 16px; font-size: 13px; cursor: pointer;">Annuler</button>
+                        <button class="btn-primary" id="confirm-status-btn" style="padding: 8px 20px; font-size: 13px; font-weight: bold; cursor: pointer; background: ${status === 'requested' ? '#f59f00' : (status === 'ordered' ? '#228be6' : (status === 'refused' ? '#fa5252' : '#40c057'))}; border: none; color: #000; border-radius: 20px;">Confirmer</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.querySelector('#confirm-status-btn').onclick = async () => {
+                const comment = modal.querySelector('#status-admin-comment').value.trim();
+                modal.remove();
+                await window.updateReqStatus(id, status, comment);
+            };
+        };
+
+        window.updateReqStatus = async (id, status, adminComment = '') => {
             try {
                 const profile = await auth.getCurrentProfile();
                 const adminName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : 'Admin';
 
                 // Now we just update status, deletion happens during archiving
-                await api.updateMaterialRequestStatus(id, status, adminName);
+                await api.updateMaterialRequestStatus(id, status, adminName, adminComment);
                 renderAdminMaterialRequests();
                 window.updateMaterialBadge(); // Update sidebar badge
             } catch (e) {
