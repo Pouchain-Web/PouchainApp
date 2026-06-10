@@ -21,6 +21,31 @@ import { auth } from './auth.js';
 import { api } from './api.js';
 import config from './config.js';
 
+// Global ticking clock controller for fullscreen TV mode
+window.initFullscreenClock = function () {
+    if (window.tvClockInterval) {
+        clearInterval(window.tvClockInterval);
+    }
+    const update = () => {
+        const elements = document.querySelectorAll('.fullscreen-clock, #fullscreen-clock');
+        elements.forEach(el => {
+            el.innerText = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        });
+    };
+    update();
+    window.tvClockInterval = setInterval(update, 1000);
+};
+
+window.stopFullscreenClock = function () {
+    if (window.tvClockInterval) {
+        clearInterval(window.tvClockInterval);
+        window.tvClockInterval = null;
+    }
+};
+
+// Start clock ticking initially in case fullscreen clock is already present
+window.initFullscreenClock();
+
 // Utilitaires de sécurité
 window.escapeHTML = function (str) {
     if (!str) return '';
@@ -260,11 +285,7 @@ async function initDashboard() {
 
                 try {
                     await renderAdminPlanning();
-                    if (fsMode === '2') {
-                        window.togglePlanningFullscreenV2();
-                    } else {
-                        window.togglePlanningFullscreen();
-                    }
+                    window.togglePlanningFullscreen();
 
                     // Show a non-blocking elegant floating tip at the top
                     const tip = document.createElement('div');
@@ -276,13 +297,8 @@ async function initDashboard() {
                     // Attempt to enter browser fullscreen automatically on first user click or key press anywhere
                     const autoFS = () => {
                         if (!document.fullscreenElement) {
-                            if (fsMode === '2') {
-                                const v2 = document.getElementById('planning-v2-container');
-                                if (v2) v2.requestFullscreen().catch(() => { });
-                            } else {
-                                const el = document.getElementById('integrated-planning-container');
-                                if (el) el.requestFullscreen().catch(() => { });
-                            }
+                            const tv = document.getElementById('planning-tv-container');
+                            if (tv) tv.requestFullscreen().catch(() => { });
                         }
                         tip.remove();
                         document.removeEventListener('click', autoFS);
@@ -1711,11 +1727,11 @@ window.renderAdminAbout = async function () {
     `;
 };
 
-window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isRefresh = false) {
+window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isRefresh = false) {
     const content = document.getElementById('admin-content');
-    if (!content && !isV2) {
+    if (!content && !isTV) {
         if (currentAdminSession) renderAdminView(currentAdminSession);
-        setTimeout(() => window.renderAdminPlanning(mondayStr, isV2), 300);
+        setTimeout(() => window.renderAdminPlanning(mondayStr, isTV), 300);
         return;
     }
 
@@ -1726,14 +1742,14 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     window.planningRefreshInterval = setInterval(async () => {
         const navPlanning = document.getElementById('nav-planning');
         if (navPlanning && navPlanning.classList.contains('active')) {
-            const isAnyFS = !!document.fullscreenElement || !!document.getElementById('planning-v2-container');
+            const isAnyFS = !!document.fullscreenElement || !!document.getElementById('planning-tv-container');
             const currentMonday = document.querySelector('[data-monday]');
             const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
 
             // 1. Auto-refresh (30s) only if in a fullscreen mode
             if (isAnyFS) {
-                const isV2Active = !!document.getElementById('planning-v2-container');
-                renderAdminPlanning(mondayToUse, isV2Active, true);
+                const isTVActive = !!document.getElementById('planning-tv-container');
+                renderAdminPlanning(mondayToUse, isTVActive, true);
             }
 
             // 2. Auto-sort every 60 seconds (always if page open)
@@ -1741,8 +1757,8 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
             if (now - window.lastAutoSortTime > 60000) {
                 window.lastAutoSortTime = now;
                 console.log("Auto-tri du planning en arrière-plan...");
-                const isV2Active = !!document.getElementById('planning-v2-container');
-                await window.autoSortPlanningUsers(mondayToUse, isV2Active, true); // isSilent = true
+                const isTVActive = !!document.getElementById('planning-tv-container');
+                await window.autoSortPlanningUsers(mondayToUse, isTVActive, true); // isSilent = true
                 if (!isAnyFS) {
                     renderAdminPlanning(mondayToUse, false, true);
                 }
@@ -1756,8 +1772,8 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
     const navItem = document.getElementById('nav-planning');
     if (navItem) navItem.classList.add('active');
-    const existingContainer = document.getElementById('planning-v2-container') || document.getElementById('integrated-planning-container');
-    const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-v2-container') || (new URLSearchParams(window.location.search).get('fullscreen'));
+    const existingContainer = document.getElementById('planning-tv-container') || document.getElementById('integrated-planning-container');
+    const isCurrentlyFullscreen = (!!document.fullscreenElement) || (existingContainer && existingContainer.id === 'planning-tv-container') || (new URLSearchParams(window.location.search).get('fullscreen'));
 
     if (!existingContainer && !isRefresh) {
         content.innerHTML = `<div style="display:flex; justify-content:center; padding: 40px;"><div class="loader" style="border: 4px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div></div>`;
@@ -1786,8 +1802,17 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
     try {
         let closedDays = [];
-        try { closedDays = await api.getPlanningClosedDays(); } catch (e) { }
-        window.currentClosedDays = closedDays;
+        let fsConfig = { timer: 40, files: [] };
+        try {
+            [closedDays, fsConfig] = await Promise.all([
+                api.getPlanningClosedDays(),
+                api.getPlanningSlideshowConfig()
+            ]);
+        } catch (e) {
+            console.warn("Could not fetch planning configs:", e);
+        }
+        window.currentClosedDays = closedDays || [];
+        window.currentSlideshowConfig = fsConfig || { timer: 40, files: [] };
 
         const allUsers = await api.listUsers();
 
@@ -1973,8 +1998,8 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                 }
                 .p-reorder-btn:hover { background: rgba(255,255,255,0.2); color: white; }
 
-                /* ===== FULLSCREEN V2: Planning (3/4) + Slideshow (1/4) ===== */
-                #planning-v2-container {
+                /* ===== FULLSCREEN TV: Planning (2/3) + Slideshow (1/3) ===== */
+                #planning-tv-container {
                     display: none;
                     position: fixed;
                     top: 0; left: 0;
@@ -1984,13 +2009,13 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     flex-direction: row;
                     overflow: hidden;
                 }
-                #planning-v2-container.active { display: flex; }
-                #p-v2-main { flex: 3; display: flex; flex-direction: column; overflow: hidden; border-right: 2px solid #ddd; background: #fff; }
-                #p-v2-side { flex: 1; min-width: 400px; background: #000; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-                #p-v2-slideshow { width: 100%; height: 100%; object-fit: contain; transition: opacity 0.5s ease-in-out; background: #000; }
-                #p-v2-pdfviewer { width: 100%; height: 100%; border: none; display: none; }
+                #planning-tv-container.active { display: flex; }
+                #p-tv-main { flex: 2; display: flex; flex-direction: column; overflow: hidden; border-right: 2px solid #ddd; background: #fff; }
+                #p-tv-side { flex: 1; min-width: 33vw; background: #000; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+                #p-tv-slideshow { width: 100%; height: 100%; object-fit: contain; transition: opacity 0.5s ease-in-out; background: #000; }
+                #p-tv-pdfviewer { width: 100%; height: 100%; border: none; display: none; }
                 
-                .v2-exit-btn {
+                .tv-exit-btn {
                     position: absolute;
                     top: 20px; right: 20px;
                     z-index: 100001;
@@ -2004,7 +2029,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                     display: flex; align-items: center; justify-content: center;
                     backdrop-filter: blur(4px);
                 }
-                .v2-exit-btn:hover { background: rgba(255,0,0,0.7); }
+                .tv-exit-btn:hover { background: rgba(255,0,0,0.7); }
                 
                 /* Classic Fullscreen: Hide footer */
                 .planning-fullscreen #planning-footer-config { display: none !important; }
@@ -2030,27 +2055,24 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
         let headerHTML = "";
         if (isCurrentlyFullscreen) {
             headerHTML = `
-                <header style="z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; background: rgba(0,0,0,0.2); margin-bottom: 10px;">
-                    <h1 style="margin: 0; display:flex; align-items:center; gap: 15px; font-size: 20px; color: white !important;">
-                        📅 Planning Semaine
-                    </h1>
-                    <div style="display:flex; gap: 20px; align-items:center;">
-                        <button onclick="changePlanningWeek('${startStr}', -7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #2da140; color: white; border: none; font-size: 16px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#258535'" onmouseout="this.style.background='#2da140'">◀</button>
-                        <div style="display: flex; align-items: center; gap: 25px; color: #495057;">
-                            <div style="font-weight: 700; font-size: 18px; letter-spacing: 0.5px;">Du ${displayStart} au ${displayEnd}</div>
-                            <div style="font-weight: 900; font-size: 28px; color: #2da140; background: rgba(45,161,64,0.08); padding: 5px 15px; border-radius: 10px; border: 1px solid rgba(45,161,64,0.15);">S${window.getISOWeekNumber(startStr)}</div>
-                        </div>
-                        <button onclick="changePlanningWeek('${startStr}', 7)" style="height: 40px; width: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #2da140; color: white; border: none; font-size: 16px; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#258535'" onmouseout="this.style.background='#2da140'">▶</button>
+                <header style="display: flex; align-items: center; justify-content: space-between; padding: 15px 40px; background: #ffffff; border-bottom: 3px solid #2da140; box-shadow: 0 4px 20px rgba(0,0,0,0.05); height: 70px; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <img src="logo-pouchain.svg" alt="Pouchain" style="height: 35px; width: auto;">
+                        <span style="font-size: 20px; font-weight: 800; color: #212529; border-left: 2px solid #dee2e6; padding-left: 15px; letter-spacing: -0.5px;">Planning Hebdomadaire</span>
                     </div>
-                    <div style="display:flex; align-items:center; gap: 20px;">
-                        <div id="fullscreen-clock" style="font-size: 24px; font-weight: 900; color: #2da140; background: rgba(45, 161, 64, 0.08); border: 1px solid rgba(45, 161, 64, 0.15); padding: 5px 15px; border-radius: 10px; font-family: monospace; display: flex; align-items: center; justify-content: center; height: 40px; box-sizing: border-box;">
-                            ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <button onclick="changePlanningWeek('${startStr}', -7)" style="height: 36px; width: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #e9ecef; color: #495057; border: none; font-size: 14px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#dee2e6'" onmouseout="this.style.background='#e9ecef'">◀</button>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="font-weight: 700; font-size: 16px; color: #495057;">Du ${displayStart} au ${displayEnd}</div>
+                            <div style="font-weight: 800; font-size: 16px; color: #2da140; background: rgba(45,161,64,0.08); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(45,161,64,0.15);">Semaine ${window.getISOWeekNumber(startStr)}</div>
                         </div>
-                        <div class="p-header-controls" style="display:flex; gap: 12px; align-items: center;">
-                            <button class="btn-sm btn-secondary" onclick="openPlanningExportModal()" title="Exporter les données du planning">📤 Export</button>
-                            <button class="btn-secondary" onclick="togglePlanningFullscreen()" id="fullscreen-btn" title="Activer/Désactiver le plein écran">⛶ TV</button>
-                            <button class="btn-sm btn-secondary" onclick="togglePlanningFullscreenV2()" id="fullscreen-v2-btn" title="Plein Écran N°2 (Planning + Diaporama)">🖥️ V2</button>
-                            <button class="btn-primary" onclick="openNewTaskModal('${startStr}')">+ Tâche</button>
+                        <button onclick="changePlanningWeek('${startStr}', 7)" style="height: 36px; width: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #e9ecef; color: #495057; border: none; font-size: 14px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#dee2e6'" onmouseout="this.style.background='#e9ecef'">▶</button>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <div id="fullscreen-clock" class="fullscreen-clock" style="font-size: 20px; font-weight: 800; color: #2da140; background: rgba(45, 161, 64, 0.08); border: 1px solid rgba(45, 161, 64, 0.15); padding: 6px 18px; border-radius: 20px; font-family: monospace; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; height: 36px; box-sizing: border-box;">
+                            ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </div>
                     </div>
                 </header>
@@ -2196,27 +2218,23 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
         const finalContent = headerHTML + gridHTML + rowsHTML;
 
-        // --- Fullscreen V2 (Planning 75% + Slideshow 25%) injection point ---
-        const v2Container = document.getElementById('planning-v2-container');
-        if (v2Container && v2Container.classList.contains('active')) {
-            const v2Main = document.getElementById('p-v2-main');
-            if (v2Main) {
-                // In Fullscreen V2, we force the planning area to look like the secondary mode
-                v2Main.innerHTML = `
+        // --- Fullscreen TV (Planning 2/3 + Slideshow 1/3) injection point ---
+        const tvContainer = document.getElementById('planning-tv-container');
+        if (tvContainer && tvContainer.classList.contains('active')) {
+            const tvMain = document.getElementById('p-tv-main');
+            if (tvMain) {
+                tvMain.innerHTML = `
                     <div id="planning-fullscreen-container" class="planning-fullscreen" data-monday="${startStr}" style="height: 100%; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
                         ${finalContent}
                     </div>
                 `;
+                window.initFullscreenClock();
                 return;
             }
         }
 
         // --- Integrated Slideshow Configuration Section (Bottom of Planning) ---
-        let fsConfig = { timer: 10, files: [] };
-        try {
-            const saved = localStorage.getItem('planning_fs_config');
-            if (saved) fsConfig = JSON.parse(saved);
-        } catch (e) { }
+        fsConfig = window.currentSlideshowConfig || { timer: 40, files: [] };
 
         const slideshowConfigHTML = `
             <div id="integrated-fs-config" style="display: flex; align-items: center; gap: 40px; width: 100%;">
@@ -2231,12 +2249,12 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
 
                 <div style="display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.02); padding: 10px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05);">
                     <label style="font-weight: 700; color: var(--primary); font-size: 11px; text-transform: uppercase;">⏱️ Temporisation</label>
-                    <input type="number" id="fs-timer" class="form-input" value="${fsConfig.timer}" min="3" style="width: 60px; text-align: center; height: 30px; font-size: 13px;" onchange="saveFSConfig(true)">
+                    <input type="number" id="fs-timer" class="form-input" value="${fsConfig.timer || 40}" min="3" style="width: 60px; text-align: center; height: 30px; font-size: 13px;" onchange="saveFSConfig(true)">
                     <button class="btn-primary" onclick="saveFSConfig()" style="height: 30px; font-size: 11px; padding: 0 15px;">💾</button>
                 </div>
 
                 <div id="fs-files-mini-grid" style="flex: 1; display: flex; gap: 10px; overflow-x: auto; padding: 5px; scrollbar-width: thin;">
-                    ${fsConfig.files.map((f, i) => {
+                    ${(fsConfig.files || []).map((f, i) => {
             const isPdf = f.toLowerCase().endsWith('.pdf');
             const url = `${config.api.workerUrl}/get/${f}`;
             return `
@@ -2246,7 +2264,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isV2 = false, isR
                             </div>
                         `;
         }).join('')}
-                    ${fsConfig.files.length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
+                    ${(fsConfig.files || []).length === 0 ? `<div style="color: #666; font-size: 12px; font-style: italic; align-self: center;">Aucun document</div>` : ''}
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-left: auto; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 20px;">
@@ -2583,26 +2601,48 @@ window.changePlanningWeek = function (currentMondayStr, offsetDays) {
 };
 
 window.togglePlanningFullscreen = function () {
-    // In the main window, open a NEW window. In the FS window, just toggle.
     const urlParams = new URLSearchParams(window.location.search);
     if (!urlParams.get('fullscreen')) {
         window.open('dashboard.html?fullscreen=1', '_blank', 'noopener,noreferrer');
         return;
     }
 
-    const el = document.getElementById('integrated-planning-container');
-    const scrollArea = document.getElementById('planning-scroll-area');
-    if (!el) return;
+    let tv = document.getElementById('planning-tv-container');
 
-    if (!document.fullscreenElement) {
-        el.classList.remove('planning-inline');
-        el.classList.add('planning-fullscreen');
-        if (scrollArea) scrollArea.style.padding = '0 40px 20px 40px';
-        el.requestFullscreen().catch(err => {
-            console.warn(`Erreur plein écran: ${err.message}`);
-        });
+    // If opening
+    if (!tv) {
+        tv = document.createElement('div');
+        tv.id = 'planning-tv-container';
+        tv.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; background:#fff; display:flex; overflow:hidden;";
+        tv.innerHTML = `
+            <div id="p-tv-main" style="flex:2; height:100%; overflow:hidden; border-right:2px solid #ddd; display:flex; flex-direction:column; background:#fff;"></div>
+            <div id="p-tv-side" style="flex:1; height:100%; min-width:33vw; background:#000; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                <img id="p-tv-slideshow" src="logo-pouchain.svg" style="max-width:100%; max-height:100%; object-fit:contain; transition:opacity 0.6s ease-in-out; background:#000;">
+                <iframe id="p-tv-pdfviewer" style="width:100%; height:100%; border:none; display:none;"></iframe>
+            </div>
+        `;
+        document.body.appendChild(tv);
+        tv.classList.add('active');
+        tv.requestFullscreen().catch(e => console.warn("FS failed", e));
+
+        startSlideshow();
+        renderAdminPlanning(window.currentPlanningMonday, true); // Render grid into p-tv-main
+
+        // Initialize the fullscreen clock ticking
+        window.initFullscreenClock();
     } else {
-        document.exitFullscreen();
+        // Closing
+        tv.classList.remove('active');
+        stopSlideshow();
+        window.stopFullscreenClock();
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => { });
+        }
+
+        setTimeout(() => {
+            if (tv && tv.parentNode) tv.parentNode.removeChild(tv);
+            renderAdminPlanning(window.currentPlanningMonday);
+        }, 300);
     }
 };
 
@@ -2612,7 +2652,7 @@ window.showFullscreenOverlay = function (mode) {
     overlay.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999999; background:#000; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family: sans-serif;";
     overlay.innerHTML = `
         <img src="logo-pouchain.svg" style="width: 200px; margin-bottom: 40px;">
-        <h1 style="font-size: 32px; margin-bottom: 20px;">Mode Plein Écran ${mode === '2' ? 'N°2' : ''}</h1>
+        <h1 style="font-size: 32px; margin-bottom: 20px;">Mode Plein Écran</h1>
         <p style="font-size: 18px; color: #888; margin-bottom: 50px;">Pour activer l'affichage correct du planning :</p>
         <div style="padding: 20px 40px; border: 2px solid #2da140; border-radius: 12px; background: rgba(45, 161, 64, 0.1); animation: pulse 2s infinite;">
             <p style="font-size: 24px; font-weight: bold; margin: 0; color: #2da140;">Appuyez sur ENTRÉE</p>
@@ -2627,11 +2667,7 @@ window.showFullscreenOverlay = function (mode) {
         if (e.key === 'Enter') {
             document.removeEventListener('keydown', handleKey);
             overlay.remove();
-            if (mode === '2') {
-                window.togglePlanningFullscreenV2();
-            } else {
-                window.togglePlanningFullscreen();
-            }
+            window.togglePlanningFullscreen();
         }
     };
     document.addEventListener('keydown', handleKey);
@@ -2641,78 +2677,32 @@ window.showFullscreenOverlay = function (mode) {
 document.addEventListener('fullscreenchange', () => {
     const el = document.getElementById('integrated-planning-container');
     const scrollArea = document.getElementById('planning-scroll-area');
-    const urlParams = new URLSearchParams(window.location.search);
+    const tv = document.getElementById('planning-tv-container');
 
     if (el && !document.fullscreenElement) {
         el.classList.remove('planning-fullscreen');
         el.classList.add('planning-inline');
         if (scrollArea) scrollArea.style.padding = '0 20px 20px 20px'; // restore
-
-        // If we in a dedicated FS window and we exit FS, maybe we should close or show the button?
-        // For now we just stay.
-    }
-});
-
-// --- Fullscreen V2 Logic (Split Screen) ---
-window.togglePlanningFullscreenV2 = function () {
-    // In the main window, open a NEW window. In the FS window, just toggle.
-    const urlParams = new URLSearchParams(window.location.search);
-    if (!urlParams.get('fullscreen')) {
-        window.open('dashboard.html?fullscreen=2', '_blank', 'noopener,noreferrer');
-        return;
     }
 
-    let v2 = document.getElementById('planning-v2-container');
-
-    // If opening
-    if (!v2) {
-        v2 = document.createElement('div');
-        v2.id = 'planning-v2-container';
-        v2.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; background:#fff; display:flex; overflow:hidden;";
-        v2.innerHTML = `
-            <div id="p-v2-main" style="flex:3; height:100%; overflow:hidden; border-right:2px solid #ddd; display:flex; flex-direction:column; background:#fff;"></div>
-            <div id="p-v2-side" style="flex:1; height:100%; min-width:400px; background:#000; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;">
-                <button class="v2-exit-btn" onclick="togglePlanningFullscreenV2()" style="position:absolute; top:20px; right:20px; z-index:1001; background:rgba(0,0,0,0.6); color:#fff; border:none; border-radius:50%; width:44px; height:44px; cursor:pointer; font-size:24px; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(5px); transition:0.2s;">×</button>
-                <img id="p-v2-slideshow" src="logo-pouchain.svg" style="max-width:100%; max-height:100%; object-fit:contain; transition:opacity 0.6s ease-in-out; background:#000;">
-                <iframe id="p-v2-pdfviewer" style="width:100%; height:100%; border:none; display:none;"></iframe>
-            </div>
-        `;
-        document.body.appendChild(v2);
-        v2.classList.add('active');
-        v2.requestFullscreen().catch(e => console.warn("FS failed", e));
-
-        startSlideshow();
-        renderAdminPlanning(window.currentPlanningMonday, true); // Render grid into p-v2-main
-    } else {
-        // Closing
-        v2.classList.remove('active');
+    if (tv && !document.fullscreenElement) {
+        tv.classList.remove('active');
         stopSlideshow();
-        if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => { });
-        }
-
+        window.stopFullscreenClock();
         setTimeout(() => {
-            if (v2 && v2.parentNode) v2.parentNode.removeChild(v2);
+            if (tv && tv.parentNode) tv.parentNode.removeChild(tv);
             renderAdminPlanning(window.currentPlanningMonday);
         }, 300);
     }
-};
+});
 
 let slideInterval = null;
 function startSlideshow() {
     if (slideInterval) clearInterval(slideInterval);
 
-    const configStr = localStorage.getItem('planning_fs_config');
-    let fsConfig = { timer: 10, files: [] };
-    try {
-        if (configStr) fsConfig = JSON.parse(saved);
-    } catch (e) {
-        // Fallback to reading the one we just saved if local storage parse fails
-        try { fsConfig = JSON.parse(localStorage.getItem('planning_fs_config')); } catch (e2) { }
-    }
-
-    const img = document.getElementById('p-v2-slideshow');
-    const pdf = document.getElementById('p-v2-pdfviewer');
+    const fsConfig = window.currentSlideshowConfig || { timer: 40, files: [] };
+    const img = document.getElementById('p-tv-slideshow');
+    const pdf = document.getElementById('p-tv-pdfviewer');
     if (!img && !pdf) return;
 
     if (!fsConfig.files || fsConfig.files.length === 0) {
@@ -2730,10 +2720,11 @@ function startSlideshow() {
             return;
         }
 
-        const url = `${config.api.workerUrl}/get/${fileKey.replace(/^\/+/, '')}`;
+        let url = `${config.api.workerUrl}/get/${fileKey.replace(/^\/+/, '')}`;
         const isPdf = fileKey.toLowerCase().endsWith('.pdf');
 
         if (isPdf) {
+            url += '#toolbar=0&navpanes=0';
             if (img) img.style.display = 'none';
             if (pdf) {
                 pdf.style.display = 'block';
@@ -2743,7 +2734,6 @@ function startSlideshow() {
             if (pdf) { pdf.style.display = 'none'; pdf.src = ''; }
             if (img) {
                 img.style.display = 'block';
-                // Direct update is more reliable than preloading for debugging
                 const nextImg = new Image();
                 nextImg.onload = () => {
                     img.src = url;
@@ -2761,7 +2751,7 @@ function startSlideshow() {
 
     showNext();
     if (fsConfig.files.length > 1) {
-        slideInterval = setInterval(showNext, Math.max(fsConfig.timer || 10, 3) * 1000);
+        slideInterval = setInterval(showNext, Math.max(fsConfig.timer || 40, 3) * 1000);
     }
 }
 
@@ -2779,21 +2769,25 @@ window.handleFSDirectUpload = async function (input) {
     btn.innerText = "Téléchargement...";
 
     try {
-        const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
+        const config = window.currentSlideshowConfig || { timer: 40, files: [] };
 
         for (const file of input.files) {
-            // The API returns the full key (path + filename)
             const res = await api.uploadFile(file, 'fullscreen_slides/');
             if (res && res.key && !config.files.includes(res.key)) {
                 config.files.push(res.key);
             }
         }
 
+        window.currentSlideshowConfig = config;
         localStorage.setItem('planning_fs_config', JSON.stringify(config));
+        try {
+            await api.setPlanningSlideshowConfig(config);
+        } catch (e2) {
+            console.error("Could not save config to R2:", e2);
+        }
         showSuccessModal(`${input.files.length} fichier(s) ajouté(s) au diaporama.`);
 
-        // Sync live V2
-        if (document.getElementById('planning-v2-container')) {
+        if (document.getElementById('planning-tv-container')) {
             stopSlideshow();
             startSlideshow();
         }
@@ -2804,7 +2798,7 @@ window.handleFSDirectUpload = async function (input) {
     } finally {
         btn.disabled = false;
         btn.innerText = originalText;
-        input.value = ''; // Reset input
+        input.value = '';
     }
 };
 
@@ -2861,21 +2855,25 @@ window.openFSDocPicker = async function () {
     };
 };
 
-window.addSelectedFSDocs = function () {
+window.addSelectedFSDocs = async function () {
     const selected = Array.from(document.querySelectorAll('.fs-pick-cb:checked')).map(cb => cb.value);
-    const configStr = localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}';
-    const fsConfig = JSON.parse(configStr);
+    const config = window.currentSlideshowConfig || { timer: 40, files: [] };
 
-    fsConfig.files = [...new Set([...fsConfig.files, ...selected])];
-    localStorage.setItem('planning_fs_config', JSON.stringify(fsConfig));
+    config.files = [...new Set([...config.files, ...selected])];
+    window.currentSlideshowConfig = config;
+    localStorage.setItem('planning_fs_config', JSON.stringify(config));
+    try {
+        await api.setPlanningSlideshowConfig(config);
+    } catch (e) {
+        console.error("Could not save config to R2:", e);
+    }
 
     const overlay = document.querySelector('.modal-overlay');
     if (overlay) overlay.remove();
 
     showSuccessModal(`${selected.length} document(s) ajouté(s).`);
 
-    // Sync live V2
-    if (document.getElementById('planning-v2-container')) {
+    if (document.getElementById('planning-tv-container')) {
         stopSlideshow();
         startSlideshow();
     }
@@ -2883,14 +2881,18 @@ window.addSelectedFSDocs = function () {
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
-
-window.removeFSFile = function (index) {
-    const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
+window.removeFSFile = async function (index) {
+    const config = window.currentSlideshowConfig || { timer: 40, files: [] };
     config.files.splice(index, 1);
+    window.currentSlideshowConfig = config;
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
+    try {
+        await api.setPlanningSlideshowConfig(config);
+    } catch (e) {
+        console.error("Could not save config to R2:", e);
+    }
 
-    // Sync live V2
-    if (document.getElementById('planning-v2-container')) {
+    if (document.getElementById('planning-tv-container')) {
         stopSlideshow();
         startSlideshow();
     }
@@ -2898,14 +2900,19 @@ window.removeFSFile = function (index) {
     renderAdminPlanning(window.currentPlanningMonday);
 };
 
-window.saveFSConfig = function (silent = false) {
-    const timer = parseInt(document.getElementById('fs-timer').value) || 10;
-    const config = JSON.parse(localStorage.getItem('planning_fs_config') || '{"timer":10,"files":[]}');
+window.saveFSConfig = async function (silent = false) {
+    const timer = parseInt(document.getElementById('fs-timer').value) || 40;
+    const config = window.currentSlideshowConfig || { timer: 40, files: [] };
     config.timer = timer;
+    window.currentSlideshowConfig = config;
     localStorage.setItem('planning_fs_config', JSON.stringify(config));
+    try {
+        await api.setPlanningSlideshowConfig(config);
+    } catch (e) {
+        console.error("Could not save config to R2:", e);
+    }
 
-    // Sync live V2
-    if (document.getElementById('planning-v2-container')) {
+    if (document.getElementById('planning-tv-container')) {
         stopSlideshow();
         startSlideshow();
     }
@@ -15266,9 +15273,4 @@ initDashboard();
 
 
 
-setInterval(() => {
-    const el = document.getElementById('fullscreen-clock');
-    if (el) {
-        el.innerText = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    }
-}, 1000);
+// Clock interval moved to top of file

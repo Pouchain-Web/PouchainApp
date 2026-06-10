@@ -416,6 +416,28 @@ export const api = {
         return await response.json();
     },
 
+    async getPlanningSlideshowConfig() {
+        const response = await fetch(`${config.api.workerUrl}/planning/slideshow-config`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async setPlanningSlideshowConfig(cfg) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/planning/slideshow-config`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify(cfg)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async getSpaceUsage() {
         const response = await fetch(`${config.api.workerUrl}/admin/space`, {
             headers: await getAuthHeaders()
