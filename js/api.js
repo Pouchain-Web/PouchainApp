@@ -1931,5 +1931,42 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    // Reports APIs
+    async getAdminReports() {
+        const response = await fetch(`${config.api.workerUrl}/admin/reports`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async updateReportStatus(reportId, status) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/reports`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id: reportId, status })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async deleteReport(reportId) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/reports`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ id: reportId })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

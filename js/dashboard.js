@@ -1421,6 +1421,10 @@ async function renderAdminView(session) {
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminHTTorques()" id="nav-ht-torques" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>⚡ Couples de Serrage HT</span>
                 </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminReports()" id="nav-reports" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🐛 Bugs / Améliorations</span>
+                    <span id="reports-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
@@ -1536,6 +1540,7 @@ async function renderAdminView(session) {
     window.updateMaterialAspiStockBadge();
     window.updateCongesBadge();
     window.updateRTTBadge();
+    window.updateReportsBadge();
     window.materialBadgeInterval = setInterval(() => {
         window.updateMaterialBadge();
         window.updateMaterialStockBadge();
@@ -1543,6 +1548,7 @@ async function renderAdminView(session) {
         window.updateMaterialAspiStockBadge();
         window.updateCongesBadge();
         window.updateRTTBadge();
+        window.updateReportsBadge();
     }, 30000);
 }
 
@@ -1638,6 +1644,132 @@ window.openPersonalSettings = function () {
         }
     };
 }
+
+// --- MODULE: SIGNALEMENTS BUGS / AMÉLIORATIONS ---
+window.updateReportsBadge = async function () {
+    try {
+        const reports = await api.getAdminReports();
+        const pendingCount = reports.filter(r => r.status === 'pending').length;
+        const badge = document.getElementById('reports-badge');
+        if (badge) {
+            if (pendingCount > 0) {
+                badge.textContent = pendingCount;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (e) {
+        console.warn("Could not update reports badge", e);
+    }
+};
+
+window.renderAdminReports = async function () {
+    setActiveNav('nav-reports');
+    const content = document.getElementById('admin-content');
+    content.innerHTML = `<div style="text-align:center; padding: 40px;"><div class="loader-spinner"></div></div>`;
+
+    try {
+        const reports = await api.getAdminReports();
+        
+        let html = `
+        <header style="position: sticky; top: -32px; margin: -32px -40px 32px -40px; padding: 32px 40px 20px; background: rgba(30, 30, 30, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: space-between;">
+            <h1 style="margin: 0;">🐛 Bugs & Améliorations</h1>
+            <button class="btn" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);" onclick="renderAdminReports()">🔄 Actualiser</button>
+        </header>
+        
+        <div class="card glass-panel" style="margin-top: 20px; border-radius: 18px; padding: 24px; border: 1px solid rgba(255,255,255,0.1);">
+            <div style="overflow-x: auto;">
+                <table class="admin-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Utilisateur</th>
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Secteur</th>
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Type</th>
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Description</th>
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Photo</th>
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Date</th>
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Statut</th>
+                            <th style="padding: 12px; font-weight: 700; color: #8E8E93;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        if (reports.length === 0) {
+            html += `<tr><td colspan="8" style="padding: 24px; text-align: center; color: #8E8E93;">Aucun signalement trouvé.</td></tr>`;
+        } else {
+            reports.forEach(r => {
+                const userName = r.profiles ? `${r.profiles.first_name} ${r.profiles.last_name}` : 'Inconnu';
+                const userSecteur = r.profiles ? (r.profiles.secteur || 'Tout') : 'Tout';
+                const typeLabel = r.type === 'bug' ? '🐛 Bug' : '💡 Amélioration';
+                const statusBadge = r.status === 'resolved' 
+                    ? `<span class="badge" style="background: rgba(52, 199, 89, 0.15); color: #34C759; border: 1px solid rgba(52, 199, 89, 0.2);">Résolu</span>`
+                    : `<span class="badge" style="background: rgba(255, 149, 0, 0.15); color: #FF9500; border: 1px solid rgba(255, 149, 0, 0.2);">En attente</span>`;
+                
+                const dateStr = new Date(r.created_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                
+                const photoCell = r.image_path 
+                    ? `<img src="${config.api.workerUrl}/get/${r.image_path}" style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover; cursor: pointer; border: 1px solid rgba(255,255,255,0.1);" onclick="window.open('${config.api.workerUrl}/get/${r.image_path}', '_blank')">`
+                    : `<span style="color:#636366;">Aucune</span>`;
+
+                const isResolved = r.status === 'resolved';
+                const actionBtn = isResolved
+                    ? `<span style="color:#636366; font-size:13px;">Traité</span>`
+                    : `<button class="btn-sm" style="background: #2da140; color: white;" onclick="window.resolveReport('${r.id}')">Ok</button>`;
+
+                const deleteBtn = `<button class="btn-sm btn-delete" style="background: rgba(255, 59, 48, 0.1); color: #FF3B30; border: 1px solid rgba(255, 59, 48, 0.2); margin-left: 6px;" onclick="window.deleteReport('${r.id}')">🗑️</button>`;
+
+                html += `
+                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle;">
+                        <td style="padding: 12px; font-weight: 600; color: white;">${window.escapeHTML(userName)}</td>
+                        <td style="padding: 12px; color: #8E8E93;"><span class="badge" style="background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);">${window.escapeHTML(userSecteur)}</span></td>
+                        <td style="padding: 12px; font-weight: 600; color: white;">${typeLabel}</td>
+                        <td style="padding: 12px; max-width: 300px; white-space: pre-wrap; color: rgba(255,255,255,0.9); font-size: 13px;">${window.escapeHTML(r.message)}</td>
+                        <td style="padding: 12px;">${photoCell}</td>
+                        <td style="padding: 12px; color: #8E8E93; font-size: 13px;">${dateStr}</td>
+                        <td style="padding: 12px;">${statusBadge}</td>
+                        <td style="padding: 12px;">${actionBtn}${deleteBtn}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        `;
+
+        content.innerHTML = html;
+
+        window.resolveReport = async (id) => {
+            if (!confirm("Voulez-vous marquer ce rapport comme résolu et envoyer une notification de remerciement à l'utilisateur ?")) return;
+            try {
+                await api.updateReportStatus(id, 'resolved');
+                window.updateReportsBadge();
+                renderAdminReports();
+            } catch (e) {
+                alert("Erreur: " + e.message);
+            }
+        };
+
+        window.deleteReport = async (id) => {
+            if (!confirm("Voulez-vous supprimer définitivement ce rapport ?")) return;
+            try {
+                await api.deleteReport(id);
+                window.updateReportsBadge();
+                renderAdminReports();
+            } catch (e) {
+                alert("Erreur: " + e.message);
+            }
+        };
+
+    } catch (e) {
+        content.innerHTML = `<div style="color:#FF3B30; padding:20px;">Erreur lors du chargement des rapports : ${e.message}</div>`;
+    }
+};
 
 // Global scope for admin functions
 window.renderAdminAbout = async function () {
