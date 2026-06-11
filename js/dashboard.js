@@ -871,6 +871,11 @@ window.renderMobileMaterialRequests = async function () {
                                 </div>
                                 <div style="font-size: 14px; color: #8E8E93; margin-bottom: 8px;">Catégorie: ${window.escapeHTML(req.category || 'Non classé')}</div>
                                 ${req.comment ? `<div style="font-size: 14px; color: ${textColor}; background: ${dk ? '#2C2C2E' : '#f2f2f7'}; padding: 10px; border-radius: 12px; line-height: 1.4;">${window.escapeHTML(req.comment)}</div>` : ''}
+                                ${req.admin_comment ? `
+                                    <div style="font-size: 14px; color: #34C759; background: ${dk ? 'rgba(52, 199, 89, 0.05)' : '#f2fbf5'}; padding: 10px; border-radius: 12px; line-height: 1.4; margin-top: 8px; border: 1px solid rgba(52, 199, 89, 0.2);">
+                                        <strong>Réponse Admin :</strong> ${window.escapeHTML(req.admin_comment)}
+                                    </div>
+                                ` : ''}
                             </div>
                         `;
                     });
