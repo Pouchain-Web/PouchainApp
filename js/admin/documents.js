@@ -26,6 +26,7 @@ window.renderAdminFolders = async function () {
         const parts = file.key.split('/');
         if (parts.length < 2) return;
         const folderName = parts[0];
+        if (folderName === 'reports_photos') return;
 
         // Extraire les métadonnées secteur
         if (parts[1].startsWith('.meta_sectors_')) {
@@ -162,6 +163,7 @@ window.openFolderSectorsModal = function () {
         const parts = file.key.split('/');
         if (parts.length < 2) return;
         const folderName = parts[0];
+        if (folderName === 'reports_photos') return;
         folderNames.add(folderName);
         if (parts[1].startsWith('.meta_sectors_')) {
             folderSectorMap[folderName] = parts[1].replace('.meta_sectors_', '').split(',').filter(Boolean);
@@ -275,6 +277,7 @@ window.renderAdminFiles = async function (folder) {
     const distinctFiles = [];
 
     window.adminFilesCache.forEach(f => {
+        if (f.key.startsWith('reports_photos/')) return;
         // Must start with current folder path
         if (!f.key.startsWith(currentPrefix)) return;
 
@@ -1369,6 +1372,7 @@ window.handleAdminGlobalSearch = function (query) {
     const matchedFiles = [];
 
     window.adminFilesCache.forEach(file => {
+        if (file.key.startsWith('reports_photos/')) return;
         const parts = file.key.split('/');
         const name = parts[parts.length - 1];
         if (name && !name.startsWith('.meta_') && !name.endsWith('.keep')) {

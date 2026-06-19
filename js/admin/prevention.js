@@ -138,47 +138,87 @@ window.renderAdminPreventionPlans = async function () {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${subSignatures.length === 0 ? `
-                                            <tr>
-                                                <td colspan="7" style="padding: 30px; text-align: center; color: #aaa; font-style: italic; font-size: 14px;">Aucune signature de sous-traitant pour le moment.</td>
-                                            </tr>
-                                        ` : subSignatures.map(s => {
-                                            const plan = plans.find(p => p.id === s.plan_id);
-                                            const planTitle = plan ? plan.title : 'Plan supprimé';
-                                            const dateVal = s.signed_at ? s.signed_at.split('T')[0] : '';
-                                            
-                                            // Find companion name in summary or keep it as ID
-                                            let companionName = 'Non spécifié';
-                                            if (s.signed_by_user_id) {
-                                                const companion = summary.find(p => p.id === s.signed_by_user_id);
-                                                if (companion) {
-                                                    companionName = `${companion.first_name || ''} ${companion.last_name || ''}`;
-                                                }
+                                        ${(() => {
+                                            if (subSignatures.length === 0) {
+                                                return `
+                                                    <tr>
+                                                        <td colspan="7" style="padding: 30px; text-align: center; color: #aaa; font-style: italic; font-size: 14px;">Aucune signature de sous-traitant pour le moment.</td>
+                                                    </tr>
+                                                `;
                                             }
 
-                                            return `
-                                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px;">
-                                                    <td style="padding: 16px 8px; font-weight:600;">${window.escapeHTML(s.last_name || '')} ${window.escapeHTML(s.first_name || '')}</td>
-                                                    <td style="padding: 16px 8px; color:#ccc;">${window.escapeHTML(s.company || '')}</td>
-                                                    <td style="padding: 16px 8px; color:#ccc;">${window.escapeHTML(planTitle)}</td>
-                                                    <td style="padding: 16px 8px; color:#aaa;">${window.escapeHTML(companionName)}</td>
-                                                    <td style="padding: 16px 8px; text-align: center;">
-                                                        <input type="date" value="${dateVal}" onchange="window.updateSubcontractorDate('${s.id}', this.value)" style="padding:6px 10px; border:none; border-radius:8px; background:#2C2C2E; color:white; font-size:13px; cursor:pointer;">
-                                                    </td>
-                                                    <td style="padding: 8px 8px; text-align: center;">
-                                                        <img src="${s.signature_data}" style="max-height:40px; background:white; border-radius:8px; padding:4px; border:1px solid rgba(255,255,255,0.1); cursor:pointer;" onclick="window.openSubcontractorSigImage('${s.signature_data}', '${s.first_name.replace(/'/g, "\\'")} ${s.last_name.replace(/'/g, "\\'")}')" title="Agrandir la signature">
-                                                    </td>
-                                                    <td style="padding: 16px 8px; text-align: right; white-space: nowrap;">
-                                                        <button class="btn-sm" onclick="window.downloadSubcontractorPDF('${s.last_name.replace(/'/g, "\\'")}', '${s.first_name.replace(/'/g, "\\'")}', '${s.company.replace(/'/g, "\\'")}', this)" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.15); color:white; font-size: 11px; padding:6px 12px; border-radius:6px; cursor:pointer; margin-right: 8px;" title="Télécharger le document PDF de signatures">
-                                                            📄 PDF
-                                                        </button>
-                                                        <button onclick="window.deleteSubcontractorSig('${s.id}')" style="background:none; border:none; color:#FF3B30; font-size:16px; cursor:pointer; opacity:0.7;" title="Supprimer cette signature">
-                                                            🗑️
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            `;
-                                        }).join('')}
+                                            const groupedSubs = new Map();
+                                            subSignatures.forEach(s => {
+                                                const key = `${(s.last_name || '').toLowerCase().trim()}_${(s.first_name || '').toLowerCase().trim()}_${(s.company || '').toLowerCase().trim()}`;
+                                                if (!groupedSubs.has(key)) {
+                                                    groupedSubs.set(key, {
+                                                        first_name: s.first_name,
+                                                        last_name: s.last_name,
+                                                        company: s.company,
+                                                        signatures: []
+                                                    });
+                                                }
+                                                groupedSubs.get(key).signatures.push(s);
+                                            });
+
+                                            let index = 0;
+                                            return Array.from(groupedSubs.values()).map(sub => {
+                                                const groupId = `group-${index++}`;
+                                                
+                                                // Parent Row
+                                                let subHtml = `
+                                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; background: rgba(255,255,255,0.02); cursor: pointer;" onclick="window.toggleSubcontractorGroup('${groupId}')">
+                                                        <td style="padding: 16px 8px; font-weight:600; display: flex; align-items: center; gap: 8px;">
+                                                            <span id="arrow-${groupId}" style="font-size: 10px; color: #5856D6; transition: transform 0.2s; display: inline-block;">▶</span>
+                                                            ${window.escapeHTML(sub.last_name || '')} ${window.escapeHTML(sub.first_name || '')}
+                                                        </td>
+                                                        <td style="padding: 16px 8px; color:#ccc;">${window.escapeHTML(sub.company || '')}</td>
+                                                        <td style="padding: 16px 8px; color:#aaa;" colspan="4">${sub.signatures.length} plan(s) signé(s)</td>
+                                                        <td style="padding: 16px 8px; text-align: right; white-space: nowrap;" onclick="event.stopPropagation()">
+                                                            <button class="btn-sm" onclick="window.downloadSubcontractorPDF('${sub.last_name.replace(/'/g, "\\'")}', '${sub.first_name.replace(/'/g, "\\'")}', '${sub.company.replace(/'/g, "\\'")}', this)" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.15); color:white; font-size: 11px; padding:6px 12px; border-radius:6px; cursor:pointer;" title="Télécharger le document PDF de signatures">
+                                                                📄 PDF global
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                `;
+
+                                                // Child Rows (Signatures)
+                                                sub.signatures.forEach(sig => {
+                                                    const plan = plans.find(p => p.id === sig.plan_id);
+                                                    const planTitle = plan ? plan.title : 'Plan supprimé';
+                                                    const dateVal = sig.signed_at ? sig.signed_at.split('T')[0] : '';
+                                                    
+                                                    let companionName = 'Non spécifié';
+                                                    if (sig.signed_by_user_id) {
+                                                        const companion = summary.find(p => p.id === sig.signed_by_user_id);
+                                                        if (companion) {
+                                                            companionName = `${companion.first_name || ''} ${companion.last_name || ''}`;
+                                                        }
+                                                    }
+
+                                                    subHtml += `
+                                                        <tr class="${groupId}" style="border-bottom: 1px solid rgba(255,255,255,0.02); font-size: 13px; background: rgba(0,0,0,0.2); display: none;">
+                                                            <td style="padding: 12px 8px; padding-left: 24px; color:#8E8E93;" colspan="2">↳ Plan de prévention</td>
+                                                            <td style="padding: 12px 8px; color:#ccc; font-weight: 500;">${window.escapeHTML(planTitle)}</td>
+                                                            <td style="padding: 12px 8px; color:#aaa;">${window.escapeHTML(companionName)}</td>
+                                                            <td style="padding: 12px 8px; text-align: center;">
+                                                                <input type="date" value="${dateVal}" onchange="window.updateSubcontractorDate('${sig.id}', this.value)" style="padding:4px 8px; border:none; border-radius:6px; background:#2C2C2E; color:white; font-size:12px; cursor:pointer;">
+                                                            </td>
+                                                            <td style="padding: 6px 8px; text-align: center;">
+                                                                <img src="${sig.signature_data}" style="max-height:30px; background:white; border-radius:6px; padding:2px; border:1px solid rgba(255,255,255,0.1); cursor:pointer;" onclick="window.openSubcontractorSigImage('${sig.signature_data}', '${sig.first_name.replace(/'/g, "\\'")} ${sig.last_name.replace(/'/g, "\\'")}')" title="Agrandir la signature">
+                                                            </td>
+                                                            <td style="padding: 12px 8px; text-align: right;">
+                                                                <button onclick="window.deleteSubcontractorSig('${sig.id}')" style="background:none; border:none; color:#FF3B30; font-size:14px; cursor:pointer; opacity:0.7;" title="Supprimer cette signature">
+                                                                    🗑️
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    `;
+                                                });
+
+                                                return subHtml;
+                                            }).join('');
+                                        })()}
                                     </tbody>
                                 </table>
                             </div>
@@ -840,5 +880,24 @@ window.openAddPreventionPlanModal = function() {
             }
         }
     };
+};
+
+window.toggleSubcontractorGroup = function(groupId) {
+    const rows = document.querySelectorAll(`.${groupId}`);
+    const arrow = document.getElementById(`arrow-${groupId}`);
+    rows.forEach(r => {
+        if (r.style.display === 'none') {
+            r.style.display = 'table-row';
+        } else {
+            r.style.display = 'none';
+        }
+    });
+    if (arrow) {
+        if (arrow.style.transform === 'rotate(90deg)') {
+            arrow.style.transform = 'rotate(0deg)';
+        } else {
+            arrow.style.transform = 'rotate(90deg)';
+        }
+    }
 };
 
