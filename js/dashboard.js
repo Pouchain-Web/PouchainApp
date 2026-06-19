@@ -323,23 +323,10 @@ async function renderAdminView(session) {
             </div>
             <nav id="admin-nav" style="visibility: hidden;">
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPointage()" id="nav-pointage" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📝 Pointage Intelligent</span>
                     <span id="pointage-modification-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
-                </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminOvertime()" id="nav-overtime" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>⏳ Heures Supplémentaires</span>
-                    <span id="nav-recup-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
-                </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminConges()" id="nav-conges" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>🌴 Congés</span>
-                    <span id="conges-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
-                </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminRTT()" id="nav-rtt" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>⚡ RTT</span>
-                    <span id="rtt-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaterialRequests()" id="nav-material" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📦 Demande de matériel</span>
@@ -364,16 +351,29 @@ async function renderAdminView(session) {
                         <span id="mat-stock-aspi-request-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                     </div>
                 </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance">📋 Échéance obligatoire réglementaire</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminHTTorques()" id="nav-ht-torques" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>⚡ Couples de Serrage HT</span>
                 </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminMaintenance()" id="nav-maintenance">📋 Échéance obligatoire réglementaire</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPreventionPlans()" id="nav-prevention">📋 Plan de prévention</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminOvertime()" id="nav-overtime" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>⏳ Heures Supplémentaires</span>
+                    <span id="nav-recup-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminConges()" id="nav-conges" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🌴 Congés</span>
+                    <span id="conges-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminRTT()" id="nav-rtt" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>⚡ RTT</span>
+                    <span id="rtt-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
+                </a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminUsers()" id="nav-users">👥 Utilisateurs</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminReports()" id="nav-reports" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>🐛 Bugs / Améliorations</span>
                     <span id="reports-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
                 </a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminNotifications()" id="nav-notifications">🔔 Notifications</a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPreventionPlans()" id="nav-prevention">📋 Plan de prévention</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminAbout()" id="nav-about">ℹ️ À Propos</a>
             </nav>
             <div style="margin-top: auto;">
