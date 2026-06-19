@@ -1,0 +1,25 @@
+# System Files
+.DS_Store
+Thumbs.db
+*.log
+
+# Environment variables
+.env
+*.env
+.dev.vars*
+
+# Data & Scripts (Sensitive)
+*.xlsx
+*.sql
+*.py
+fix_encodings.js
+test.js
+
+# Dependencies
+node_modules/
+.npm
+
+# wrangler files
+.wrangler
+!.dev.vars.example
+!.env.example
