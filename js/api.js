@@ -1190,6 +1190,14 @@ export const api = {
         return await response.json();
     },
 
+    async getHTTorques() {
+        const response = await fetch(`${config.api.workerUrl}/admin/ht-torques`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
     async saveHTTorque(data) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/ht-torques`, {
@@ -1267,6 +1275,7 @@ export const api = {
     },
 
     async submitPointage(data) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/pointage`, {
             method: 'POST',
             headers: {
@@ -1292,6 +1301,7 @@ export const api = {
     },
 
     async notifyMissingPointage(userIds, message) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/pointage/notify-missing`, {
             method: 'POST',
             headers: {
@@ -1452,6 +1462,7 @@ export const api = {
     },
 
     async submitMaterialGTStockRequest(materialId, payload) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/stock-gt/requests`, {
             method: 'POST',
             headers: {
@@ -1613,6 +1624,7 @@ export const api = {
     },
 
     async submitMaterialAspiStockRequest(materialId, payload) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/material/stock-aspi/requests`, {
             method: 'POST',
             headers: {
@@ -1691,6 +1703,7 @@ export const api = {
     },
 
     async submitPointageModificationRequest(week, year, comment) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/pointage/modification-requests`, {
             method: 'POST',
             headers: {
@@ -1735,6 +1748,7 @@ export const api = {
     },
 
     async initCongeSolde(initialSolde) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/conges/init`, {
             method: 'POST',
             headers: {
@@ -1748,6 +1762,7 @@ export const api = {
     },
 
     async submitCongeRequest(start_date, end_date, dates_list, days_requested, signature, motif) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/conges/requests`, {
             method: 'POST',
             headers: {
@@ -1851,6 +1866,7 @@ export const api = {
     },
 
     async initRTTSolde(initialSolde) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/rtt/init`, {
             method: 'POST',
             headers: {
@@ -1864,6 +1880,7 @@ export const api = {
     },
 
     async submitRTTRequest(start_date, end_date, dates_list, days_requested, signature) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/rtt/requests`, {
             method: 'POST',
             headers: {
@@ -1893,6 +1910,7 @@ export const api = {
     },
 
     async actionRTTRequest(id, action, adminName, pdfPath = null, comment = null, adminSignature = null) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/rtt/action`, {
             method: 'POST',
             headers: {
@@ -1922,6 +1940,7 @@ export const api = {
     },
 
     async adjustRTTSolde(targetUserId, delta, reason) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/rtt/adjust-solde`, {
             method: 'POST',
             headers: {
@@ -1935,6 +1954,7 @@ export const api = {
     },
 
     async deleteRTTRequest(requestId) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/rtt/delete-request`, {
             method: 'POST',
             headers: {
@@ -2047,6 +2067,7 @@ export const api = {
     },
 
     async submitPreventionSignature(planId, signatureData) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/prevention/signatures`, {
             method: 'POST',
             headers: {
@@ -2129,6 +2150,7 @@ export const api = {
     },
 
     async submitSubcontractorSignature(planId, firstName, lastName, company, signatureData) {
+        await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/prevention/subcontractor-signature`, {
             method: 'POST',
             headers: {
