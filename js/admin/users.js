@@ -63,7 +63,7 @@ window.renderAdminUsers = async function () {
             const jsFirstName = (u.first_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const jsLastName = (u.last_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const jsEmail = (u.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const userColor = u.color ? u.color : '#2da140';
+            const userColor = u.color ? u.color : '#FF3B30';
             return `
                             <tr>
                                 <td><div style="display:flex; align-items:center; gap:8px;"><div style="width:12px; height:12px; border-radius:50%; background-color:${userColor};" title="Couleur Planning"></div> ${safeFirstName}</div></td>
@@ -395,7 +395,7 @@ window.deleteUser = function (id, email) {
     );
 };
 
-window.openEditUserModal = function (id, firstName, lastName, color = '#2da140', secteur = 'Tout', societe = 'Pouchain') {
+window.openEditUserModal = function (id, firstName, lastName, color = '#FF3B30', secteur = 'Tout', societe = 'Pouchain') {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'edit-user-modal';

@@ -56,6 +56,11 @@ window.removeClosedDay = async function (index) {
 };
 
 window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isRefresh = false) {
+    if (window.planningRefreshInProgress) {
+        console.log("Planning refresh already in progress, skipping...");
+        return;
+    }
+
     const content = document.getElementById('admin-content');
     if (!content && !isTV) {
         if (window.currentAdminSession) renderAdminView(window.currentAdminSession);
@@ -63,20 +68,25 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
         return;
     }
 
+    window.planningRefreshInProgress = true;
+
     if (window.planningRefreshInterval) clearInterval(window.planningRefreshInterval);
 
     // Auto-refresh logic
     window.lastAutoSortTime = window.lastAutoSortTime || Date.now();
     window.planningRefreshInterval = setInterval(async () => {
+        const tvContainer = document.getElementById('planning-tv-container');
         const navPlanning = document.getElementById('nav-planning');
-        if (navPlanning && navPlanning.classList.contains('active')) {
-            const isAnyFS = !!document.fullscreenElement || !!document.getElementById('planning-tv-container');
+        const isTVActive = !!tvContainer;
+        const isPlanningActive = isTVActive || (navPlanning && navPlanning.classList.contains('active'));
+
+        if (isPlanningActive) {
+            const isAnyFS = !!document.fullscreenElement || isTVActive;
             const currentMonday = document.querySelector('[data-monday]');
             const mondayToUse = currentMonday ? currentMonday.getAttribute('data-monday') : null;
 
-            // 1. Auto-refresh (30s) only if in a fullscreen mode
+            // 1. Auto-refresh (15s) only if in a fullscreen/TV mode
             if (isAnyFS) {
-                const isTVActive = !!document.getElementById('planning-tv-container');
                 renderAdminPlanning(mondayToUse, isTVActive, true);
             }
 
@@ -85,7 +95,6 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
             if (now - window.lastAutoSortTime > 60000) {
                 window.lastAutoSortTime = now;
                 console.log("Auto-tri du planning en arrière-plan...");
-                const isTVActive = !!document.getElementById('planning-tv-container');
                 await window.autoSortPlanningUsers(mondayToUse, isTVActive, true); // isSilent = true
                 if (!isAnyFS) {
                     renderAdminPlanning(mondayToUse, false, true);
@@ -94,7 +103,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
         } else {
             clearInterval(window.planningRefreshInterval);
         }
-    }, 30000);
+    }, 15000);
 
     window.adminCurrentFolder = null;
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
@@ -235,12 +244,12 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
 
                 .planning-fullscreen header {
                     background: #ffffff !important;
-                    border-bottom: 3px solid #2da140 !important;
+                    border-bottom: 3px solid #FF3B30 !important;
                     margin-bottom: 0 !important;
                     padding: 20px 50px !important;
                     box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
                 }
-                .planning-fullscreen header h1 { font-size: 28px !important; color: #2da140 !important; letter-spacing: 1px; }
+                .planning-fullscreen header h1 { font-size: 28px !important; color: #FF3B30 !important; letter-spacing: 1px; }
                 .planning-fullscreen header span { font-size: 22px !important; color: #495057 !important; }
                 .planning-fullscreen .p-header-controls { display: none !important; }
 
@@ -249,14 +258,14 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
 
                 .planning-fullscreen .p-head {
                     background: #f1f3f5 !important;
-                    color: #2da140 !important;
+                    color: #FF3B30 !important;
                     border-color: #dee2e6 !important;
                     font-size: 20px !important;
                     font-weight: 700 !important;
                     padding: 16px 0 !important;
                     text-transform: uppercase;
                     letter-spacing: 1px;
-                    border-bottom: 2px solid #2da140 !important;
+                    border-bottom: 2px solid #FF3B30 !important;
                 }
 
                 .planning-fullscreen .p-user {
@@ -279,8 +288,8 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                 
                 #planning-scroll-area::-webkit-scrollbar { width: 8px; }
                 #planning-scroll-area::-webkit-scrollbar-track { background: #f8f9fa; }
-                #planning-scroll-area::-webkit-scrollbar-thumb { background: #2da14033; border-radius: 4px; }
-                #planning-scroll-area::-webkit-scrollbar-thumb:hover { background: #2da14066; }
+                #planning-scroll-area::-webkit-scrollbar-thumb { background: #FF3B3033; border-radius: 4px; }
+                #planning-scroll-area::-webkit-scrollbar-thumb:hover { background: #FF3B3066; }
 
                 .planning-fullscreen .p-task {
                     border-left: 6px solid currentColor !important;
@@ -383,7 +392,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
         let headerHTML = "";
         if (isCurrentlyFullscreen) {
             headerHTML = `
-                <header style="display: flex; align-items: center; justify-content: space-between; padding: 15px 40px; background: #ffffff; border-bottom: 3px solid #2da140; box-shadow: 0 4px 20px rgba(0,0,0,0.05); height: 70px; box-sizing: border-box;">
+                <header style="display: flex; align-items: center; justify-content: space-between; padding: 15px 40px; background: #ffffff; border-bottom: 3px solid #FF3B30; box-shadow: 0 4px 20px rgba(0,0,0,0.05); height: 70px; box-sizing: border-box;">
                     <div style="display: flex; align-items: center; gap: 15px;">
                         <img src="logo-pouchain.svg" alt="Pouchain" style="height: 35px; width: auto;">
                         <span style="font-size: 20px; font-weight: 800; color: #212529; border-left: 2px solid #dee2e6; padding-left: 15px; letter-spacing: -0.5px;">Planning Hebdomadaire</span>
@@ -393,13 +402,16 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                         <button onclick="changePlanningWeek('${startStr}', -7)" style="height: 36px; width: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #e9ecef; color: #495057; border: none; font-size: 14px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#dee2e6'" onmouseout="this.style.background='#e9ecef'">◀</button>
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <div style="font-weight: 700; font-size: 16px; color: #495057;">Du ${displayStart} au ${displayEnd}</div>
-                            <div style="font-weight: 800; font-size: 16px; color: #2da140; background: rgba(45,161,64,0.08); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(45,161,64,0.15);">Semaine ${window.getISOWeekNumber(startStr)}</div>
+                            <div style="font-weight: 800; font-size: 16px; color: #FF3B30; background: rgba(255,59,48,0.08); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(255,59,48,0.15);">Semaine ${window.getISOWeekNumber(startStr)}</div>
                         </div>
                         <button onclick="changePlanningWeek('${startStr}', 7)" style="height: 36px; width: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #e9ecef; color: #495057; border: none; font-size: 14px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#dee2e6'" onmouseout="this.style.background='#e9ecef'">▶</button>
                     </div>
 
                     <div style="display: flex; align-items: center; gap: 20px;">
-                        <div id="fullscreen-clock" class="fullscreen-clock" style="font-size: 20px; font-weight: 800; color: #2da140; background: rgba(45, 161, 64, 0.08); border: 1px solid rgba(45, 161, 64, 0.15); padding: 6px 18px; border-radius: 20px; font-family: monospace; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; height: 36px; box-sizing: border-box;">
+                        <div id="fullscreen-date" style="font-size: 16px; font-weight: 700; color: #495057; text-transform: capitalize;">
+                            ${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                        </div>
+                        <div id="fullscreen-clock" class="fullscreen-clock" style="font-size: 20px; font-weight: 800; color: #FF3B30; background: rgba(255, 59, 48, 0.08); border: 1px solid rgba(255, 59, 48, 0.15); padding: 6px 18px; border-radius: 20px; font-family: monospace; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; height: 36px; box-sizing: border-box;">
                             ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </div>
                     </div>
@@ -459,7 +471,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
             if (window.isClosedDay(d)) {
                 style = 'background-color: #ff3b30 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
             } else if (d === new Date().toISOString().split('T')[0]) {
-                style = 'background-color: #2da140 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
+                style = 'background-color: #FF3B30 !important; color: #fff !important; border-bottom: 3px solid #fff !important; box-shadow: inset 0 -4px 0 rgba(0,0,0,0.1);';
             } else if (window.isJoursFerieFrance(d)) {
                 style = 'background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 10px, rgba(0,0,0,0.05) 10px, rgba(0,0,0,0.05) 20px) !important; color: inherit;';
             }
@@ -472,7 +484,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
             const userName = (u.first_name || '') + ' ' + (u.last_name || '');
             const displayedName = userName.trim() || u.email;
             const safeName = window.escapeHTML(displayedName);
-            const userColor = u.color ? u.color : '#2da140';
+            const userColor = u.color ? u.color : '#FF3B30';
 
             const upBtn = idx > 0 ? `<button class="p-reorder-btn" onclick="reorderPlanningUser(${idx}, ${idx - 1}, '${startStr}')" title="Monter">▲</button>` : '';
             const downBtn = idx < users.length - 1 ? `<button class="p-reorder-btn" onclick="reorderPlanningUser(${idx}, ${idx + 1}, '${startStr}')" title="Descendre">▼</button>` : '';
@@ -487,7 +499,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                 if (window.isClosedDay(d)) {
                     cellStyle = 'background: rgba(255, 59, 48, 0.15) !important;';
                 } else if (d === new Date().toISOString().split('T')[0]) {
-                    cellStyle = 'background: rgba(45, 161, 64, 0.15) !important;';
+                    cellStyle = 'background: rgba(255, 59, 48, 0.15) !important;';
                 } else if (window.isJoursFerieFrance(d)) {
                     cellStyle = 'background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(120,120,120,0.1) 10px, rgba(120,120,120,0.1) 20px) !important;';
                 }
@@ -557,6 +569,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                     </div>
                 `;
                 window.initFullscreenClock();
+                window.planningRefreshInProgress = false;
                 return;
             }
         }
@@ -657,7 +670,9 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                 </div>
             `;
         }
+        window.planningRefreshInProgress = false;
     } catch (e) {
+        window.planningRefreshInProgress = false;
         console.error("Planning Error:", e);
         if (content) content.innerHTML = `<div style="color:var(--danger); padding:20px;">Erreur lors du chargement du planning : ${e.message}</div>`;
     }
@@ -1229,7 +1244,7 @@ window.openNewTaskModal = async function (defaultDateStr, prefillUserId = '', cu
                 <form id="new-task-form" onsubmit="event.preventDefault(); submitNewTask('${refWeek}')">
                     <div style="display: flex; gap: 16px;">
                         <div class="form-group" style="flex:1;">
-                            <label>Date de début <span id="week-num-display" style="margin-left: 10px; font-weight: 800; color: #2da140; font-size: 12px; text-transform: uppercase;">Semaine ${window.getISOWeekNumber(defaultDateStr)}</span></label>
+                            <label>Date de début <span id="week-num-display" style="margin-left: 10px; font-weight: 800; color: #FF3B30; font-size: 12px; text-transform: uppercase;">Semaine ${window.getISOWeekNumber(defaultDateStr)}</span></label>
                             <input type="date" class="form-input" id="task-date" required value="${defaultDateStr}" onchange="document.getElementById('task-date-end').value = this.value; document.getElementById('week-num-display').innerText = 'Semaine ' + window.getISOWeekNumber(this.value)">
                         </div>
                         <div class="form-group" style="flex:1;">
@@ -1356,7 +1371,7 @@ window.openEditTaskModal = async function (task, refWeek, event) {
                 <div class="modal-header">Modifier la Tâche</div>
                 <form id="edit-task-form" onsubmit="event.preventDefault(); submitEditTask('${task.id}', '${refWeek}')">
                     <div class="form-group">
-                        <label>Date <span id="edit-week-num-display" style="margin-left: 10px; font-weight: 800; color: #2da140; font-size: 12px; text-transform: uppercase;">Semaine ${window.getISOWeekNumber(task.date)}</span></label>
+                        <label>Date <span id="edit-week-num-display" style="margin-left: 10px; font-weight: 800; color: #FF3B30; font-size: 12px; text-transform: uppercase;">Semaine ${window.getISOWeekNumber(task.date)}</span></label>
                         <input type="date" class="form-input" id="edit-task-date" required value="${task.date}" onchange="document.getElementById('edit-week-num-display').innerText = 'Semaine ' + window.getISOWeekNumber(this.value)">
                     </div>
                     <div class="form-group">

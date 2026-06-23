@@ -499,7 +499,7 @@ window.renderAdminMaterialTracking = async function () {
             <!-- Header Section -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
                 <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #34C759, #2da140); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(52, 199, 89, 0.2);">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #FF9500, #FF3B30); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(255, 59, 48, 0.2);">
                         <span style="font-size: 28px;">📦</span>
                     </div>
                     <div>

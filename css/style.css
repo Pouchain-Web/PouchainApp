@@ -32,7 +32,7 @@ body.hide-main-nav {
 }
 
 :root {
-    --primary-color: #2da140;
+    --primary-color: #FF3B30;
     /* iOS Blue */
     --background-color: #F2F2F7;
     /* iOS Light Gray Background */
@@ -758,7 +758,7 @@ body {
 }
 
 .btn-primary {
-    background-color: var(--primary-color, #2da140);
+    background-color: var(--primary-color, #FF3B30);
     color: white;
     border: none;
     padding: 12px 24px;

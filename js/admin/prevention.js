@@ -10,7 +10,7 @@ window.renderAdminPreventionPlans = async function () {
     const container = document.getElementById('admin-content');
     container.innerHTML = `
         <div style="height: 100%; display: flex; align-items: center; justify-content: center; color: white;">
-            <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--primary, #2da140); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
+            <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--primary, #FF3B30); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
         </div>
     `;
 
@@ -417,7 +417,7 @@ window.openEditSignatureDatesModal = async function(userId, lastName, firstName)
             <p style="color: #aaa; font-size: 14px; margin-bottom: 20px;">Collaborateur : <strong>${firstName} ${lastName}</strong></p>
             
             <div id="edit-dates-loader" style="text-align: center; padding: 30px 0;">
-                <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--primary, #2da140); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; display: inline-block;"></div>
+                <div class="loader" style="border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--primary, #FF3B30); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; display: inline-block;"></div>
             </div>
             
             <div id="edit-dates-content" style="display: none; max-height: 350px; overflow-y: auto; margin-bottom: 25px; padding-right: 5px;"></div>
@@ -830,7 +830,7 @@ window.openAddPreventionPlanModal = function() {
 
             <div style="display:flex; gap: 12px; border-top:1px solid rgba(255,255,255,0.1); padding-top:20px;">
                 <button class="btn-secondary" style="flex:1; height:46px; border-radius:12px; font-size:14px; font-weight:700; cursor:pointer;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
-                <button class="btn-primary" style="flex:2; height:46px; border-radius:12px; font-size:14px; font-weight:700; background:var(--primary, #2da140); cursor:pointer;" id="save-plan-btn">Ajouter</button>
+                <button class="btn-primary" style="flex:2; height:46px; border-radius:12px; font-size:14px; font-weight:700; background:var(--primary, #FF3B30); cursor:pointer;" id="save-plan-btn">Ajouter</button>
             </div>
         </div>
     `;

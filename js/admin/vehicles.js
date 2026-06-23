@@ -584,7 +584,7 @@ window.openVehicleDetailModal = async function (vehicleId) {
                     <div style="display:flex; gap:10px; flex-wrap: wrap;">
                         <button class="btn-primary" onclick="updateAdminVehicleMileage('${v.id}', ${v.last_mileage || 0})" style="padding: 10px 18px; border-radius: 12px; background: #5AC8FA; color: #fff; border: none; font-weight: 700; display: flex; align-items: center; gap: 8px;">📍 Mise à jour KM</button>
                         <button class="btn-primary" onclick="logAdminVehicleFuel('${v.id}', '${v.dkv_card || ''}')" style="padding: 10px 18px; border-radius: 12px; background: #FF9500; color: #fff; border: none; font-weight: 700; display: flex; align-items: center; gap: 8px;">⛽ Saisie Essence</button>
-                        <button class="btn-primary" onclick="openAddVehicleEventModal('${v.id}')" style="padding: 10px 18px; border-radius: 12px; background: #2da140; color: #fff; border: none; font-weight: 700;">➕ Ajouter événement</button>
+                        <button class="btn-primary" onclick="openAddVehicleEventModal('${v.id}')" style="padding: 10px 18px; border-radius: 12px; background: #FF3B30; color: #fff; border: none; font-weight: 700;">➕ Ajouter événement</button>
                         <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="padding: 10px 18px; border-radius: 12px; background: #eee; color: #333; border: none; font-weight: 700;">Fermer</button>
                     </div>
                 </div>
@@ -834,7 +834,7 @@ window.openAddVehicleEventModal = function (vehicleId) {
                 
                 <div style="display:flex; gap:12px; margin-top:10px;">
                     <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex:1; padding:12px; border-radius:12px; border:none; background:#eee; color:#333; font-weight:700;">Annuler</button>
-                    <button class="btn-primary" id="save-event-btn" style="flex:2; padding:12px; border-radius:12px; border:none; background:#2da140; color:#fff; font-weight:700;">Enregistrer l'événement</button>
+                    <button class="btn-primary" id="save-event-btn" style="flex:2; padding:12px; border-radius:12px; border:none; background:#FF3B30; color:#fff; font-weight:700;">Enregistrer l'événement</button>
                 </div>
             </div>
         </div>

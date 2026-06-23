@@ -65,6 +65,10 @@ window.initFullscreenClock = function () {
         elements.forEach(el => {
             el.innerText = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         });
+        const dateEl = document.getElementById('fullscreen-date');
+        if (dateEl) {
+            dateEl.innerText = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        }
     };
     update();
     window.tvClockInterval = setInterval(update, 1000);
@@ -247,7 +251,7 @@ async function initDashboard() {
                     // Show a non-blocking elegant floating tip at the top
                     const tip = document.createElement('div');
                     tip.id = 'fs-click-tip';
-                    tip.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:999999; background:rgba(0,0,0,0.85); color:#fff; padding:12px 24px; border-radius:30px; font-weight:600; font-size:14px; border:1px solid #2da140; box-shadow: 0 10px 25px rgba(0,0,0,0.5); pointer-events:none; transition:opacity 0.3s; font-family:sans-serif;";
+                    tip.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:999999; background:rgba(0,0,0,0.85); color:#fff; padding:12px 24px; border-radius:30px; font-weight:600; font-size:14px; border:1px solid #FF3B30; box-shadow: 0 10px 25px rgba(0,0,0,0.5); pointer-events:none; transition:opacity 0.3s; font-family:sans-serif;";
                     tip.innerHTML = "💡 Cliquez n'importe où pour masquer les onglets (Plein Écran)";
                     document.body.appendChild(tip);
 
@@ -536,7 +540,7 @@ window.openPersonalSettings = function () {
 
             <div style="display: flex; gap: 12px; justify-content: flex-end;">
                 <button class="btn-secondary" style="border-radius: 12px; padding: 10px 20px;" onclick="this.closest('.modal-overlay').remove()">Fermer</button>
-                <button id="save-settings-btn" class="btn-primary" style="padding: 10px 24px; background: #2da140; border-radius: 12px; font-weight: 700;">Enregistrer</button>
+                <button id="save-settings-btn" class="btn-primary" style="padding: 10px 24px; background: #FF3B30; border-radius: 12px; font-weight: 700;">Enregistrer</button>
             </div>
         </div>
     `;

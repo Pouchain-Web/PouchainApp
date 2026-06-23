@@ -54,7 +54,7 @@ window.renderAdminReports = async function () {
                 const isResolved = r.status === 'resolved';
                 const actionBtn = isResolved
                     ? `<span style="color:#636366; font-size:13px;">Traité</span>`
-                    : `<button class="btn-sm" style="background: #2da140; color: white;" onclick="window.resolveReport('${r.id}')">Ok</button>`;
+                    : `<button class="btn-sm" style="background: #FF3B30; color: white;" onclick="window.resolveReport('${r.id}')">Ok</button>`;
 
                 const deleteBtn = `<button class="btn-sm btn-delete" style="background: rgba(255, 59, 48, 0.1); color: #FF3B30; border: 1px solid rgba(255, 59, 48, 0.2); margin-left: 6px;" onclick="window.deleteReport('${r.id}')">🗑️</button>`;
 
