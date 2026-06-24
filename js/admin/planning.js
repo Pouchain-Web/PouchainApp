@@ -964,47 +964,12 @@ window.startTVFooter = function () {
 
         let selectedNews = [];
         try {
-            const feeds = [
-                { category: "Général", url: "https://news.google.com/rss?hl=fr&gl=FR&ceid=FR:fr" },
-                { category: "Éco & Énergie", url: "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=fr&gl=FR&ceid=FR:fr" },
-                { category: "Tech", url: "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=fr&gl=FR&ceid=FR:fr" },
-                { category: "Sport", url: "https://news.google.com/rss/headlines/section/topic/SPORTS?hl=fr&gl=FR&ceid=FR:fr" },
-                { category: "Science", url: "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=fr&gl=FR&ceid=FR:fr" }
-            ];
-
-            const fetchPromises = feeds.map(async (feed) => {
-                try {
-                    const response = await fetch('https://corsproxy.io/?' + encodeURIComponent(feed.url));
-                    if (response.ok) {
-                        const text = await response.text();
-                        const parser = new DOMParser();
-                        const xmlDoc = parser.parseFromString(text, 'text/xml');
-                        const items = xmlDoc.querySelectorAll('item');
-                        return Array.from(items).slice(0, 4).map(item => {
-                            let title = item.querySelector('title').textContent;
-                            title = title.replace(/\s+-\s+[^-]+$/, ''); // Nettoyer le nom de la source
-                            return `🔥 [${feed.category}] ${title}`;
-                        });
-                    }
-                } catch (err) {
-                    console.warn(`Failed to fetch feed ${feed.category}:`, err);
-                }
-                return [];
-            });
-
-            const results = await Promise.allSettled(fetchPromises);
-            let combined = [];
-            results.forEach(res => {
-                if (res.status === 'fulfilled' && res.value) {
-                    combined = combined.concat(res.value);
-                }
-            });
-
-            if (combined.length > 0) {
-                selectedNews = combined.sort(() => 0.5 - Math.random()).slice(0, 15);
+            const response = await fetch(`${config.api.workerUrl}/planning/news`);
+            if (response.ok) {
+                selectedNews = await response.json();
             }
         } catch (e) {
-            console.warn("Could not fetch Google News RSS feeds, falling back to corporate messages:", e);
+            console.warn("Could not fetch planning news from worker, falling back to corporate messages:", e);
         }
 
         if (selectedNews.length === 0) {
