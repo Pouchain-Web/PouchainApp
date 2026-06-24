@@ -950,18 +950,6 @@ window.startTVFooter = function () {
         const ticker = document.getElementById('p-tv-ticker');
         if (!ticker) return;
 
-        const fallbackNews = [
-            "⚠️ Sécurité : Le port des EPI (casque, gants, chaussures de sécurité) est obligatoire sur tous nos chantiers. Soyez vigilants.",
-            "🌱 Environnement : Pensez au tri sélectif de vos déchets de chantier. Préservons nos ressources !",
-            "🚗 Éco-conduite : Réduisons notre consommation en adoptant une conduite souple. Chaque geste compte pour la planète !",
-            "📞 Assistance : Un problème sur un équipement ? Contactez immédiatement le support technique au numéro habituel.",
-            "📋 Qualité : Respectez scrupuleusement les procédures de contrôle avant chaque mise en service.",
-            "🤝 Cohésion : Merci à toutes les équipes pour leur implication sur les chantiers cette semaine !",
-            "💡 Suggestion : Une idée pour améliorer la sécurité ou la productivité ? Partagez-la avec votre responsable d'équipe.",
-            "⚙️ Maintenance : Pensez à vérifier l'état de votre matériel avant le départ sur site.",
-            "📅 Information : Le planning de la semaine prochaine est en cours de finalisation, consultez vos notifications."
-        ];
-
         let selectedNews = [];
         try {
             const response = await fetch(`${config.api.workerUrl}/planning/news`);
@@ -969,12 +957,11 @@ window.startTVFooter = function () {
                 selectedNews = await response.json();
             }
         } catch (e) {
-            console.warn("Could not fetch planning news from worker, falling back to corporate messages:", e);
+            console.warn("Could not fetch planning news from worker:", e);
         }
 
-        if (selectedNews.length === 0) {
-            const shuffled = [...fallbackNews].sort(() => 0.5 - Math.random());
-            selectedNews = shuffled.slice(0, 4);
+        if (!selectedNews || selectedNews.length === 0) {
+            selectedNews = ["⚠️ Erreur de récupération des actualités en direct"];
         }
 
         const selected = selectedNews.join("   •   ");
