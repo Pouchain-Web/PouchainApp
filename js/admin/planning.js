@@ -343,7 +343,7 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                     width: 100vw; height: 100vh;
                     z-index: 100000;
                     background: #f8f9fa;
-                    flex-direction: row;
+                    flex-direction: column;
                     overflow: hidden;
                 }
                 #planning-tv-container.active { display: flex; }
@@ -370,6 +370,16 @@ window.renderAdminPlanning = async function (mondayStr = null, isTV = false, isR
                 
                 /* Classic Fullscreen: Hide footer */
                 .planning-fullscreen #planning-footer-config { display: none !important; }
+
+                /* TV Ticker & Badge Animations */
+                @keyframes ticker {
+                    0% { transform: translate3d(0, 0, 0); }
+                    100% { transform: translate3d(-100%, 0, 0); }
+                }
+                @keyframes flashRed {
+                    0%, 100% { background-color: #FF3B30; box-shadow: 0 0 8px rgba(255,59,48,0.5); }
+                    50% { background-color: #FF453A; box-shadow: 0 0 15px rgba(255,69,58,0.8); }
+                }
             `;
             document.head.appendChild(style);
         }
@@ -896,6 +906,136 @@ window.changePlanningWeek = function (currentMondayStr, offsetDays) {
     renderAdminPlanning(`${yyyy}-${mm}-${dd}`);
 };
 
+window.startTVFooter = function () {
+    if (window.tvWeatherInterval) clearInterval(window.tvWeatherInterval);
+    if (window.tvTickerInterval) clearInterval(window.tvTickerInterval);
+
+    const updateWeather = async () => {
+        const weatherEl = document.getElementById('p-tv-weather');
+        if (!weatherEl) return;
+
+        let city = "Cuers";
+        let lat = 43.2375;
+        let lon = 6.0717;
+
+        try {
+            const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`);
+            if (weatherRes.ok) {
+                const weatherData = await weatherRes.json();
+                const temp = Math.round(weatherData.current.temperature_2m);
+                const code = weatherData.current.weather_code;
+
+                let emoji = "☀️";
+                let desc = "Ensoleillé";
+                if (code === 0) { emoji = "☀️"; desc = "Ensoleillé"; }
+                else if (code >= 1 && code <= 3) { emoji = "🌤️"; desc = "Éclaircies"; }
+                else if (code === 45 || code === 48) { emoji = "🌫️"; desc = "Brouillard"; }
+                else if (code >= 51 && code <= 55) { emoji = "🌧️"; desc = "Bruine"; }
+                else if (code >= 61 && code <= 65) { emoji = "🌧️"; desc = "Pluie"; }
+                else if (code >= 71 && code <= 75) { emoji = "🌨️"; desc = "Neige"; }
+                else if (code >= 80 && code <= 82) { emoji = "🌦️"; desc = "Averses"; }
+                else if (code >= 95) { emoji = "⛈️"; desc = "Orageux"; }
+
+                weatherEl.innerHTML = `<span style="color:#FFCC00; font-size:18px; display:inline-block; vertical-align:middle; margin-right:4px;">${emoji}</span> <span style="color:#FFFFFF; text-transform: capitalize; margin-right:6px;">${city}</span> <span style="color:#0A84FF; font-size:15px; font-weight:700;">${temp}°C</span>`;
+            } else {
+                weatherEl.innerText = "Météo indisponible";
+            }
+        } catch (e) {
+            console.error("Failed to fetch weather:", e);
+            weatherEl.innerText = "Erreur météo";
+        }
+    };
+
+    const updateTicker = async () => {
+        const ticker = document.getElementById('p-tv-ticker');
+        if (!ticker) return;
+
+        const fallbackNews = [
+            "⚠️ Sécurité : Le port des EPI (casque, gants, chaussures de sécurité) est obligatoire sur tous nos chantiers. Soyez vigilants.",
+            "🌱 Environnement : Pensez au tri sélectif de vos déchets de chantier. Préservons nos ressources !",
+            "🚗 Éco-conduite : Réduisons notre consommation en adoptant une conduite souple. Chaque geste compte pour la planète !",
+            "📞 Assistance : Un problème sur un équipement ? Contactez immédiatement le support technique au numéro habituel.",
+            "📋 Qualité : Respectez scrupuleusement les procédures de contrôle avant chaque mise en service.",
+            "🤝 Cohésion : Merci à toutes les équipes pour leur implication sur les chantiers cette semaine !",
+            "💡 Suggestion : Une idée pour améliorer la sécurité ou la productivité ? Partagez-la avec votre responsable d'équipe.",
+            "⚙️ Maintenance : Pensez à vérifier l'état de votre matériel avant le départ sur site.",
+            "📅 Information : Le planning de la semaine prochaine est en cours de finalisation, consultez vos notifications."
+        ];
+
+        let selectedNews = [];
+        try {
+            const feeds = [
+                { category: "Général", url: "https://news.google.com/rss?hl=fr&gl=FR&ceid=FR:fr" },
+                { category: "Éco & Énergie", url: "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=fr&gl=FR&ceid=FR:fr" },
+                { category: "Tech", url: "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=fr&gl=FR&ceid=FR:fr" },
+                { category: "Sport", url: "https://news.google.com/rss/headlines/section/topic/SPORTS?hl=fr&gl=FR&ceid=FR:fr" },
+                { category: "Science", url: "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=fr&gl=FR&ceid=FR:fr" }
+            ];
+
+            const fetchPromises = feeds.map(async (feed) => {
+                try {
+                    const response = await fetch('https://corsproxy.io/?' + encodeURIComponent(feed.url));
+                    if (response.ok) {
+                        const text = await response.text();
+                        const parser = new DOMParser();
+                        const xmlDoc = parser.parseFromString(text, 'text/xml');
+                        const items = xmlDoc.querySelectorAll('item');
+                        return Array.from(items).slice(0, 4).map(item => {
+                            let title = item.querySelector('title').textContent;
+                            title = title.replace(/\s+-\s+[^-]+$/, ''); // Nettoyer le nom de la source
+                            return `🔥 [${feed.category}] ${title}`;
+                        });
+                    }
+                } catch (err) {
+                    console.warn(`Failed to fetch feed ${feed.category}:`, err);
+                }
+                return [];
+            });
+
+            const results = await Promise.allSettled(fetchPromises);
+            let combined = [];
+            results.forEach(res => {
+                if (res.status === 'fulfilled' && res.value) {
+                    combined = combined.concat(res.value);
+                }
+            });
+
+            if (combined.length > 0) {
+                selectedNews = combined.sort(() => 0.5 - Math.random()).slice(0, 15);
+            }
+        } catch (e) {
+            console.warn("Could not fetch Google News RSS feeds, falling back to corporate messages:", e);
+        }
+
+        if (selectedNews.length === 0) {
+            const shuffled = [...fallbackNews].sort(() => 0.5 - Math.random());
+            selectedNews = shuffled.slice(0, 4);
+        }
+
+        const selected = selectedNews.join("   •   ");
+        ticker.innerText = selected;
+        const duration = Math.max(20, Math.round(selected.length / 12));
+        ticker.style.animationDuration = `${duration}s`;
+    };
+
+    updateWeather();
+    updateTicker();
+
+    window.tvWeatherInterval = setInterval(updateWeather, 15 * 60 * 1000);
+    window.tvTickerInterval = setInterval(updateTicker, 3 * 60 * 1000);
+};
+
+window.stopTVFooter = function () {
+    if (window.tvWeatherInterval) {
+        clearInterval(window.tvWeatherInterval);
+        window.tvWeatherInterval = null;
+    }
+    if (window.tvTickerInterval) {
+        clearInterval(window.tvTickerInterval);
+        window.tvTickerInterval = null;
+    }
+};
+
 window.togglePlanningFullscreen = function () {
     const urlParams = new URLSearchParams(window.location.search);
     if (!urlParams.get('fullscreen')) {
@@ -909,12 +1049,27 @@ window.togglePlanningFullscreen = function () {
     if (!tv) {
         tv = document.createElement('div');
         tv.id = 'planning-tv-container';
-        tv.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; background:#fff; display:flex; overflow:hidden;";
+        tv.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:999999; background:#fff; display:flex; flex-direction:column; overflow:hidden;";
         tv.innerHTML = `
-            <div id="p-tv-main" style="flex:2; height:100%; overflow:hidden; border-right:2px solid #ddd; display:flex; flex-direction:column; background:#fff;"></div>
-            <div id="p-tv-side" style="flex:1; height:100%; min-width:33vw; background:#000; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;">
-                <img id="p-tv-slideshow" src="logo-pouchain.svg" style="max-width:100%; max-height:100%; object-fit:contain; transition:opacity 0.6s ease-in-out; background:#000;">
-                <iframe id="p-tv-pdfviewer" style="width:100%; height:100%; border:none; display:none;"></iframe>
+            <div style="flex:1; display:flex; flex-direction:row; height:calc(100% - 50px); overflow:hidden; width:100%;">
+                <div id="p-tv-main" style="flex:2; height:100%; overflow:hidden; border-right:2px solid #ddd; display:flex; flex-direction:column; background:#fff;"></div>
+                <div id="p-tv-side" style="flex:1; height:100%; min-width:33vw; background:#000; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                    <img id="p-tv-slideshow" src="logo-pouchain.svg" style="max-width:100%; max-height:100%; object-fit:contain; transition:opacity 0.6s ease-in-out; background:#000;">
+                    <iframe id="p-tv-pdfviewer" style="width:100%; height:100%; border:none; display:none;"></iframe>
+                </div>
+            </div>
+            <div id="p-tv-footer" style="height:50px; background:#1C1C1E; color:#FFFFFF; display:flex; align-items:center; justify-content:space-between; border-top:2px solid #2C2C2E; padding:0 20px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow:hidden; box-sizing:border-box; z-index:1000002; width:100%;">
+                <div style="display:flex; align-items:center; background:#FF3B30; color:white; font-weight:bold; padding:6px 12px; border-radius:4px; font-size:14px; text-transform:uppercase; letter-spacing:1px; white-space:nowrap; margin-right:15px; animation:flashRed 2s infinite;">
+                    ⚡ FLASH INFO
+                </div>
+                <div style="flex:1; overflow:hidden; white-space:nowrap; display:flex; align-items:center; position:relative;">
+                    <div id="p-tv-ticker" style="display:inline-block; padding-left:100%; animation:ticker 25s linear infinite; font-size:15px; font-weight:500; color:#E5E5EA;">
+                        Chargement des flash infos en cours...
+                    </div>
+                </div>
+                <div id="p-tv-weather" style="display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600; border-left:1px solid #2C2C2E; padding-left:15px; margin-left:15px; color:#FFFFFF; white-space:nowrap;">
+                    Chargement météo...
+                </div>
             </div>
         `;
         document.body.appendChild(tv);
@@ -926,11 +1081,13 @@ window.togglePlanningFullscreen = function () {
 
         // Initialize the fullscreen clock ticking
         window.initFullscreenClock();
+        window.startTVFooter();
     } else {
         // Closing
         tv.classList.remove('active');
         stopSlideshow();
         window.stopFullscreenClock();
+        window.stopTVFooter();
         if (document.fullscreenElement) {
             document.exitFullscreen().catch(() => { });
         }

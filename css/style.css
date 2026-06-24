@@ -912,11 +912,11 @@ body {
 
 /* --- Back Button --- */
 :root[data-theme="dark"] .back-button {
-    color: #30D158;
+    color: #FF3B30;
 }
 
 :root[data-theme="dark"] .back-button svg {
-    stroke: #30D158;
+    stroke: #FF3B30;
 }
 
 /* --- Modals --- */
