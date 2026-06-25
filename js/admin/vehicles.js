@@ -9,9 +9,9 @@ window.renderAdminVehicles = async function () {
 
     const content = document.getElementById('admin-content');
     content.innerHTML = `
-        <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
+        <div style="height: 100%; display: flex; flex-direction: column; overflow-y: auto; padding: 30px; background: rgba(0,0,0,0.1); backdrop-filter: blur(40px); border-radius: 24px;">
             <!-- Header Section -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.4); padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;">
                 <div style="display: flex; align-items: center; gap: 20px;">
                     <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #007AFF, #0056b3); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(0, 122, 255, 0.2);">
                         <span style="font-size: 28px;">🚐</span>
@@ -37,8 +37,15 @@ window.renderAdminVehicles = async function () {
                     </button>
                 </div>
             </div>
-        <div id="admin-vehicle-list-wrapper">
-            <div class="loader-spinner" style="margin: 50px auto;"></div>
+            
+            <div id="admin-vehicle-list-wrapper">
+                <div class="loader-spinner" style="margin: 50px auto;"></div>
+            </div>
+
+            <!-- Historique carburant véhicule de location -->
+            <div id="rental-vehicles-fuel-wrapper" style="margin-top: 30px; display: flex; flex-direction: column; background: rgba(0,0,0,0.4); padding: 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;">
+                <div class="loader-spinner" style="margin: 30px auto;"></div>
+            </div>
         </div>
     `;
 
@@ -48,12 +55,33 @@ window.renderAdminVehicles = async function () {
             api.listUsers()
         ]);
 
+        // Auto-create dummy location vehicle if missing
+        let locationVehicle = allVehicles.find(v => v.plate_number === 'LOCATION');
+        if (!locationVehicle) {
+            try {
+                locationVehicle = await api.saveVehicle({
+                    make: 'Véhicule de Location',
+                    model: 'Générique',
+                    plate_number: 'LOCATION',
+                    assigned_user_id: null,
+                    dkv_card: '',
+                    toll_card: ''
+                });
+                allVehicles.push(locationVehicle);
+            } catch (err) {
+                console.error("Error creating rental vehicle dummy:", err);
+            }
+        }
+
         // Filtre secteur — véhicules affectés au secteur courant + non affectés.
         // 'Tout' affiche tout. Pour ajouter un secteur, aucun changement nécessaire ici.
         const vehSecteur = window.currentUserProfile?.secteur || 'AIA';
         const vehicles = vehSecteur === 'Tout'
             ? allVehicles
             : allVehicles.filter(v => !v.assigned_user_id || v.profiles?.secteur === vehSecteur);
+
+        // Filter out dummy vehicle from main table
+        const vehiclesFiltered = vehicles.filter(v => v.plate_number !== 'LOCATION');
 
         let html = `
             <div class="admin-table-container glass-panel" style="padding: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
@@ -72,10 +100,10 @@ window.renderAdminVehicles = async function () {
                     <tbody>
         `;
 
-        if (vehicles.length === 0) {
-            html += `<tr><td colspan="6" style="text-align:center; padding: 40px; color: #888;">Aucun véhicule enregistré</td></tr>`;
+        if (vehiclesFiltered.length === 0) {
+            html += `<tr><td colspan="7" style="text-align:center; padding: 40px; color: #888;">Aucun véhicule enregistré</td></tr>`;
         } else {
-            vehicles.forEach(v => {
+            vehiclesFiltered.forEach(v => {
                 const userName = v.profiles ? `${v.profiles.first_name} ${v.profiles.last_name}`.trim() : '<span style="color:#666">Non affecté</span>';
 
                 // Alert logic
@@ -184,10 +212,207 @@ window.renderAdminVehicles = async function () {
         // Global update badge for vehicles
         updateVehicleSidebarBadge(vehicles);
 
+        // Render Rental Fuel Section
+        if (locationVehicle) {
+            renderRentalFuelHistory(locationVehicle);
+        }
+
     } catch (e) {
         const wrapper = document.getElementById('admin-vehicle-list-wrapper');
         if (wrapper) wrapper.innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
         else content.innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.renderRentalFuelHistory = async function (locationVehicle) {
+    const wrapper = document.getElementById('rental-vehicles-fuel-wrapper');
+    if (!wrapper) return;
+
+    try {
+        wrapper.innerHTML = `
+            <!-- Section Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="width: 54px; height: 54px; background: linear-gradient(135deg, #FF9500, #FF5E00); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 16px rgba(255, 149, 0, 0.2);">
+                        <span style="font-size: 28px;">⛽</span>
+                    </div>
+                    <div>
+                        <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Historique carburant véhicule de location</h2>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Suivi des pleins effectués pour les véhicules de location</p>
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="openAddRentalFuelModal()" style="border-radius: 12px; height: 46px; padding: 0 20px; background: #FF9500; font-weight: 700; display: flex; align-items: center; gap: 10px; border: none; color: white; cursor: pointer; transition: all 0.2s;">
+                    <span style="font-size: 18px;">+</span> Saisir carburant location
+                </button>
+            </div>
+            <div id="rental-fuel-list-wrapper">
+                <div class="loader-spinner" style="margin: 30px auto;"></div>
+            </div>
+        `;
+
+        const [logs, dkvCards] = await Promise.all([
+            api.getVehicleAllLogs(locationVehicle.id),
+            api.getDkvCards()
+        ]);
+        const rentalLogs = logs.filter(l => l.type === 'rental_fuel');
+
+        const cardDescriptions = {};
+        dkvCards.forEach(c => {
+            cardDescriptions[c.card_number] = c.description;
+        });
+
+        let html = `
+            <div class="admin-table-container glass-panel" style="padding: 24px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Montant</th>
+                            <th>Carte DKV</th>
+                            <th>Type de véhicule</th>
+                            <th style="text-align: right; width: 80px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        if (rentalLogs.length === 0) {
+            html += `<tr><td colspan="5" style="text-align:center; padding: 30px; color:#888;">Aucun plein enregistré pour les véhicules de location</td></tr>`;
+        } else {
+            rentalLogs.forEach(l => {
+                const dateStr = new Date(l.created_at).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                // Parse description format: "Type : [Type] | Carte DKV : [Card]" or legacy "Chauffeur : [Driver] | Carte DKV : [Card]"
+                let vehicleType = "Inconnu";
+                let dkvCard = "Aucune";
+                if (l.description) {
+                    const parts = l.description.split('|');
+                    parts.forEach(p => {
+                        if (p.includes('Type :')) {
+                            vehicleType = p.replace('Type :', '').trim();
+                        } else if (p.includes('Chauffeur :')) {
+                            vehicleType = p.replace('Chauffeur :', '').trim();
+                        } else if (p.includes('Carte DKV :')) {
+                            dkvCard = p.replace('Carte DKV :', '').trim();
+                        }
+                    });
+                }
+
+                const cardOwner = cardDescriptions[dkvCard];
+                const dkvDisplay = cardOwner ? `${dkvCard} (${cardOwner})` : dkvCard;
+
+                html += `
+                    <tr>
+                        <td><span style="color: white; font-weight: 600;">${dateStr}</span></td>
+                        <td><span style="color: #FF9500; font-weight: 800; font-size: 15px;">${parseFloat(l.value || 0).toFixed(2)} €</span></td>
+                        <td><span style="font-family: 'JetBrains Mono', monospace; color: #bbb;">${dkvDisplay}</span></td>
+                        <td><span style="color: white; font-weight: 500;">${vehicleType}</span></td>
+                        <td style="text-align: right;">
+                            <button class="btn-sm" style="background: rgba(255, 59, 48, 0.15); color: #FF3B30; border: 1px solid rgba(255,59,48,0.2); padding: 8px 10px; border-radius: 10px; cursor: pointer; transition: 0.2s;" onclick="handleDeleteRentalFuelLog('${l.id}')">🗑️</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `</tbody></table></div>`;
+        document.getElementById('rental-fuel-list-wrapper').innerHTML = html;
+
+        window.handleDeleteRentalFuelLog = async (logId) => {
+            if (!confirm("Voulez-vous vraiment supprimer cette entrée de carburant ?")) return;
+            try {
+                await api.deleteVehicleLog(logId);
+                renderRentalFuelHistory(locationVehicle);
+            } catch (e) {
+                alert("Erreur: " + e.message);
+            }
+        };
+
+    } catch (e) {
+        document.getElementById('rental-fuel-list-wrapper').innerHTML = `<div style="color:red; padding:20px;">Erreur: ${e.message}</div>`;
+    }
+};
+
+window.openAddRentalFuelModal = async function () {
+    try {
+        const vehicles = await api.getVehicles();
+        const locationVehicle = vehicles.find(v => v.plate_number === 'LOCATION');
+        if (!locationVehicle) return alert("Erreur: Véhicule de location générique introuvable.");
+
+        const dkvCards = await api.getDkvCards();
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = "100050";
+        modal.innerHTML = `
+            <div class="modal-box glass-panel" style="padding: 30px; border-radius: 24px; width: 450px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+                <h2 style="margin-top: 0; margin-bottom: 20px; color: white; font-size: 20px;">⛽ Saisie Carburant Location</h2>
+                
+                <div style="margin-bottom: 20px;">
+                    <label class="form-label" style="color: #8E8E93;">Montant (€)</label>
+                    <input type="number" id="rental-fuel-amount" step="0.01" class="form-input" style="width: 100%; font-size: 16px; font-weight: 700;" placeholder="ex: 85.20">
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label class="form-label" style="color: #8E8E93;">Carte DKV</label>
+                    <select id="rental-fuel-dkv" class="form-input" style="width: 100%;">
+                        <option value="">-- Sélectionner une carte --</option>
+                        ${dkvCards.map(c => `<option value="${c.card_number}">${c.card_number} (${c.description || 'DKV'})</option>`).join('')}
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                    <label class="form-label" style="color: #8E8E93;">Type de véhicule</label>
+                    <input type="text" id="rental-fuel-type" class="form-input" style="width: 100%;" placeholder="ex: Master, Kangoo...">
+                </div>
+                
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn-secondary" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Annuler</button>
+                    <button id="save-rental-fuel-btn" class="btn-primary" style="flex: 1; background: #FF9500;">Enregistrer</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('rental-fuel-amount').focus();
+
+        document.getElementById('save-rental-fuel-btn').onclick = async () => {
+            const amount = document.getElementById('rental-fuel-amount').value;
+            const dkvCard = document.getElementById('rental-fuel-dkv').value;
+            const vehicleType = document.getElementById('rental-fuel-type').value.trim();
+
+            if (!amount || !dkvCard || !vehicleType) {
+                return alert("Veuillez remplir tous les champs.");
+            }
+
+            const btn = document.getElementById('save-rental-fuel-btn');
+            btn.disabled = true;
+            btn.innerText = "Enregistrement...";
+
+            try {
+                await api.submitVehicleLog({
+                    vehicle_id: locationVehicle.id,
+                    type: 'rental_fuel',
+                    value: amount,
+                    description: `Type : ${vehicleType} | Carte DKV : ${dkvCard}`,
+                    is_personal: false
+                });
+                modal.remove();
+                renderRentalFuelHistory(locationVehicle);
+            } catch (e) {
+                alert("Erreur: " + e.message);
+                btn.disabled = false;
+                btn.innerText = "Enregistrer";
+            }
+        };
+    } catch (e) {
+        alert("Erreur: " + e.message);
     }
 };
 
@@ -517,10 +742,13 @@ window.updateVehicleSidebarBadge = function (vehicles) {
         ? vehicles
         : vehicles.filter(v => !v.assigned_user_id || v.profiles?.secteur === vBadgeSecteur);
 
+    // Exclude dummy LOCATION vehicle from alerts
+    const activeVehicles = sectorVehicles.filter(v => v.plate_number !== 'LOCATION');
+
     let alertCount = 0;
     const today = new Date();
 
-    sectorVehicles.forEach(v => {
+    activeVehicles.forEach(v => {
         let isAlert = false;
         if (v.next_maintenance_km && (v.next_maintenance_km - v.last_mileage <= 2000)) isAlert = true;
         if (v.next_maintenance_date) {
