@@ -42,7 +42,7 @@ window.renderAdminVehicles = async function () {
                 <div class="loader-spinner" style="margin: 50px auto;"></div>
             </div>
 
-            <!-- Historique carburant véhicule de location -->
+            <!-- Historique carburant véhicule de location/GE -->
             <div id="rental-vehicles-fuel-wrapper" style="margin-top: 30px; display: flex; flex-direction: column; background: rgba(0,0,0,0.4); padding: 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;">
                 <div class="loader-spinner" style="margin: 30px auto;"></div>
             </div>
@@ -237,7 +237,7 @@ window.renderRentalFuelHistory = async function (locationVehicle) {
                         <span style="font-size: 28px;">⛽</span>
                     </div>
                     <div>
-                        <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Historique carburant véhicule de location</h2>
+                        <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Historique carburant véhicule de location/GE</h2>
                         <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Suivi des pleins effectués pour les véhicules de location</p>
                     </div>
                 </div>
@@ -267,6 +267,7 @@ window.renderRentalFuelHistory = async function (locationVehicle) {
                     <thead>
                         <tr>
                             <th>Date</th>
+                            <th>Volume (L)</th>
                             <th>Montant</th>
                             <th>Carte DKV</th>
                             <th>Type de véhicule</th>
@@ -277,7 +278,7 @@ window.renderRentalFuelHistory = async function (locationVehicle) {
         `;
 
         if (rentalLogs.length === 0) {
-            html += `<tr><td colspan="5" style="text-align:center; padding: 30px; color:#888;">Aucun plein enregistré pour les véhicules de location</td></tr>`;
+            html += `<tr><td colspan="6" style="text-align:center; padding: 30px; color:#888;">Aucun plein enregistré pour les véhicules de location</td></tr>`;
         } else {
             rentalLogs.forEach(l => {
                 const dateStr = new Date(l.created_at).toLocaleDateString('fr-FR', {
@@ -287,15 +288,18 @@ window.renderRentalFuelHistory = async function (locationVehicle) {
                     hour: '2-digit',
                     minute: '2-digit'
                 });
-                
-                // Parse description format: "Type : [Type] | Carte DKV : [Card]" or legacy "Chauffeur : [Driver] | Carte DKV : [Card]"
+
+                // Parse description format: "Type : [Type] | Volume : [Vol] L | Carte DKV : [Card]" or legacy "Chauffeur : [Driver] | Carte DKV : [Card]"
                 let vehicleType = "Inconnu";
                 let dkvCard = "Aucune";
+                let volumeVal = "--";
                 if (l.description) {
                     const parts = l.description.split('|');
                     parts.forEach(p => {
                         if (p.includes('Type :')) {
                             vehicleType = p.replace('Type :', '').trim();
+                        } else if (p.includes('Volume :')) {
+                            volumeVal = p.replace('Volume :', '').replace('L', '').trim() + ' L';
                         } else if (p.includes('Chauffeur :')) {
                             vehicleType = p.replace('Chauffeur :', '').trim();
                         } else if (p.includes('Carte DKV :')) {
@@ -310,6 +314,7 @@ window.renderRentalFuelHistory = async function (locationVehicle) {
                 html += `
                     <tr>
                         <td><span style="color: white; font-weight: 600;">${dateStr}</span></td>
+                        <td><span style="color: white; font-weight: 600;">${volumeVal}</span></td>
                         <td><span style="color: #FF9500; font-weight: 800; font-size: 15px;">${parseFloat(l.value || 0).toFixed(2)} €</span></td>
                         <td><span style="font-family: 'JetBrains Mono', monospace; color: #bbb;">${dkvDisplay}</span></td>
                         <td><span style="color: white; font-weight: 500;">${vehicleType}</span></td>
@@ -354,9 +359,15 @@ window.openAddRentalFuelModal = async function () {
             <div class="modal-box glass-panel" style="padding: 30px; border-radius: 24px; width: 450px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
                 <h2 style="margin-top: 0; margin-bottom: 20px; color: white; font-size: 20px;">⛽ Saisie Carburant Location</h2>
                 
-                <div style="margin-bottom: 20px;">
-                    <label class="form-label" style="color: #8E8E93;">Montant (€)</label>
-                    <input type="number" id="rental-fuel-amount" step="0.01" class="form-input" style="width: 100%; font-size: 16px; font-weight: 700;" placeholder="ex: 85.20">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <label class="form-label" style="color: #8E8E93;">Volume (L)</label>
+                        <input type="number" id="rental-fuel-volume" step="0.01" class="form-input" style="width: 100%; font-size: 16px; font-weight: 700;" placeholder="ex: 45.50">
+                    </div>
+                    <div>
+                        <label class="form-label" style="color: #8E8E93;">Montant (€)</label>
+                        <input type="number" id="rental-fuel-amount" step="0.01" class="form-input" style="width: 100%; font-size: 16px; font-weight: 700;" placeholder="ex: 85.20">
+                    </div>
                 </div>
 
                 <div style="margin-bottom: 20px;">
@@ -380,14 +391,15 @@ window.openAddRentalFuelModal = async function () {
         `;
         document.body.appendChild(modal);
 
-        document.getElementById('rental-fuel-amount').focus();
+        document.getElementById('rental-fuel-volume').focus();
 
         document.getElementById('save-rental-fuel-btn').onclick = async () => {
+            const volume = document.getElementById('rental-fuel-volume').value;
             const amount = document.getElementById('rental-fuel-amount').value;
             const dkvCard = document.getElementById('rental-fuel-dkv').value;
             const vehicleType = document.getElementById('rental-fuel-type').value.trim();
 
-            if (!amount || !dkvCard || !vehicleType) {
+            if (!volume || !amount || !dkvCard || !vehicleType) {
                 return alert("Veuillez remplir tous les champs.");
             }
 
@@ -400,7 +412,7 @@ window.openAddRentalFuelModal = async function () {
                     vehicle_id: locationVehicle.id,
                     type: 'rental_fuel',
                     value: amount,
-                    description: `Type : ${vehicleType} | Carte DKV : ${dkvCard}`,
+                    description: `Type : ${vehicleType} | Volume : ${volume} L | Carte DKV : ${dkvCard}`,
                     is_personal: false
                 });
                 modal.remove();
@@ -1485,14 +1497,14 @@ window.openMachineDetailModal = async function (id) {
                             ` : `
                                 <div style="display: flex; flex-direction: column; gap: 8px;">
                                     ${m.attachments.map(file => {
-                                        const sizeStr = file.size ? `(${(file.size / (1024 * 1024)).toFixed(2)} Mo)` : '';
-                                        return `
+            const sizeStr = file.size ? `(${(file.size / (1024 * 1024)).toFixed(2)} Mo)` : '';
+            return `
                                             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); padding: 10px 15px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
                                                 <span style="font-size: 13px; font-weight: 600; color: #FFF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px;">📄 ${file.name}</span>
                                                 <a href="${config.api.workerUrl}/get/${encodeURIComponent(file.key)}" target="_blank" class="btn-sm" style="background: rgba(255, 149, 0, 0.1); color: #FF9500; border: 1px solid rgba(255,149,0,0.2); padding: 6px 12px; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 12px; display: inline-block;">Ouvrir</a>
                                             </div>
                                         `;
-                                    }).join('')}
+        }).join('')}
                                 </div>
                             `}
                         </div>
@@ -1817,15 +1829,15 @@ window.openMachineEditModal = async function (id = null) {
         if (!input.files || input.files.length === 0) return;
         const files = Array.from(input.files);
         const listDiv = document.getElementById('m-attachments-list');
-        
+
         input.disabled = true;
-        
+
         for (const file of files) {
             const loadingDiv = document.createElement('div');
             loadingDiv.style.cssText = "display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #888;";
             loadingDiv.innerHTML = `<span>⏳ Upload de ${file.name}...</span>`;
             listDiv.appendChild(loadingDiv);
-            
+
             try {
                 const uploaded = await api.uploadMachineAttachment(file);
                 currentAttachments.push({ name: uploaded.name, key: uploaded.key, size: uploaded.size });
@@ -1833,7 +1845,7 @@ window.openMachineEditModal = async function (id = null) {
                 alert(`Erreur d'upload pour ${file.name}: ` + e.message);
             }
         }
-        
+
         input.disabled = false;
         input.value = "";
         renderAttachments();
