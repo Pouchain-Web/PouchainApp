@@ -26,7 +26,7 @@ window.renderAdminFolders = async function () {
         const parts = file.key.split('/');
         if (parts.length < 2) return;
         const folderName = parts[0];
-        if (folderName === 'reports_photos') return;
+        if (folderName === 'reports_photos' || folderName.toLowerCase() === 'autres') return;
 
         // Extraire les métadonnées secteur
         if (parts[1].startsWith('.meta_sectors_')) {
