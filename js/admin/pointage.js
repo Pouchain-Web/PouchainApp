@@ -371,10 +371,15 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
                         ${isFullyComplete ? 'OK' : 'Relancer'}
                     </div>
                 </td>
-                <td style="padding: 15px 25px; text-align: center;" onclick="event.stopPropagation(); window.toggleUserWeekLock('${user.id}', ${week}, ${year}, ${isLocked}, ${latestReq ? `'${latestReq.id}'` : 'null'})">
-                    <span style="font-size: 18px; cursor: pointer;" title="${isLocked ? 'Semaine verrouillée - Cliquer pour déverrouiller' : 'Semaine déverrouillée - Cliquer pour verrouiller'}">
-                        ${isLocked ? '🔒' : '🔓'}
-                    </span>
+                <td style="padding: 15px 25px; text-align: center;" onclick="event.stopPropagation();">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+                        <span onclick="window.toggleUserWeekLock('${user.id}', ${week}, ${year}, ${isLocked}, ${latestReq ? `'${latestReq.id}'` : 'null'})" style="font-size: 18px; cursor: pointer;" title="${isLocked ? 'Semaine verrouillée - Cliquer pour déverrouiller' : 'Semaine déverrouillée - Cliquer pour verrouiller'}">
+                            ${isLocked ? '🔒' : '🔓'}
+                        </span>
+                        <button onclick="window.exportSingleUserPointage('${user.id}', ${week}, ${year})" style="background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.2)';" onmouseout="this.style.transform='scale(1)';" title="Exporter en PDF">
+                            📥
+                        </button>
+                    </div>
                 </td>
             `;
             tableBody.appendChild(row);
@@ -687,6 +692,208 @@ window.exportPointageToExcel = async function (week, year) {
     } catch (e) {
         alert("Erreur lors de l'export PDF: " + e.message);
         console.error(e);
+    }
+};
+
+window.exportSingleUserPointage = async function (userId, week, year) {
+    try {
+        const [allUsers, pointages] = await Promise.all([api.listUsers(), api.getAllPointages(week, year)]);
+        const user = allUsers.find(u => u.id === userId);
+        if (!user) return alert("Utilisateur introuvable.");
+
+        const userPointages = pointages.filter(p => p.user_id === userId);
+        if (userPointages.length === 0) return alert("Aucun pointage pour cet utilisateur cette semaine.");
+
+        // Load jspdf-autotable dynamically if not present
+        if (!window.jspdf || !window.jspdf.jsPDF.API.autoTable) {
+            window.showToast("Chargement du module PDF...");
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                script.onload = () => {
+                    const script2 = document.createElement('script');
+                    script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+                    script2.onload = resolve;
+                    script2.onerror = reject;
+                    document.head.appendChild(script2);
+                };
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        const monday = window.getMondayOfISOWeek(week, year);
+
+        const formatDM = (d) => {
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            return `${dd}/${mm}`;
+        };
+
+        const getPeriodString = (m) => {
+            const sunday = new Date(m);
+            sunday.setUTCDate(m.getUTCDate() + 6);
+            const formatDate = (d) => {
+                const dd = String(d.getUTCDate()).padStart(2, '0');
+                const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+                const yyyy = d.getUTCFullYear();
+                return `${dd}/${mm}/${yyyy}`;
+            };
+            return `Du ${formatDate(m)} au ${formatDate(sunday)}`;
+        };
+
+        const periodStr = getPeriodString(monday);
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+        const userFullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
+        const userSociete = user.societe || 'Pouchain';
+
+        const drawHeaderCell = (text, x, y, w, h, bgColor, textColor) => {
+            doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+            doc.rect(x, y, w, h, "F");
+            doc.setDrawColor(191, 191, 191);
+            doc.rect(x, y, w, h, "S");
+            doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+            doc.setFont("Helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.text(text, x + 3, y + 5);
+        };
+
+        const bgBlue = [221, 235, 247];
+        const textBlue = [31, 78, 120];
+
+        drawHeaderCell(`SOCIÉTÉ: ${userSociete.toUpperCase()}`, 14, 14, 107.6, 8, bgBlue, textBlue);
+        drawHeaderCell(`SEMAINE: ${week}`, 121.6, 14, 80.7, 8, bgBlue, textBlue);
+        drawHeaderCell(`ANNÉE: ${year}`, 202.3, 14, 80.7, 8, bgBlue, textBlue);
+
+        drawHeaderCell(`COLLABORATEUR: ${userFullName}`, 14, 22, 107.6, 8, bgBlue, textBlue);
+        drawHeaderCell(`PÉRIODE: ${periodStr}`, 121.6, 22, 161.4, 8, bgBlue, textBlue);
+
+        const bodyRows = [];
+        const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+        let totalWeekHours = 0;
+        let totalWeekNightHours = 0;
+
+        days.forEach((dayName, dayIdx) => {
+            const date = new Date(monday);
+            date.setUTCDate(monday.getUTCDate() + dayIdx);
+            const isoDate = date.toISOString().split('T')[0];
+
+            const p = userPointages.find(pt => pt.date === isoDate) || {
+                date: isoDate,
+                activities: [],
+                night_hours: 0,
+                grand_deplacement: false,
+                vehicule_pouchain: false,
+                repas: "",
+                trajet: ""
+            };
+
+            const activities = p.activities || [];
+            if ((dayIdx === 5 || dayIdx === 6) && activities.length === 0) {
+                return;
+            }
+
+            const numRows = Math.max(3, activities.length);
+            const dayTotalHours = activities.reduce((acc, act) => acc + (parseFloat(act.hours) || 0), 0);
+            totalWeekHours += dayTotalHours;
+            totalWeekNightHours += parseFloat(p.night_hours) || 0;
+
+            const isGreenDay = (dayIdx % 2 === 1);
+            const rowBgColor = isGreenDay ? [226, 239, 218] : [255, 255, 255];
+            const dayLabel = `${dayName} ${formatDM(date)}`;
+
+            for (let subIdx = 0; subIdx < numRows; subIdx++) {
+                const act = activities[subIdx] || {};
+                const isFirst = (subIdx === 0);
+                const zoneVal = (p.trajet === "Aucune" || p.trajet === "Aucun") ? "" : (p.trajet || "");
+                const transportVal = p.vehicule_pouchain ? "" : zoneVal;
+
+                const row = [];
+
+                if (isFirst) {
+                    row.push({ content: dayLabel, rowSpan: numRows, styles: { fillColor: rowBgColor, fontStyle: 'bold', valign: 'middle', halign: 'center' } });
+                }
+
+                row.push({ content: act.activity_name || "", styles: { fillColor: rowBgColor, halign: 'left' } });
+                row.push({ content: act.hours !== undefined && act.hours !== null ? String(act.hours) : "", styles: { fillColor: rowBgColor, halign: 'center' } });
+
+                if (isFirst) {
+                    row.push({ content: String(dayTotalHours || 0), rowSpan: numRows, styles: { fillColor: rowBgColor, fontStyle: 'bold', valign: 'middle', halign: 'center' } });
+                    row.push({ content: String(p.night_hours || 0), rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                    row.push({ content: p.grand_deplacement ? "OUI" : "NON", rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                    row.push({ content: p.repas || "", rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                    row.push({ content: transportVal, rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                    row.push({ content: zoneVal, rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                    row.push({ content: "", rowSpan: numRows, styles: { fillColor: rowBgColor, valign: 'middle', halign: 'center' } });
+                }
+
+                bodyRows.push(row);
+            }
+        });
+
+        bodyRows.push([
+            { content: "TOTAL HEURES SEMAINE", colSpan: 3, styles: { fillColor: [217, 217, 217], fontStyle: 'bold', halign: 'left' } },
+            { content: String(totalWeekHours), styles: { fillColor: [217, 217, 217], fontStyle: 'bold', halign: 'center' } },
+            { content: String(totalWeekNightHours), styles: { fillColor: [217, 217, 217], fontStyle: 'bold', halign: 'center' } },
+            { content: "", colSpan: 5, styles: { fillColor: [217, 217, 217] } }
+        ]);
+
+        doc.autoTable({
+            startY: 34,
+            head: [[
+                { content: "Jour", styles: { halign: 'center' } },
+                { content: "Activité", styles: { halign: 'center' } },
+                { content: "Heures", styles: { halign: 'center' } },
+                { content: "Durée totale", styles: { halign: 'center' } },
+                { content: "Heures de Nuit", styles: { halign: 'center' } },
+                { content: "GD", styles: { halign: 'center' } },
+                { content: "Repas", styles: { halign: 'center' } },
+                { content: "Transport", styles: { halign: 'center' } },
+                { content: "Trajet", styles: { halign: 'center' } },
+                { content: "Prime", styles: { halign: 'center' } }
+            ]],
+            body: bodyRows,
+            theme: 'grid',
+            styles: {
+                fontSize: 7.5,
+                cellPadding: 1.8,
+                lineColor: [153, 153, 153],
+                lineWidth: 0.15,
+                textColor: [0, 0, 0]
+            },
+            headStyles: {
+                fillColor: [55, 86, 35],
+                textColor: [255, 255, 255],
+                fontSize: 8,
+                fontStyle: 'bold',
+                lineWidth: 0.15,
+                lineColor: [153, 153, 153]
+            },
+            columnStyles: {
+                0: { cellWidth: 32 },
+                1: { cellWidth: 78 },
+                2: { cellWidth: 15 },
+                3: { cellWidth: 22 },
+                4: { cellWidth: 26 },
+                5: { cellWidth: 14 },
+                6: { cellWidth: 28 },
+                7: { cellWidth: 20 },
+                8: { cellWidth: 18 },
+                9: { cellWidth: 16 }
+            },
+            margin: { left: 14, right: 14 }
+        });
+
+        const formattedName = `${user.last_name || ''}_${user.first_name || ''}`.trim() || user.email;
+        const safeName = formattedName.replace(/[^a-zA-Z0-9_ -]/g, "");
+        const filename = `Recap_Hebdo_S${week}_${year}_${safeName}.pdf`;
+
+        doc.save(filename);
+        window.showToast("🚀 PDF généré avec succès !");
+    } catch (e) {
+        alert("Erreur lors de l'export PDF: " + e.message);
     }
 };
 
