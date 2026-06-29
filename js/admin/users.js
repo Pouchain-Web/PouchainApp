@@ -86,8 +86,8 @@ window.renderAdminUsers = async function () {
                                  </td>
                                  <td>${new Date(u.created_at).toLocaleDateString()}</td>
                                  <td>
-                                     <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${userColor}', '${u.secteur || 'Tout'}', '${u.societe || 'Pouchain'}')" title="Modifier le nom">✏️ Editer</button>
-                                    ${window.currentAdminSession && window.currentAdminSession.user.email === u.email
+                                      <button class="btn-sm btn-view" onclick="openEditUserModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${userColor}', '${u.secteur || 'Tout'}', '${u.societe || 'Pouchain'}', '${u.assigned_markets || ''}')" title="Modifier le nom">✏️ Editer</button>
+                                     ${window.currentAdminSession && window.currentAdminSession.user.email === u.email
                     ? `<button class="btn-sm btn-view" onclick="openChangePasswordModal()" title="Changer mon mot de passe">🔑 Changer Mdp</button>
                                            <span style="color: #8E8E93; font-size: 13px; padding: 6px 12px;">(Vous)</span>`
                     : `<button class="btn-sm btn-view" onclick="openAdminChangePasswordModal('${u.id}', '${jsFirstName}', '${jsLastName}', '${jsEmail}')" title="Changer le mot de passe manuellement">🔑 Changer Mdp</button>
@@ -395,7 +395,7 @@ window.deleteUser = function (id, email) {
     );
 };
 
-window.openEditUserModal = function (id, firstName, lastName, color = '#FF3B30', secteur = 'Tout', societe = 'Pouchain') {
+window.openEditUserModal = function (id, firstName, lastName, color = '#FF3B30', secteur = 'Tout', societe = 'Pouchain', assignedMarkets = '') {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'edit-user-modal';
@@ -455,7 +455,7 @@ window.updateUserProfileName = async function (id) {
     const societe = document.getElementById('edit-user-societe').value;
 
     try {
-        await api.updateUserProfile(id, firstName, lastName, secteur, societe);
+        await api.updateUserProfile(id, firstName, lastName, secteur, societe, undefined);
         await api.updateUserColor(id, color);
 
         showSuccessModal("Profil mis à jour avec succès.");

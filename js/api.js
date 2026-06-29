@@ -261,7 +261,7 @@ export const api = {
         return await response.json();
     },
 
-    async updateUserProfile(id, firstName, lastName, secteur, societe) {
+    async updateUserProfile(id, firstName, lastName, secteur, societe, assignedMarkets) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/profile`, {
             method: 'PUT',
@@ -269,7 +269,7 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, firstName, lastName, secteur, societe })
+            body: JSON.stringify({ id, firstName, lastName, secteur, societe, assignedMarkets })
         });
 
         if (!response.ok) throw new Error(await response.text());
@@ -2196,6 +2196,42 @@ export const api = {
                 ...(await getAuthHeaders())
             },
             body: JSON.stringify({ signatureId, signedAt })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async toggleUserWeekLock(targetUserId, week, year, lock, latestReqId) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/admin/pointage/toggle-lock`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ targetUserId, week, year, lock, latestReqId })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async getPlanningPrevisionnelChecks() {
+        const response = await fetch(`${config.api.workerUrl}/api/planning-previsionnel/checks`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
+    },
+
+    async savePlanningPrevisionnelCheck(equipmentId, weekNumber, taskType, checked) {
+        await checkVisitor();
+        const response = await fetch(`${config.api.workerUrl}/api/planning-previsionnel/check`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(await getAuthHeaders())
+            },
+            body: JSON.stringify({ equipment_id: equipmentId, week_number: weekNumber, task_type: taskType, checked })
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();

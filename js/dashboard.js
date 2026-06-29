@@ -23,6 +23,7 @@ import config from './config.js';
 
 // Module Imports
 import './admin/planning.js';
+import './admin/planning_previsionnel.js';
 import './admin/users.js';
 import './admin/documents.js';
 import './admin/pointage.js';
@@ -327,7 +328,8 @@ async function renderAdminView(session) {
             </div>
             <nav id="admin-nav" style="visibility: hidden;">
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminFolders()" class="active" id="nav-docs">📂 Documents</a>
-                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanning()" id="nav-planning">📅 Planning Hebdo</a>
+                <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPlanningPrevisionnel()" id="nav-planning-previsionnel">📅 Planning Prévisionnel</a>
                 <a href="#" onclick="document.getElementById('admin-global-search').value = ''; renderAdminPointage()" id="nav-pointage" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>📝 Pointage Intelligent</span>
                     <span id="pointage-modification-badge" style="background: var(--danger, #FF3B30); color: white; border-radius: 50%; width: 20px; height: 20px; display: none; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; box-shadow: 0 0 10px rgba(255, 59, 48, 0.4); animation: pulse-red 2s infinite;">0</span>
@@ -671,5 +673,22 @@ window.makeOwnerBadge = function (owners, tag) {
 }
 
 // 1. Render Folders Grid
+
+async function renderMobileView() {
+    document.body.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0a0a0a; color: white; font-family: sans-serif; text-align: center; padding: 20px;">
+            <div style="font-size: 64px; margin-bottom: 24px;">📱</div>
+            <h1 style="font-size: 24px; font-weight: 800; margin-bottom: 12px;">Version Mobile non supportée ici</h1>
+            <p style="color: #8E8E93; font-size: 15px; line-height: 1.5; max-width: 320px; margin-bottom: 30px;">
+                Cette interface web est réservée à l'administration sur ordinateur. Veuillez utiliser l'application mobile Pouchain App pour accéder à vos fonctionnalités.
+            </p>
+            <button id="mobile-fallback-logout" style="padding: 12px 24px; background: #FF3B30; border: none; border-radius: 12px; color: white; font-weight: 700; cursor: pointer; transition: background 0.2s;">Déconnexion</button>
+        </div>
+    `;
+    const btn = document.getElementById('mobile-fallback-logout');
+    if (btn) {
+        btn.onclick = () => auth.logout();
+    }
+}
 
 initDashboard();

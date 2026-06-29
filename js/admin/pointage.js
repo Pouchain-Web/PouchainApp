@@ -100,10 +100,11 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
                                     <th style="padding: 18px 15px; text-align: center; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Dim</th>
                                     <th style="padding: 18px 15px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Total</th>
                                     <th style="padding: 18px 30px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Statut</th>
+                                    <th style="padding: 18px 30px; text-align: center; font-size: 12px; color: rgba(255,255,255,0.4); text-transform: uppercase;">Accès</th>
                                 </tr>
                             </thead>
                             <tbody id="pointage-table-body">
-                                <tr><td colspan="10" style="text-align:center; padding: 60px; color: rgba(255,255,255,0.3);">Chargement des données...</td></tr>
+                                <tr><td colspan="11" style="text-align:center; padding: 60px; color: rgba(255,255,255,0.3);">Chargement des données...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -283,11 +284,18 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
     window.renderAdminModificationRequests();
 
     try {
-        const [allUsers, pointages, activities] = await Promise.all([
+        const supabaseClient = window.supabase.createClient(config.supabase.url, config.supabase.anonKey);
+        const [allUsers, pointages, activities, modRequestsRes] = await Promise.all([
             api.listUsers(),
             api.getAllPointages(week, year),
-            api.getPointageActivities()
+            api.getPointageActivities(),
+            supabaseClient
+                .from('pointage_modification_requests')
+                .select('*')
+                .eq('week_number', week)
+                .eq('year', year)
         ]);
+        const modRequests = modRequestsRes.data || [];
         const pointageAdminSecteur = window.currentUserProfile?.secteur || 'AIA';
         const users = pointageAdminSecteur === 'Tout'
             ? allUsers
@@ -323,6 +331,14 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
 
             if (!isFullyComplete) missingUsers.push(user);
 
+            // Compute lock status
+            const isPublished = userPointages.some(p => p.status === 'published');
+            const userRequests = modRequests.filter(r => r.user_id === user.id);
+            userRequests.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const latestReq = userRequests[0];
+            const hasApprovedReq = latestReq && latestReq.status === 'approved';
+            const isLocked = isPublished && !hasApprovedReq;
+
             const row = document.createElement('tr');
             row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
             row.style.cursor = 'pointer';
@@ -351,9 +367,14 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
                 <td style="padding: 15px; text-align: center; font-weight: 800; color: #fff; background: rgba(255,255,255,0.02);">${total}h</td>
                 <td style="padding: 15px 25px; text-align: center;">
                     <div style="display: flex; align-items: center; justify-content: center; gap: 8px; background: ${isFullyComplete ? 'rgba(52, 199, 89, 0.1)' : 'rgba(255, 59, 48, 0.1)'}; color: ${isFullyComplete ? '#34C759' : '#FF3B30'}; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; border: 1px solid ${isFullyComplete ? 'rgba(52, 199, 89, 0.2)' : 'rgba(255, 59, 48, 0.2)'};">
-                        <span style="font-size: 12px;">${isFullyComplete ? '●' : '●'}</span>
+                        <span style="font-size: 12px;">●</span>
                         ${isFullyComplete ? 'OK' : 'Relancer'}
                     </div>
+                </td>
+                <td style="padding: 15px 25px; text-align: center;" onclick="event.stopPropagation(); window.toggleUserWeekLock('${user.id}', ${week}, ${year}, ${isLocked}, ${latestReq ? `'${latestReq.id}'` : 'null'})">
+                    <span style="font-size: 18px; cursor: pointer;" title="${isLocked ? 'Semaine verrouillée - Cliquer pour déverrouiller' : 'Semaine déverrouillée - Cliquer pour verrouiller'}">
+                        ${isLocked ? '🔒' : '🔓'}
+                    </span>
                 </td>
             `;
             tableBody.appendChild(row);
@@ -810,6 +831,10 @@ window.openAdminPointageEditModal = function (user, week, year) {
         `;
     });
 
+    const userPointages = (window.adminPointagesCache || []).filter(pt => pt.user_id === user.id);
+    const isAlreadyPublished = userPointages.some(pt => pt.status === 'published');
+    const actionBtnText = isAlreadyPublished ? "💾 Mettre à jour" : "🚀 Publier la semaine";
+
     modal.innerHTML = `
         <div class="modal-box glass-panel" style="width: 90%; max-width: 700px; padding: 40px; border-radius: 32px; background: rgba(28, 28, 30, 0.95); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 40px 100px rgba(0,0,0,0.6); animation: modalPop 0.3s ease-out; max-height: 95vh; display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-shrink: 0;">
@@ -830,7 +855,7 @@ window.openAdminPointageEditModal = function (user, week, year) {
  
             <div style="display: flex; gap: 15px; flex-shrink: 0;">
                 <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 16px; border-radius: 16px; background: rgba(255,255,255,0.05); color: white; border: none; font-weight: 700; cursor: pointer; font-size: 15px;">Annuler</button>
-                <button onclick="window.saveAdminPointages('${user.id}', ${week}, ${year}, 'published', this)" style="flex: 2; padding: 16px; border-radius: 16px; background: #007AFF; color: white; border: none; font-weight: 800; cursor: pointer; font-size: 15px; box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);">🚀 Publier la semaine</button>
+                <button onclick="window.saveAdminPointages('${user.id}', ${week}, ${year}, 'published', this, '${fullName.replace(/'/g, "\\'")}')" style="flex: 2; padding: 16px; border-radius: 16px; background: #007AFF; color: white; border: none; font-weight: 800; cursor: pointer; font-size: 15px; box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);">${actionBtnText}</button>
             </div>
         </div>
     `;
@@ -838,7 +863,7 @@ window.openAdminPointageEditModal = function (user, week, year) {
     document.body.appendChild(modal);
 };
 
-window.saveAdminPointages = async function (targetUserId, week, year, status, btn) {
+window.saveAdminPointages = async function (targetUserId, week, year, status, btn, fullName = '') {
     const modal = btn.closest('.modal-overlay');
     const dayCards = modal.querySelectorAll('.day-card');
     const allData = [];
@@ -856,25 +881,15 @@ window.saveAdminPointages = async function (targetUserId, week, year, status, bt
             }
         });
 
-
-
         // Preserving published status: admin cannot downgrade a published week to draft.
-
         // This protects the lock mechanism on the mobile side.
-
         const existingPointage = (window.adminPointagesCache || []).find(
-
             pt => pt.user_id === targetUserId && pt.date === isoDate
-
         );
 
         const effectiveStatus = (existingPointage && existingPointage.status === 'published' && status === 'draft')
-
             ? 'published'
-
             : status;
-
-
 
         allData.push({
             user_id: targetUserId,
@@ -897,13 +912,135 @@ window.saveAdminPointages = async function (targetUserId, week, year, status, bt
 
     try {
         await Promise.all(allData.map(data => api.submitPointage(data)));
-        window.showToast(status === 'published' ? "🚀 Semaine publiée avec succès !" : "💾 Brouillon enregistré avec succès.");
+        window.showToast(status === 'published' ? "🚀 Semaine enregistrée avec succès !" : "💾 Brouillon enregistré avec succès.");
         modal.remove();
-        window.renderAdminPointage(week, year);
+        await window.renderAdminPointage(week, year);
+
+        if (status === 'published') {
+            await window.showPointageLockPopup(targetUserId, week, year, fullName);
+        }
     } catch (e) {
         alert("Erreur lors de l'enregistrement: " + e.message);
         btn.disabled = false;
         btn.innerText = oldText;
+    }
+};
+
+window.showPointageLockPopup = async function (targetUserId, week, year, fullName) {
+    const supabaseClient = window.supabase.createClient(config.supabase.url, config.supabase.anonKey);
+
+    // 1. Fetch latest request and pointages to check current lock status
+    const pointages = await api.getAllPointages(week, year);
+    const userPointages = pointages.filter(p => p.user_id === targetUserId);
+    const isPublished = userPointages.some(p => p.status === 'published');
+
+    let hasApprovedReq = false;
+    let latestReq = null;
+
+    try {
+        const { data: reqs } = await supabaseClient
+            .from('pointage_modification_requests')
+            .select('*')
+            .eq('user_id', targetUserId)
+            .eq('week_number', week)
+            .eq('year', year)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        latestReq = reqs && reqs[0];
+        hasApprovedReq = latestReq && latestReq.status === 'approved';
+    } catch (err) {
+        console.error("Error fetching modification request:", err);
+    }
+
+    // Lock status:
+    // If not published -> unlocked (non verrouillée)
+    // If published but has approved request -> unlocked (non verrouillée)
+    // If published and no approved request -> locked (verrouillée)
+    const isLocked = isPublished && !hasApprovedReq;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.zIndex = '1000002';
+    modal.style.backdropFilter = 'blur(10px)';
+
+    modal.innerHTML = `
+        <div class="modal-box glass-panel" style="width: 90%; max-width: 450px; padding: 35px; border-radius: 28px; background: rgba(28, 28, 30, 0.95); color: white; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 30px 80px rgba(0,0,0,0.5); text-align: center; animation: modalPop 0.3s ease-out;">
+            <div style="font-size: 48px; margin-bottom: 20px;">${isLocked ? '🔒' : '🔓'}</div>
+            <h2 style="margin: 0 0 10px 0; font-size: 20px; font-weight: 800; color: white;">Accès aux pointages</h2>
+            <p style="margin: 0 0 20px 0; color: #8E8E93; font-size: 14px;">Semaine ${week} (${year}) pour ${fullName}</p>
+            
+            <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 15px; margin-bottom: 25px;">
+                <span style="font-size: 11px; color: #8E8E93; font-weight: 600; text-transform: uppercase; display: block; margin-bottom: 5px;">Statut actuel</span>
+                <span style="font-size: 16px; font-weight: 800; color: ${isLocked ? '#FF3B30' : '#34C759'};">
+                    ${isLocked ? 'Semaine verrouillée' : 'Semaine non verrouillée'}
+                </span>
+            </div>
+
+            <p style="font-size: 14px; color: rgba(255,255,255,0.8); line-height: 1.5; margin-bottom: 25px;">
+                Voulez-vous verrouiller l'accès au pointage de cette semaine pour l'utilisateur ?
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <button id="btn-lock-week" class="btn-primary" style="width: 100%; height: 48px; background: #FF3B30; color: white; border: none; border-radius: 12px; font-weight: 800; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    🔒 Laisser verrouillée
+                </button>
+                <button id="btn-unlock-week" class="btn-primary" style="width: 100%; height: 48px; background: #34C759; color: white; border: none; border-radius: 12px; font-weight: 800; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    🔓 Déverrouiller l'accès
+                </button>
+                <button onclick="this.closest('.modal-overlay').remove()" style="width: 100%; height: 48px; background: rgba(255,255,255,0.08); color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 14px; cursor: pointer;">
+                    Fermer
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#btn-lock-week').onclick = async () => {
+        const btnLock = modal.querySelector('#btn-lock-week');
+        btnLock.disabled = true;
+        btnLock.innerText = "Enregistrement...";
+        try {
+            await api.toggleUserWeekLock(targetUserId, week, year, true, latestReq ? latestReq.id : null);
+            window.showToast("🔒 Semaine verrouillée avec succès !");
+            modal.remove();
+            await window.renderAdminPointage(week, year);
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btnLock.disabled = false;
+            btnLock.innerText = "🔒 Laisser verrouillée";
+        }
+    };
+
+    modal.querySelector('#btn-unlock-week').onclick = async () => {
+        const btnUnlock = modal.querySelector('#btn-unlock-week');
+        btnUnlock.disabled = true;
+        btnUnlock.innerText = "Déverrouillage...";
+        try {
+            await api.toggleUserWeekLock(targetUserId, week, year, false, null);
+            window.showToast("🔓 Semaine déverrouillée avec succès !");
+            modal.remove();
+            await window.renderAdminPointage(week, year);
+        } catch (e) {
+            alert("Erreur: " + e.message);
+            btnUnlock.disabled = false;
+            btnUnlock.innerText = "🔓 Déverrouiller l'accès";
+        }
+    };
+};
+
+window.toggleUserWeekLock = async function (targetUserId, week, year, currentIsLocked, latestReqId) {
+    try {
+        if (currentIsLocked) {
+            await api.toggleUserWeekLock(targetUserId, week, year, false, null);
+            window.showToast("🔓 Semaine déverrouillée avec succès !");
+        } else {
+            await api.toggleUserWeekLock(targetUserId, week, year, true, latestReqId);
+            window.showToast("🔒 Semaine verrouillée avec succès !");
+        }
+        await renderAdminPointage(week, year);
+    } catch (e) {
+        alert("Erreur: " + e.message);
     }
 };
 
