@@ -2235,5 +2235,13 @@ export const api = {
         });
         if (!response.ok) throw new Error(await response.text());
         return await response.json();
+    },
+
+    async search(q) {
+        const response = await fetch(`${config.api.workerUrl}/admin/search?q=${encodeURIComponent(q)}`, {
+            headers: await getAuthHeaders()
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return await response.json();
     }
 };

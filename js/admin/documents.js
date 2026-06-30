@@ -1352,7 +1352,46 @@ window.saveFileAccess = async function (path) {
     }
 };
 
-window.handleAdminGlobalSearch = function (query) {
+window.handleAdminGlobalSearch = async function (query) {
+    // Detect active navigation item
+    const activeNav = document.querySelector('#admin-nav a.active');
+    const activeId = activeNav ? activeNav.id : 'nav-docs';
+
+    // If active tab is NOT documents, route search to the tab's local search input or filter its rows/cards
+    if (activeId !== 'nav-docs') {
+        const content = document.getElementById('admin-content');
+        if (content) {
+            // Try to find a local search input first
+            const localInput = content.querySelector('input[type="text"][placeholder*="Rechercher"], input[type="text"][placeholder*="rechercher"], input[id*="-search"], input[class*="search"]');
+            if (localInput) {
+                localInput.value = query;
+                localInput.dispatchEvent(new Event('input'));
+                return;
+            }
+
+            // Fallback: dynamic DOM filtering for tables and list items
+            const term = query.toLowerCase().trim();
+            const rows = content.querySelectorAll('table tbody tr');
+            if (rows.length > 0) {
+                rows.forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(term) ? '' : 'none';
+                });
+                return;
+            }
+
+            const cards = content.querySelectorAll('.card, .vehicle-card, .user-card, .material-card');
+            if (cards.length > 0) {
+                cards.forEach(card => {
+                    const text = card.textContent.toLowerCase();
+                    card.style.display = text.includes(term) ? '' : 'none';
+                });
+                return;
+            }
+        }
+        return;
+    }
+
     const term = query.toLowerCase().trim();
     if (!term) {
         // Restore previous view
@@ -1367,10 +1406,8 @@ window.handleAdminGlobalSearch = function (query) {
     // Unselect nav
     document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
 
-    // Global Search Algorithm
-    // For Folders
+    // 1. Instant Local Search for Folders & Files (Cloudflare R2 Cache)
     const matchedFolders = new Set();
-    // For Files
     const matchedFiles = [];
 
     window.adminFilesCache.forEach(file => {
@@ -1391,43 +1428,47 @@ window.handleAdminGlobalSearch = function (query) {
         }
     });
 
-    // Render results
     const content = document.getElementById('admin-content');
-
+    
+    // Inject base layout with R2 results and a placeholder/spinner for Supabase search
     let html = `
         <header>
             <div style="display:flex; align-items:center; gap:16px;">
-                <h1 style="margin:0;">Résultats pour "${query}"</h1>
+                <h1 style="margin:0;">Résultats pour "${window.escapeHTML(query)}"</h1>
             </div>
             <div class="actions">
                 <button class="btn-danger" id="deleteSelectedBtn" style="display:none; align-items:center; gap:8px;" onclick="deleteSelectedItems()">🗑️ Supprimer la sélection (<span id="selectedCount">0</span>)</button>
             </div>
         </header>
 
-        <div class="table-container" style="flex:1;">
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width:40px; text-align:center;"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)" style="cursor:pointer; transform: scale(1.2);"></th>
-                        <th style="width:40px"></th>
-                        <th>Nom</th>
-                        <th>Chemin</th>
-                        <th>Taille</th>
-                        <th style="text-align: right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    `;
+        <div style="display: flex; flex-direction: column; gap: 24px; padding-bottom: 40px;">
+            <!-- SECTION 1: DOCUMENTS (R2) -->
+            <div class="search-section" style="background: rgba(28,28,30,0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; backdrop-filter: blur(15px);">
+                <h2 style="margin: 0 0 16px 0; font-size: 18px; display: flex; align-items: center; gap: 8px;">📂 Documents & Dossiers (Stockage Cloud R2)</h2>
+                <div class="table-container" style="overflow-x: auto; background: transparent; border: none; box-shadow: none;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="width:40px; text-align:center;"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)" style="cursor:pointer; transform: scale(1.2);"></th>
+                                <th style="width:40px"></th>
+                                <th style="text-align: left; padding: 12px;">Nom</th>
+                                <th style="text-align: left; padding: 12px;">Chemin</th>
+                                <th style="text-align: left; padding: 12px;">Taille</th>
+                                <th style="text-align: right; padding: 12px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+    `;
 
     Array.from(matchedFolders).sort().forEach(folder => {
         html += `
-            <tr class="folder-row" onclick="renderAdminFiles('${folder}'); document.getElementById('admin-global-search').value='';" style="cursor:pointer">
-                <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${folder}" data-type="folder" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
-                <td style="font-size:20px; text-align:center;">📁</td>
-                <td style="font-weight:600">${folder}</td>
-                <td style="color:#888; font-size:13px;">Dossier</td>
-                <td>-</td>
-                <td style="text-align: right">
+            <tr class="folder-row" onclick="renderAdminFiles('${folder}'); document.getElementById('admin-global-search').value='';" style="cursor:pointer; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="text-align:center; padding: 12px;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${folder}" data-type="folder" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
+                <td style="font-size:20px; text-align:center; padding: 12px;">📁</td>
+                <td style="font-weight:600; padding: 12px;">${folder}</td>
+                <td style="color:#888; font-size:13px; padding: 12px;">Dossier</td>
+                <td style="padding: 12px;">-</td>
+                <td style="text-align: right; padding: 12px;">
                     <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFolder('${folder}')">Supprimer</button>
                 </td>
             </tr>
@@ -1446,23 +1487,267 @@ window.handleAdminGlobalSearch = function (query) {
         const parentPath = file.key.substring(0, file.key.lastIndexOf('/')) || "Racine";
 
         html += `
-                    <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/" /g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s;">
-                    <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/" /g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
-                    <td style="font-size:20px; text-align:center;">${icon}</td>
-                    <td>${name}</td>
-                    <td style="color:#888; font-size:13px;">${parentPath}</td>
-                    <td>${(file.size / 1024).toFixed(1)} KB</td>
-                    <td style="text-align: right">
-                        <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('${file.key.replace(/'/g, "\\'")}')">Supprimer</button>
+            <tr onclick="window.openFile(this.getAttribute('data-key'))" data-key="${file.key.replace(/" /g, '&quot;')}" style="cursor: pointer; transition: background-color 0.2s; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="text-align:center; padding: 12px;" onclick="event.stopPropagation()"><input type="checkbox" class="item-checkbox" data-path="${file.key.replace(/" /g, '&quot;')}" data-type="file" onclick="updateSelectedCount()" style="cursor:pointer; transform: scale(1.2);"></td>
+                <td style="font-size:20px; text-align:center; padding: 12px;">${icon}</td>
+                <td style="padding: 12px;">${name}</td>
+                <td style="color:#888; font-size:13px; padding: 12px;">${parentPath}</td>
+                <td style="padding: 12px;">${(file.size / 1024).toFixed(1)} KB</td>
+                <td style="text-align: right; padding: 12px;">
+                    <button class="btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('${file.key.replace(/'/g, "\\'")}')">Supprimer</button>
                 </td>
             </tr>
-            `;
+        `;
     });
 
     if (matchedFolders.size === 0 && matchedFiles.length === 0) {
-        html += `<tr><td colspan="6" style="text-align:center; padding:50px; color:#888;">Aucun résultat trouvé.</td></tr>`;
+        html += `<tr><td colspan="6" style="text-align:center; padding:30px; color:#888;">Aucun document trouvé.</td></tr>`;
     }
 
-    html += `</tbody></table></div>`;
+    html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- DYNAMIC DATABASE SEARCH RESULTS (Supabase) -->
+            <div id="db-search-results">
+                <div style="background: rgba(28,28,30,0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 30px; text-align: center; color: #888;">
+                    <span style="display:inline-block; animation: spin 1s linear infinite; margin-right: 8px;">⏳</span> Recherche en base de données (Supabase)...
+                </div>
+            </div>
+        </div>
+
+        <style>
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+            .search-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 14px 18px;
+                border-radius: 12px;
+                background: rgba(255, 255, 255, 0.02);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                margin-bottom: 10px;
+                cursor: pointer;
+                transition: background 0.2s, border-color 0.2s, transform 0.2s;
+            }
+            .search-item:hover {
+                background: rgba(255, 255, 255, 0.06);
+                border-color: rgba(255, 255, 255, 0.12);
+                transform: translateY(-1px);
+            }
+            .search-item-info {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+            }
+            .search-item-icon {
+                font-size: 22px;
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(255,255,255,0.05);
+                border-radius: 8px;
+            }
+            .search-item-title {
+                font-weight: 600;
+                color: #fff;
+                margin: 0 0 4px 0;
+            }
+            .search-item-subtitle {
+                font-size: 13px;
+                color: rgba(255, 255, 255, 0.5);
+                margin: 0;
+            }
+            .search-item-action {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: white;
+                padding: 6px 14px;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: background 0.2s, border-color 0.2s;
+            }
+            .search-item-action:hover {
+                background: var(--primary, #007AFF);
+                border-color: transparent;
+            }
+        </style>
+    `;
+
     content.innerHTML = html;
+
+    // 2. Fetch and render Supabase results asynchronously
+    try {
+        const dbResults = await api.search(query);
+        const dbContainer = document.getElementById('db-search-results');
+        if (!dbContainer) return;
+
+        let dbHtml = '';
+        const tableKeys = Object.keys(dbResults);
+
+        if (tableKeys.length === 0) {
+            dbHtml = `
+                <div style="background: rgba(28,28,30,0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; text-align: center; color: #888;">
+                    Aucune correspondance trouvée dans les bases de données.
+                </div>
+            `;
+        } else {
+            tableKeys.forEach(table => {
+                const group = dbResults[table];
+                let icon = '⚙️';
+                if (table === 'profiles') icon = '👥';
+                if (table === 'vehicles') icon = '🚗';
+                if (table === 'tasks') icon = '📅';
+                if (table === 'pouchain_prevention_plans') icon = '📋';
+                if (table === 'pouchain_reports') icon = '🐛';
+                if (table === 'pouchain_ht_torques') icon = '⚡';
+
+                dbHtml += `
+                    <div class="search-section" style="background: rgba(28,28,30,0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; margin-bottom: 24px; backdrop-filter: blur(15px);">
+                        <h2 style="margin: 0 0 16px 0; font-size: 18px; display: flex; align-items: center; gap: 8px;">${icon} ${group.displayName} (${group.data.length})</h2>
+                        <div style="display: flex; flex-direction: column;">
+                `;
+
+                group.data.forEach(row => {
+                    const primary = window.escapeHTML(getPrimaryText(row, table));
+                    const secondary = window.escapeHTML(getSecondaryText(row, table));
+                    const rowJson = JSON.stringify(row).replace(/"/g, '&quot;');
+
+                    dbHtml += `
+                        <div class="search-item" onclick="window.handleSearchRowClick(${rowJson}, '${table}')">
+                            <div class="search-item-info">
+                                <span class="search-item-icon">${icon}</span>
+                                <div>
+                                    <h3 class="search-item-title">${primary}</h3>
+                                    <p class="search-item-subtitle">${secondary}</p>
+                                </div>
+                            </div>
+                            <button class="search-item-action">Consulter</button>
+                        </div>
+                    `;
+                });
+
+                dbHtml += `
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        dbContainer.innerHTML = dbHtml;
+    } catch (err) {
+        console.error("Database search error:", err);
+        const dbContainer = document.getElementById('db-search-results');
+        if (dbContainer) {
+            dbContainer.innerHTML = `
+                <div style="background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.2); border-radius: 16px; padding: 20px; color: #ff453a; text-align: center;">
+                    Erreur lors de la recherche en base de données : ${err.message}
+                </div>
+            `;
+        }
+    }
+};
+
+// Switch Tab Navigation helper
+window.switchToAdminTab = function(tabId, callback) {
+    document.querySelectorAll('#admin-nav a').forEach(a => a.classList.remove('active'));
+    const link = document.getElementById(tabId);
+    if (link) {
+        link.classList.add('active');
+        link.click();
+    }
+    if (callback) {
+        setTimeout(callback, 250);
+    }
+};
+
+// Helper function to extract primary display text from database rows
+function getPrimaryText(row, table) {
+    if (table === 'profiles') return `${row.first_name || ''} ${row.last_name || ''}`.trim() || row.email;
+    if (table === 'vehicles') return `${row.plate_number || ''} - ${row.brand || ''} ${row.model || ''}`;
+    if (table === 'tasks') return row.title || row.activity || 'Sans titre';
+    if (table === 'pouchain_prevention_plans') return row.name || 'Plan de prévention';
+    if (table === 'pouchain_reports') return `${row.type || 'Signalement'} : ${row.message || ''}`;
+    if (table === 'pouchain_ht_torques') return `${row.marque || ''} ${row.modele || ''} (Fiche: ${row.ref_fiche || ''})`;
+    
+    return row.name || row.title || row.label || row.description || row.id || JSON.stringify(row);
+}
+
+// Helper function to extract secondary display text/metadata from database rows
+function getSecondaryText(row, table) {
+    if (table === 'profiles') return `Secteur: ${row.secteur || 'Non défini'} | Rôle: ${row.role || 'Non défini'} | Société: ${row.societe || 'Pouchain'}`;
+    if (table === 'vehicles') return `Type: ${row.type || 'Non défini'} | Statut: ${row.status || 'Disponible'}`;
+    if (table === 'tasks') return `Date: ${row.date || 'Non défini'} | Activité: ${row.activity || 'Aucune'} | Notes: ${row.notes || ''}`;
+    if (table === 'pouchain_prevention_plans') return row.description || 'Aucune description';
+    if (table === 'pouchain_reports') return `Statut: ${row.status || 'Nouveau'} | Rédigé sur: ${row.page_url || 'Inconnu'}`;
+    if (table === 'pouchain_ht_torques') return `Référence: ${row.ref_fiche || ''}`;
+    
+    return Object.entries(row)
+        .filter(([key, val]) => !['id', 'created_at', 'updated_at', 'color'].includes(key) && val !== null && val !== undefined && typeof val !== 'object')
+        .map(([key, val]) => `${key}: ${val}`)
+        .join(' | ');
+}
+
+// Handle search row interaction / tab switching
+window.handleSearchRowClick = function(row, table) {
+    if (table === 'profiles') {
+        window.switchToAdminTab('nav-users', () => {
+            if (window.renderAdminUsers) {
+                window.renderAdminUsers().then(() => {
+                    const searchInput = document.getElementById('user-search') || document.querySelector('input[placeholder*="rechercher"]');
+                    if (searchInput) {
+                        searchInput.value = `${row.first_name || ''} ${row.last_name || ''}`.trim();
+                        searchInput.dispatchEvent(new Event('input'));
+                    }
+                });
+            }
+        });
+    } else if (table === 'vehicles') {
+        window.switchToAdminTab('nav-vehicles', () => {
+            if (window.renderAdminVehicles) {
+                window.renderAdminVehicles().then(() => {
+                    const searchInput = document.getElementById('maintenance-search') || document.getElementById('vehicle-search') || document.querySelector('input[placeholder*="par plaque"]');
+                    if (searchInput) {
+                        searchInput.value = row.plate_number || '';
+                        searchInput.dispatchEvent(new Event('input'));
+                    }
+                });
+            }
+        });
+    } else if (table === 'tasks') {
+        window.switchToAdminTab('nav-planning', () => {
+            if (window.renderAdminPlanning) {
+                window.renderAdminPlanning();
+            }
+        });
+    } else if (table === 'pouchain_prevention_plans') {
+        window.switchToAdminTab('nav-prevention', () => {
+            if (window.renderAdminPreventionPlans) {
+                window.renderAdminPreventionPlans();
+            }
+        });
+    } else if (table === 'pouchain_reports') {
+        window.switchToAdminTab('nav-reports', () => {
+            if (window.renderAdminReports) {
+                window.renderAdminReports();
+            }
+        });
+    } else if (table === 'pouchain_ht_torques') {
+        window.switchToAdminTab('nav-ht-torques', () => {
+            if (window.renderAdminHTTorques) {
+                window.renderAdminHTTorques();
+            }
+        });
+    } else {
+        window.showToast(`Élément sélectionné : ${getPrimaryText(row, table)}`);
+    }
 };

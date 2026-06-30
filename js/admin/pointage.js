@@ -1506,13 +1506,33 @@ window.generateRecupPDFPlaceholder = async function (requestData) {
             adminName = currentAdmin ? `${currentAdmin.first_name || ''} ${currentAdmin.last_name || ''}`.trim() : 'Admin';
         }
         const dateRespFieldName = societe === 'cepp' ? 'Text25' : 'Text24';
-        form.getTextField(dateRespFieldName).setText(`Le ${dateAcceptation} par ${adminName}`);
+        const dateRespField = form.getTextField(dateRespFieldName);
+        const textVal = `Le ${dateAcceptation} par ${adminName}`;
+        dateRespField.setText(textVal);
+
+        try {
+            const { StandardFonts } = PDFLib;
+            const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+            const maxFieldWidth = 135; // Maximum space width inside the box
+            let fontSize = 10;
+            let textWidth = helveticaFont.widthOfTextAtSize(textVal, fontSize);
+            while (textWidth > maxFieldWidth && fontSize > 6.5) {
+                fontSize -= 0.5;
+                textWidth = helveticaFont.widthOfTextAtSize(textVal, fontSize);
+            }
+            dateRespField.setFontSize(fontSize);
+        } catch (fontErr) {
+            console.error("Could not scale font size dynamically:", fontErr);
+            if (textVal.length > 30) dateRespField.setFontSize(7.5);
+            else if (textVal.length > 25) dateRespField.setFontSize(8.5);
+            else dateRespField.setFontSize(10);
+        }
 
         // Draw employee signature
         if (requestData.signature) {
             try {
-                const blackSigUrl = await forceSignatureBlackColor(requestData.signature);
-                const sigImageBytes = await fetch(blackSigUrl).then(res => res.arrayBuffer());
+                const blackSigUrl = await window.forceSignatureBlackColor(requestData.signature);
+                const sigImageBytes = await window.getSignatureBytes(blackSigUrl);
                 const sigImage = await pdfDoc.embedPng(sigImageBytes);
 
                 const sigCoords = societe === 'cepp'
@@ -1529,8 +1549,8 @@ window.generateRecupPDFPlaceholder = async function (requestData) {
         const adminSignature = requestData.admin_signature || parsedCommentData.admin_signature;
         if (adminSignature) {
             try {
-                const blackSigUrl = await forceSignatureBlackColor(adminSignature);
-                const sigImageBytes = await fetch(blackSigUrl).then(res => res.arrayBuffer());
+                const blackSigUrl = await window.forceSignatureBlackColor(adminSignature);
+                const sigImageBytes = await window.getSignatureBytes(blackSigUrl);
                 const sigImage = await pdfDoc.embedPng(sigImageBytes);
 
                 const adminSigCoords = societe === 'cepp'
@@ -1819,7 +1839,7 @@ window.parseCongeAdminComment = function (commentStr) {
     return { comment: commentStr, admin_name: '', admin_signature: null };
 };
 
-async function forceSignatureBlackColor(dataUrlOrUrl) {
+window.forceSignatureBlackColor = async function(dataUrlOrUrl) {
     return new Promise((resolve) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
@@ -1857,3 +1877,18 @@ async function forceSignatureBlackColor(dataUrlOrUrl) {
         img.src = dataUrlOrUrl;
     });
 }
+
+window.getSignatureBytes = async function(urlOrDataUrl) {
+    if (!urlOrDataUrl) return null;
+    if (urlOrDataUrl.startsWith('data:')) {
+        const base64Content = urlOrDataUrl.split(',')[1];
+        const binaryString = atob(base64Content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+    } else {
+        return await fetch(urlOrDataUrl).then(res => res.arrayBuffer());
+    }
+};
