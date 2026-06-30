@@ -135,7 +135,8 @@ window.renderAdminFolders = async function () {
         html += `</div>`;
     });
 
-    // Uncategorized Files
+    // Uncategorized Files (Hidden by request)
+    /*
     const rootFiles = window.adminFilesCache.filter(f => !f.key.includes('/') && !f.key.startsWith('.meta_'));
     if (rootFiles.length > 0) {
         html += `
@@ -146,6 +147,7 @@ window.renderAdminFolders = async function () {
             </div>
         `;
     }
+    */
 
     html += `</div>`;
     content.innerHTML = html;
