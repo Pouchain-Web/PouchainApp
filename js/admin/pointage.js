@@ -331,8 +331,24 @@ window.renderAdminPointage = async function (targetWeek, targetYear) {
 
             if (!isFullyComplete) missingUsers.push(user);
 
-            // Compute lock status
-            const isPublished = userPointages.some(p => p.status === 'published');
+            // Compute lock status (excluding leaves, matching mobile logic)
+            const isPublished = userPointages.some(p => {
+                if (p.status !== 'published') return false;
+                if (!p.activities || !Array.isArray(p.activities)) return false;
+                return p.activities.some(act => {
+                    const name = act.activity_name;
+                    if (!name) return false;
+                    const lowerName = name.toLowerCase();
+                    const isLeave = lowerName.startsWith('cp\\') ||
+                                    lowerName.startsWith('rtt\\') ||
+                                    lowerName.startsWith('formation\\') ||
+                                    lowerName.startsWith('cpe\\') ||
+                                    lowerName.startsWith('cpef\\') ||
+                                    lowerName.startsWith('cs\\') ||
+                                    lowerName.startsWith('repos\\');
+                    return !isLeave;
+                });
+            });
             const userRequests = modRequests.filter(r => r.user_id === user.id);
             userRequests.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
             const latestReq = userRequests[0];
@@ -1139,7 +1155,23 @@ window.showPointageLockPopup = async function (targetUserId, week, year, fullNam
     // 1. Fetch latest request and pointages to check current lock status
     const pointages = await api.getAllPointages(week, year);
     const userPointages = pointages.filter(p => p.user_id === targetUserId);
-    const isPublished = userPointages.some(p => p.status === 'published');
+    const isPublished = userPointages.some(p => {
+        if (p.status !== 'published') return false;
+        if (!p.activities || !Array.isArray(p.activities)) return false;
+        return p.activities.some(act => {
+            const name = act.activity_name;
+            if (!name) return false;
+            const lowerName = name.toLowerCase();
+            const isLeave = lowerName.startsWith('cp\\') ||
+                            lowerName.startsWith('rtt\\') ||
+                            lowerName.startsWith('formation\\') ||
+                            lowerName.startsWith('cpe\\') ||
+                            lowerName.startsWith('cpef\\') ||
+                            lowerName.startsWith('cs\\') ||
+                            lowerName.startsWith('repos\\');
+            return !isLeave;
+        });
+    });
 
     let hasApprovedReq = false;
     let latestReq = null;
