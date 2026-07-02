@@ -32,12 +32,12 @@ function getWeeksInMonth(month, year) {
 }
 
 const MONTH_NAMES = [
-    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
     "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
 ];
 
 const MONTH_SHORT_NAMES = [
-    "Jan", "Fév", "Mar", "Avr", "Mai", "Jui", 
+    "Jan", "Fév", "Mar", "Avr", "Mai", "Jui",
     "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"
 ];
 
@@ -85,11 +85,11 @@ window.renderAdminPlanningPrevisionnel = async function () {
             }
             .pp-matrix-table {
                 width: 100%;
-                border-collapse: collapse;
+                border-collapse: separate;
+                border-spacing: 0;
                 background: rgba(255,255,255,0.02);
                 border: 1px solid rgba(255,255,255,0.08);
                 border-radius: 16px;
-                overflow: hidden;
             }
             .pp-matrix-table th {
                 background: rgba(0,0,0,0.3);
@@ -255,15 +255,15 @@ window.uploadPPExcel = async function (input) {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
                 const parsed = parseWorkbook(workbook);
-                
+
                 window.showToast("Téléchargement du fichier original...");
                 await api.uploadFile(file, 'planning_previsionnel.xlsm');
-                
+
                 window.showToast("Génération des données simplifiées...");
                 const jsonBlob = new Blob([JSON.stringify(parsed)], { type: 'application/json' });
                 const jsonFile = new File([jsonBlob], 'planning_previsionnel_data.json');
                 await api.uploadFile(jsonFile, 'planning_previsionnel_data.json');
-                
+
                 parsedPlanningData = parsed;
 
                 window.showToast("Synchronisation avec le planning normal...");
@@ -287,7 +287,7 @@ async function loadPPData() {
         currentChecks = await api.getPlanningPrevisionnelChecks();
         const users = await api.listUsers(true);
         const adminSecteur = (window.currentUserProfile && window.currentUserProfile.secteur) || 'Tout';
-        
+
         if (adminSecteur !== 'Tout') {
             ppUsersList = users.filter(u => u.secteur === adminSecteur);
         } else {
@@ -400,27 +400,40 @@ function renderPPWorkspace() {
         if (!adminSearchQuery) return true;
         const q = adminSearchQuery.toLowerCase();
         return eq.id.toLowerCase().includes(q) ||
-               (eq.machine || '').toLowerCase().includes(q) ||
-               (eq.market_name || '').toLowerCase().includes(q) ||
-               (eq.market_no || '').toLowerCase().includes(q) ||
-               (eq.brand || '').toLowerCase().includes(q) ||
-               (eq.model || '').toLowerCase().includes(q) ||
-               (eq.serial || '').toLowerCase().includes(q);
+            (eq.machine || '').toLowerCase().includes(q) ||
+            (eq.market_name || '').toLowerCase().includes(q) ||
+            (eq.market_no || '').toLowerCase().includes(q) ||
+            (eq.brand || '').toLowerCase().includes(q) ||
+            (eq.model || '').toLowerCase().includes(q) ||
+            (eq.serial || '').toLowerCase().includes(q);
     });
 
     if (selectedTab === 'matrix') {
-        const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
+        // Calculate current ISO week
+        const getISOWeek = (date) => {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+        };
+        const currentWeek = getISOWeek(new Date()) || 1;
 
         container.innerHTML = `
-            <div style="overflow-x: auto; border-radius: 12px; background: rgba(0,0,0,0.2);">
-                <table class="pp-matrix-table">
+            <div id="pp-matrix-scroll-container" style="overflow-x: auto; border-radius: 12px; background: rgba(0,0,0,0.2); max-height: 70vh; overflow-y: auto; scroll-behavior: smooth;">
+                <table class="pp-matrix-table" style="border-collapse: separate; border-spacing: 0; width: 100%;">
                     <thead>
                         <tr>
-                            <th style="min-width: 100px;">MI ID</th>
-                            <th style="min-width: 180px;">Équipement / Machine</th>
-                            <th style="min-width: 120px;">Secteur / Marché</th>
-                            ${MONTH_SHORT_NAMES.map(m => `<th style="text-align:center; min-width: 45px;">${m}</th>`).join('')}
+                            <th style="min-width: 80px; position: sticky; left: 0; background: #1c1c21 !important; z-index: 25 !important; border-bottom: 2px solid rgba(255,255,255,0.1); border-right: 1px solid rgba(255,255,255,0.08);">MI ID</th>
+                            <th style="min-width: 160px; position: sticky; left: 80px; background: #1c1c21 !important; z-index: 25 !important; border-bottom: 2px solid rgba(255,255,255,0.1); border-right: 1px solid rgba(255,255,255,0.08);">Machine / Détails</th>
+                            <th style="min-width: 110px; position: sticky; left: 240px; background: #1c1c21 !important; z-index: 25 !important; border-bottom: 2px solid rgba(255,255,255,0.1); border-right: 2px solid rgba(255,255,255,0.15);">Marché</th>
+                            ${Array.from({ length: 52 }, (_, i) => {
+                                const wNum = i + 1;
+                                const isCurrent = (wNum === currentWeek && selectedYearFilter === currentYear);
+                                const highlightStyle = isCurrent ? 'background: rgba(0, 122, 255, 0.25) !important; border-left: 2px solid #007AFF; border-right: 2px solid #007AFF; font-weight: 900; color: #007AFF;' : 'background: #1c1c1e;';
+                                return `<th id="pp-header-week-${wNum}" style="text-align:center; min-width: 38px; font-size: 11px; border-bottom: 2px solid rgba(255,255,255,0.1); ${highlightStyle}">S${wNum}</th>`;
+                            }).join('')}
                         </tr>
                     </thead>
                     <tbody>
@@ -434,68 +447,65 @@ function renderPPWorkspace() {
 
                             return `
                                 <tr>
-                                    <td style="font-weight: 800; color: #007AFF;">${window.escapeHTML(eq.id)}</td>
-                                    <td>
-                                        <div style="font-weight: 700; color: white;">${window.escapeHTML(eq.machine || 'Machine')}</div>
-                                        <div style="font-size:11px; color:#8E8E93; margin-top:2px;">
-                                            ${eq.brand ? `${window.escapeHTML(eq.brand)} ` : ''}
-                                            ${eq.model ? `• ${window.escapeHTML(eq.model)} ` : ''}
-                                            ${eq.serial ? `• N/S: ${window.escapeHTML(eq.serial)}` : ''}
+                                    <td style="font-weight: 800; color: #007AFF; position: sticky; left: 0; background: #1c1c21 !important; z-index: 12 !important; border-bottom: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.08);">${window.escapeHTML(eq.id)}</td>
+                                    <td style="position: sticky; left: 80px; background: #1c1c21 !important; z-index: 12 !important; border-bottom: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.08);">
+                                        <div style="font-weight: 700; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;" title="${window.escapeHTML(eq.machine || 'Machine')}">${window.escapeHTML(eq.machine || 'Machine')}</div>
+                                        <div style="font-size:10px; color:#8E8E93; margin-top:2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;" title="${eq.brand ? `${window.escapeHTML(eq.brand)} ` : ''}${eq.model ? `• ${window.escapeHTML(eq.model)} ` : ''}">
+                                            ${eq.brand ? `${window.escapeHTML(eq.brand)}` : ''}
+                                            ${eq.model ? ` • ${window.escapeHTML(eq.model)}` : ''}
                                         </div>
                                     </td>
-                                    <td>
-                                        <span style="font-size:12px; color:white; font-weight:600;">${window.escapeHTML(prefix)}</span>
-                                        ${eq.location ? `<div style="font-size:10px; color:#8E8E93; margin-top:2px;">${window.escapeHTML(eq.location)}</div>` : ''}
+                                    <td style="position: sticky; left: 240px; background: #1c1c21 !important; z-index: 12 !important; border-bottom: 1px solid rgba(255,255,255,0.05); border-right: 2px solid rgba(255,255,255,0.15);">
+                                        <span style="font-size:11px; color:#AEAEB2; font-weight:600;">${window.escapeHTML(prefix)}</span>
+                                        ${eq.location ? `<div style="font-size:9px; color:#636366; margin-top:2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px;" title="${window.escapeHTML(eq.location)}">${window.escapeHTML(eq.location)}</div>` : ''}
                                     </td>
-                                    ${Array.from({ length: 12 }, (_, mIdx) => {
-                                        const mNum = mIdx + 1;
-                                        // Collect all weeks belonging to this month
-                                        const monthWeeks = getWeeksInMonth(mNum, selectedYearFilter);
-                                        const tasksInMonth = [];
+                                    ${Array.from({ length: 52 }, (_, i) => {
+                                        const w = i + 1;
+                                        const isCurrent = (w === currentWeek && selectedYearFilter === currentYear);
+                                        const cellHighlight = isCurrent ? 'background: rgba(0, 122, 255, 0.1) !important; border-left: 1.5px solid rgba(0, 122, 255, 0.4); border-right: 1.5px solid rgba(0, 122, 255, 0.4);' : '';
+                                        
+                                        const tasksInWeek = [];
+                                        if (eq.tasks && eq.tasks[w]) {
+                                            ['preventif', 'controle', 'metrologie'].forEach(type => {
+                                                if (eq.tasks[w][type]) {
+                                                    const isChecked = currentChecks.some(c =>
+                                                        c.equipment_id === eq.id &&
+                                                        c.task_type === type &&
+                                                        (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
+                                                    );
+                                                    tasksInWeek.push({ type, val: eq.tasks[w][type], isChecked });
+                                                }
+                                            });
+                                        }
 
-                                        monthWeeks.forEach(w => {
-                                            if (eq.tasks[w]) {
-                                                ['preventif', 'controle', 'metrologie'].forEach(type => {
-                                                    if (eq.tasks[w][type]) {
-                                                        const isChecked = currentChecks.some(c => 
-                                                            c.equipment_id === eq.id && 
-                                                            c.task_type === type && 
-                                                            (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
-                                                        );
-                                                        tasksInMonth.push({ week: w, type, val: eq.tasks[w][type], isChecked });
-                                                    }
-                                                });
-                                            }
-                                        });
-
-                                        if (tasksInMonth.length === 0) {
-                                            return `<td style="text-align:center; color:rgba(255,255,255,0.05);">-</td>`;
+                                        if (tasksInWeek.length === 0) {
+                                            return `<td style="text-align:center; color:rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.05); ${cellHighlight}">-</td>`;
                                         }
 
                                         return `
-                                            <td style="text-align:center; vertical-align: middle;">
-                                                <div style="display:flex; justify-content:center; gap:4px; flex-wrap:wrap; max-width:60px; margin:0 auto;">
-                                                    ${tasksInMonth.map(t => {
+                                            <td style="text-align:center; vertical-align: middle; padding: 4px 2px; border-bottom: 1px solid rgba(255,255,255,0.05); ${cellHighlight}">
+                                                <div style="display:flex; flex-direction: column; justify-content:center; align-items: center; gap:3px;">
+                                                    ${tasksInWeek.map(t => {
                                                         const letter = t.type === 'preventif' ? 'P' : (t.type === 'controle' ? 'C' : 'M');
                                                         const label = t.type === 'preventif' ? 'Préventif' : (t.type === 'controle' ? 'Contrôle' : 'Métrologie');
-                                                        
+
                                                         let stateClass = 'future';
                                                         if (t.isChecked) {
                                                             stateClass = 'checked';
                                                         } else {
-                                                            // Unchecked. Check if overdue
-                                                            const isPast = selectedYearFilter < currentYear || (selectedYearFilter === currentYear && mNum < currentMonth);
+                                                            const isPast = selectedYearFilter < currentYear || (selectedYearFilter === currentYear && w < currentWeek);
                                                             if (isPast) {
                                                                 stateClass = 'overdue';
                                                             }
                                                         }
 
-                                                        const tooltipText = `S${t.week} - ${label}: ${t.val.replace(/"/g, '&quot;')}`;
+                                                        const tooltipText = `S${w} - ${label}: ${t.val.replace(/"/g, '&quot;')}`;
 
                                                         return `
                                                             <span class="pp-status-dot pp-tooltip ${stateClass}" 
                                                                   data-tooltip="${window.escapeHTML(tooltipText)}"
-                                                                  onclick="window.toggleAdminPPCheck(event, '${eq.id}', ${t.week}, '${t.type}', ${!t.isChecked})">
+                                                                  onclick="window.toggleAdminPPCheck(event, '${eq.id}', ${w}, '${t.type}', ${!t.isChecked})"
+                                                                  style="width: 16px; height: 16px; font-size: 9px; line-height: 16px; font-weight: 800; border-radius: 4px;">
                                                                 ${letter}
                                                             </span>
                                                         `;
@@ -511,61 +521,83 @@ function renderPPWorkspace() {
                 </table>
             </div>
         `;
+
+        // Auto-scroll to current week column dynamically measuring the sticky header width
+        setTimeout(() => {
+            const scrollContainer = document.getElementById('pp-matrix-scroll-container');
+            const targetHeader = document.getElementById(`pp-header-week-${currentWeek}`);
+            if (scrollContainer && targetHeader) {
+                const thirdHeader = scrollContainer.querySelector('thead th:nth-child(3)');
+                const stickyWidth = thirdHeader ? (thirdHeader.offsetLeft + thirdHeader.offsetWidth) : 350;
+                scrollContainer.scrollLeft = targetHeader.offsetLeft - stickyWidth;
+            }
+        }, 150);
+
         return;
     }
 
     if (selectedTab === 'tech') {
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
+        const getISOWeek = (date) => {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+        };
+        const currentWeek = getISOWeek(new Date()) || 1;
 
         container.innerHTML = `
             <div style="display: flex; flex-direction: column; gap: 15px;">
                 ${ppUsersList.map(u => {
-                    const assignedList = (u.assigned_markets || '').split(',').map(s => s.trim().padStart(2, '0')).filter(Boolean);
-                    
-                    // Filter tasks for this technician's assigned markets
-                    const techTasks = [];
-                    parsedPlanningData.forEach(eq => {
-                        let prefix = "Sans MI";
-                        const cleanId = eq.id.toUpperCase();
-                        if (cleanId.startsWith("MI")) {
-                            const num = cleanId.substring(2, 4);
-                            if (!isNaN(parseInt(num))) prefix = num;
-                        }
-                        
-                        if (assignedList.includes(prefix.padStart(2, '0'))) {
-                            Object.keys(eq.tasks).forEach(wStr => {
-                                const w = parseInt(wStr);
-                                const taskMonth = getMonthFromWeek(w, selectedYearFilter);
-                                ['preventif', 'controle', 'metrologie'].forEach(type => {
-                                    if (eq.tasks[w][type]) {
-                                        const isChecked = currentChecks.some(c => 
-                                            c.equipment_id === eq.id && 
-                                            c.task_type === type && 
-                                            (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
-                                        );
-                                        const isPast = selectedYearFilter < currentYear || (selectedYearFilter === currentYear && taskMonth < currentMonth);
-                                        techTasks.push({ eq, week: w, month: taskMonth, type, value: eq.tasks[w][type], isChecked, isPast });
-                                    }
-                                });
-                            });
-                        }
+            const assignedList = (u.assigned_markets || '').split(',').map(s => s.trim().padStart(2, '0')).filter(Boolean);
+
+            // Filter tasks for this technician's assigned markets
+            const techTasks = [];
+            parsedPlanningData.forEach(eq => {
+                let prefix = "Sans MI";
+                const cleanId = eq.id.toUpperCase();
+                if (cleanId.startsWith("MI")) {
+                    const num = cleanId.substring(2, 4);
+                    if (!isNaN(parseInt(num))) prefix = num;
+                }
+
+                if (assignedList.includes(prefix.padStart(2, '0'))) {
+                    Object.keys(eq.tasks).forEach(wStr => {
+                        const w = parseInt(wStr);
+                        const taskMonth = getMonthFromWeek(w, selectedYearFilter);
+                        ['preventif', 'controle', 'metrologie'].forEach(type => {
+                            if (eq.tasks[w][type]) {
+                                const isChecked = currentChecks.some(c =>
+                                    c.equipment_id === eq.id &&
+                                    c.task_type === type &&
+                                    (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
+                                );
+                                const isPast = selectedYearFilter < currentYear || (selectedYearFilter === currentYear && w < currentWeek);
+                                const isCurrentWeek = (selectedYearFilter === currentYear && w === currentWeek);
+                                techTasks.push({ eq, week: w, month: taskMonth, type, value: eq.tasks[w][type], isChecked, isPast, isCurrentWeek });
+                            }
+                        });
                     });
+                }
+            });
 
-                    // Search filter inside technician tasks
-                    const filteredTechTasks = techTasks.filter(t => {
-                        if (!adminSearchQuery) return true;
-                        const q = adminSearchQuery.toLowerCase();
-                        return t.eq.id.toLowerCase().includes(q) ||
-                               (t.eq.machine || '').toLowerCase().includes(q) ||
-                               t.value.toLowerCase().includes(q);
-                    });
+            // Search filter inside technician tasks
+            const filteredTechTasks = techTasks.filter(t => {
+                if (!adminSearchQuery) return true;
+                const q = adminSearchQuery.toLowerCase();
+                return t.eq.id.toLowerCase().includes(q) ||
+                    (t.eq.machine || '').toLowerCase().includes(q) ||
+                    t.value.toLowerCase().includes(q);
+            });
 
-                    const pendingCount = filteredTechTasks.filter(t => !t.isChecked).length;
-                    const overdueCount = filteredTechTasks.filter(t => !t.isChecked && t.isPast).length;
-                    const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
+            const overdueCount = filteredTechTasks.filter(t => !t.isChecked && t.isPast).length;
+            const currentWeekCount = filteredTechTasks.filter(t => !t.isChecked && t.isCurrentWeek).length;
+            const activeCount = overdueCount + currentWeekCount;
+            const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
 
-                    return `
+            return `
                         <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
                             <div style="display: grid; grid-template-columns: minmax(220px, 1.2fr) auto auto auto; align-items: center; gap: 20px;">
                                 <!-- Column 1: Info User -->
@@ -594,16 +626,17 @@ function renderPPWorkspace() {
                                             <input type="checkbox" onchange="window.toggleUserPPPreference('${u.id}', 'maintenance_notifications', this.checked)" ${u.preferences?.maintenance_notifications !== false ? 'checked' : ''} style="width:14px; height:14px; cursor:pointer;">
                                             Notifications
                                         </label>
+                                        <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#E5E5EA; cursor:pointer; margin: 0; font-weight: 600;">
+                                            <input type="checkbox" onchange="window.toggleUserPPPreference('${u.id}', 'maintenance_copy', this.checked)" ${u.preferences?.maintenance_copy === true ? 'checked' : ''} style="width:14px; height:14px; cursor:pointer;">
+                                            Copie
+                                        </label>
                                     </div>
                                 </div>
 
                                 <!-- Column 3: Badges -->
                                 <div style="display:flex; align-items:center; gap:10px;">
-                                    <div onclick="window.openPPTechTasksModal('${u.id}', 'overdue')" style="background: ${overdueCount > 0 ? 'rgba(255, 69, 58, 0.2)' : 'rgba(255,255,255,0.08)'}; color: ${overdueCount > 0 ? '#FF453A' : '#C7C7CC'}; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 700; border: 1px solid ${overdueCount > 0 ? 'rgba(255, 69, 58, 0.3)' : 'rgba(255,255,255,0.05)'}; cursor:pointer; display: flex; align-items:center; gap: 6px;" title="Cliquer pour voir les retards">
-                                        ⚠️ <span style="font-weight: 800;">${overdueCount}</span> en retard
-                                    </div>
-                                    <div onclick="window.openPPTechTasksModal('${u.id}', 'pending')" style="background: rgba(255,255,255,0.08); color: white; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 700; border: 1px solid rgba(255,255,255,0.05); cursor:pointer; display: flex; align-items:center; gap: 6px;" title="Cliquer pour voir les tâches à faire">
-                                        ⏳ <span style="font-weight: 800; color: white;">${pendingCount}</span> à faire
+                                    <div onclick="window.openPPTechTasksModal('${u.id}', 'active')" style="background: ${activeCount > 0 ? 'rgba(0, 122, 255, 0.15)' : 'rgba(255,255,255,0.08)'}; color: ${activeCount > 0 ? '#007AFF' : '#C7C7CC'}; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 700; border: 1px solid ${activeCount > 0 ? 'rgba(0, 122, 255, 0.3)' : 'rgba(255,255,255,0.05)'}; cursor:pointer; display: flex; align-items:center; gap: 6px;" title="Cliquer pour voir les tâches actives et retards">
+                                        📋 <span style="font-weight: 800; color: ${activeCount > 0 ? '#007AFF' : '#C7C7CC'};">${activeCount}</span> tâches à faire
                                     </div>
                                 </div>
 
@@ -619,7 +652,7 @@ function renderPPWorkspace() {
                             </div>
                         </div>
                     `;
-                }).join('')}
+        }).join('')}
             </div>
         `;
     }
@@ -655,9 +688,9 @@ window.openPPUserMarketsModal = async function (userId, event) {
     try {
         const u = ppUsersList.find(x => x.id === userId);
         if (!u) return;
-        
+
         const cleanName = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
-        
+
         // Scan for all unique market codes and their names from Excel data
         const marketNames = {};
         parsedPlanningData.forEach(eq => {
@@ -684,15 +717,15 @@ window.openPPUserMarketsModal = async function (userId, event) {
                 }
             }
             return prefix;
-        }))).filter(m => m !== "Sans MI").sort((a,b) => parseInt(a) - parseInt(b));
-        
+        }))).filter(m => m !== "Sans MI").sort((a, b) => parseInt(a) - parseInt(b));
+
         const assignedList = (u.assigned_markets || '').split(',').map(s => s.trim().padStart(2, '0')).filter(Boolean);
-        
+
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.id = 'user-markets-modal';
         overlay.style.zIndex = '1000000';
-        
+
         overlay.innerHTML = `
             <div class="modal-box" style="max-width: 520px; width: 100%;">
                 <div class="modal-header" style="display:flex; align-items:center; gap:10px;">
@@ -704,9 +737,9 @@ window.openPPUserMarketsModal = async function (userId, event) {
                 
                 <div style="max-height: 320px; overflow-y: auto; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; margin-bottom: 24px;">
                     ${allUniqueMarkets.map(mCode => {
-                        const isAssigned = assignedList.includes(mCode.padStart(2, '0'));
-                        const realName = marketNames[mCode] || `Marché ${mCode}`;
-                        return `
+            const isAssigned = assignedList.includes(mCode.padStart(2, '0'));
+            const realName = marketNames[mCode] || `Marché ${mCode}`;
+            return `
                             <label style="display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:8px; cursor:pointer; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.02); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='rgba(255,255,255,0.01)'">
                                 <input type="checkbox" class="user-market-checkbox" data-market-code="${mCode}" ${isAssigned ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer; flex-shrink:0;">
                                 <div style="display:flex; flex-direction:column;">
@@ -715,7 +748,7 @@ window.openPPUserMarketsModal = async function (userId, event) {
                                 </div>
                             </label>
                         `;
-                    }).join('')}
+        }).join('')}
                 </div>
                 
                 <div class="modal-actions" style="justify-content:flex-end; gap:12px;">
@@ -725,12 +758,12 @@ window.openPPUserMarketsModal = async function (userId, event) {
             </div>
         `;
         document.body.appendChild(overlay);
-        
+
         document.getElementById('save-user-markets-btn').onclick = async () => {
             const btn = document.getElementById('save-user-markets-btn');
             btn.disabled = true;
             btn.innerText = "Enregistrement...";
-            
+
             try {
                 const checkboxes = document.querySelectorAll('.user-market-checkbox');
                 const selected = [];
@@ -739,10 +772,10 @@ window.openPPUserMarketsModal = async function (userId, event) {
                         selected.push(box.getAttribute('data-market-code'));
                     }
                 });
-                
+
                 const newVal = selected.join(',');
                 await api.updateUserProfile(u.id, u.first_name, u.last_name, u.secteur, u.societe, newVal);
-                
+
                 window.showToast("Synchronisation des tâches...");
                 const userPrefs = u.preferences || {};
                 const planningEnabled = userPrefs.maintenance_planning !== false;
@@ -762,15 +795,22 @@ window.openPPUserMarketsModal = async function (userId, event) {
     }
 };
 
-window.openPPTechTasksModal = function(userId, filterType) {
+window.openPPTechTasksModal = function (userId, filterType) {
     const u = ppUsersList.find(x => x.id === userId);
     if (!u) return;
     const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
     const assignedList = (u.assigned_markets || '').split(',').map(s => s.trim().padStart(2, '0')).filter(Boolean);
-    
-    const currentMonth = new Date().getMonth() + 1;
+
     const currentYear = new Date().getFullYear();
-    
+    const getISOWeek = (date) => {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    };
+    const currentWeek = getISOWeek(new Date()) || 1;
+
     const techTasks = [];
     parsedPlanningData.forEach(eq => {
         let prefix = "Sans MI";
@@ -785,13 +825,14 @@ window.openPPTechTasksModal = function(userId, filterType) {
                 const taskMonth = getMonthFromWeek(w, selectedYearFilter);
                 ['preventif', 'controle', 'metrologie'].forEach(type => {
                     if (eq.tasks[w][type]) {
-                        const isChecked = currentChecks.some(c => 
-                            c.equipment_id === eq.id && 
-                            c.task_type === type && 
+                        const isChecked = currentChecks.some(c =>
+                            c.equipment_id === eq.id &&
+                            c.task_type === type &&
                             (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
                         );
-                        const isPast = selectedYearFilter < currentYear || (selectedYearFilter === currentYear && taskMonth < currentMonth);
-                        techTasks.push({ eq, week: w, month: taskMonth, type, value: eq.tasks[w][type], isChecked, isPast });
+                        const isPast = selectedYearFilter < currentYear || (selectedYearFilter === currentYear && w < currentWeek);
+                        const isCurrentWeek = (selectedYearFilter === currentYear && w === currentWeek);
+                        techTasks.push({ eq, week: w, month: taskMonth, type, value: eq.tasks[w][type], isChecked, isPast, isCurrentWeek });
                     }
                 });
             });
@@ -803,18 +844,23 @@ window.openPPTechTasksModal = function(userId, filterType) {
         if (!adminSearchQuery) return true;
         const q = adminSearchQuery.toLowerCase();
         return t.eq.id.toLowerCase().includes(q) ||
-               (t.eq.machine || '').toLowerCase().includes(q) ||
-               t.value.toLowerCase().includes(q);
+            (t.eq.machine || '').toLowerCase().includes(q) ||
+            t.value.toLowerCase().includes(q);
     });
 
     let displayTasks = [];
     let modalTitle = "";
     let icon = "";
-    
-    if (filterType === 'overdue') {
-        displayTasks = filteredTasks.filter(t => !t.isChecked && t.isPast);
-        modalTitle = `Tâches en retard - ${name}`;
-        icon = "⚠️";
+
+    if (filterType === 'active') {
+        displayTasks = filteredTasks.filter(t => !t.isChecked && (t.isPast || t.isCurrentWeek));
+        // Sort: overdue tasks first, then sorted by week number
+        displayTasks.sort((a, b) => {
+            if (a.isPast !== b.isPast) return a.isPast ? -1 : 1;
+            return a.week - b.week;
+        });
+        modalTitle = `Tâches à faire & Retards - ${name}`;
+        icon = "📋";
     } else {
         displayTasks = filteredTasks.filter(t => !t.isChecked);
         modalTitle = `Tâches à faire - ${name}`;
@@ -825,7 +871,7 @@ window.openPPTechTasksModal = function(userId, filterType) {
     overlay.className = 'modal-overlay';
     overlay.id = 'tech-tasks-modal';
     overlay.style.zIndex = '1000000';
-    
+
     overlay.innerHTML = `
         <div class="modal-box" style="max-width: 650px; width: 100%;">
             <div class="modal-header" style="display:flex; align-items:center; gap:10px;">
@@ -837,16 +883,22 @@ window.openPPTechTasksModal = function(userId, filterType) {
             
             <div style="max-height: 400px; overflow-y: auto; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; margin-bottom: 24px;">
                 ${displayTasks.length === 0 ? `
-                    <p style="text-align:center; padding: 20px; color:#8E8E93; font-style:italic; margin:0;">Aucune tâche dans cette catégorie</p>
+                    <p style="text-align:center; padding: 20px; color:#8E8E93; font-style:italic; margin:0;">Aucune tâche à faire pour le moment.</p>
                 ` : displayTasks.map(t => {
                     const typeLabel = t.type === 'preventif' ? 'Préventif' : (t.type === 'controle' ? 'Contrôle' : 'Métrologie');
+                    
+                    const statusBadge = t.isPast 
+                        ? `<span style="background: rgba(255, 69, 58, 0.12); color: #FF453A; padding: 3px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800; border: 1px solid rgba(255, 69, 58, 0.25); display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; margin-left: 6px;">⚠️ En retard (S${t.week})</span>`
+                        : `<span style="background: rgba(0, 122, 255, 0.12); color: #007AFF; padding: 3px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800; border: 1px solid rgba(0, 122, 255, 0.25); display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; margin-left: 6px;">⏳ Cette semaine (S${t.week})</span>`;
+
                     return `
                         <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding:10px 14px; border-radius:10px; font-size:13px;">
                             <div>
                                 <span style="font-weight:800; color:#007AFF;">${window.escapeHTML(t.eq.id)}</span>
                                 <strong style="color:white; margin-left:8px;">${window.escapeHTML(t.eq.machine || 'Machine')}</strong>
+                                ${statusBadge}
                                 <div style="margin-top:4px; font-size:12px; color:#8E8E93;">
-                                    <strong>Mois: ${MONTH_NAMES[t.month - 1]} (S${t.week}) • ${typeLabel}</strong>: ${window.escapeHTML(t.value)}
+                                    <strong>${typeLabel}</strong>: ${window.escapeHTML(t.value)}
                                 </div>
                             </div>
                             <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#8E8E93; font-weight:700; font-size:12.5px; flex-shrink:0;">
@@ -872,10 +924,10 @@ window.savePPCheckFromModal = async function (eqId, week, type, checked, userId,
         await api.savePlanningPrevisionnelCheck(eqId, encodedWeek, type, checked);
         window.showToast("Statut mis à jour.");
         currentChecks = await api.getPlanningPrevisionnelChecks();
-        
+
         // Refresh underlying workspace
         renderPPWorkspace();
-        
+
         // Refresh modal content by closing and reopening it
         closeModal('tech-tasks-modal');
         window.openPPTechTasksModal(userId, filterType);
@@ -884,7 +936,7 @@ window.savePPCheckFromModal = async function (eqId, week, type, checked, userId,
     }
 };
 
-window.syncPrevisionnelTasksForUser = async function(userId, assignedMarketsString, year) {
+window.syncPrevisionnelTasksForUser = async function (userId, assignedMarketsString, year) {
     if (!year) year = new Date().getFullYear();
 
     const startOfYear = `${year}-01-01`;
@@ -897,7 +949,7 @@ window.syncPrevisionnelTasksForUser = async function(userId, assignedMarketsStri
     try {
         const existingTasks = await api.getAdminTasks(startOfYear, endOfYear);
         const tasksToDelete = existingTasks.filter(t => t.user_id === userId && t.title && (t.title.startsWith('[AUTO-PREV]') || t.title.startsWith('[PREV]')));
-        
+
         for (const t of tasksToDelete) {
             await api.deleteAdminTask(t.id);
             deletedCount++;
@@ -957,7 +1009,7 @@ window.syncPrevisionnelTasksForUser = async function(userId, assignedMarketsStri
                 eqMarket = num.padStart(2, '0');
             }
         }
-        
+
         if (!eqMarket || !assignedMarkets.includes(eqMarket)) return;
 
         Object.entries(eq.tasks || {}).forEach(([weekStr, taskTypes]) => {
@@ -1008,7 +1060,7 @@ window.syncPrevisionnelTasksForUser = async function(userId, assignedMarketsStri
     return { deletedCount, createdCount, status: "Success" };
 };
 
-window.syncAllPrevisionnelTasks = async function(year) {
+window.syncAllPrevisionnelTasks = async function (year) {
     if (!year) year = new Date().getFullYear();
     try {
         const users = await api.listUsers(true);
@@ -1028,17 +1080,17 @@ window.syncAllPrevisionnelTasks = async function(year) {
         }
 
         alert(`[Diagnostic Sync]\n` +
-              `Utilisateurs traités : ${users.length}\n` +
-              `Total tâches supprimées : ${totalDeleted}\n` +
-              `Total tâches créées : ${totalCreated}\n\n` +
-              `Détails :\n` + (userReports.length > 0 ? userReports.join('\n') : "Aucune modification de tâche."));
+            `Utilisateurs traités : ${users.length}\n` +
+            `Total tâches supprimées : ${totalDeleted}\n` +
+            `Total tâches créées : ${totalCreated}\n\n` +
+            `Détails :\n` + (userReports.length > 0 ? userReports.join('\n') : "Aucune modification de tâche."));
     } catch (e) {
         console.error("Error syncing all users previsionnel tasks:", e);
         alert("Erreur de synchronisation globale : " + e.message);
     }
 };
 
-window.toggleUserPPPreference = async function(userId, key, checked) {
+window.toggleUserPPPreference = async function (userId, key, checked) {
     try {
         const u = ppUsersList.find(user => user.id === userId);
         if (!u) return;
@@ -1060,7 +1112,7 @@ window.toggleUserPPPreference = async function(userId, key, checked) {
     }
 };
 
-window.testPPUserNotification = async function(userId, event) {
+window.testPPUserNotification = async function (userId, event) {
     if (event) event.stopPropagation();
     try {
         const u = ppUsersList.find(user => user.id === userId);
@@ -1104,9 +1156,9 @@ window.testPPUserNotification = async function(userId, event) {
                         if (w >= uploadW) {
                             types.forEach(type => {
                                 if (eq.tasks[wStr][type]) {
-                                    const isChecked = currentChecks.some(c => 
-                                        c.equipment_id === eq.id && 
-                                        c.task_type === type && 
+                                    const isChecked = currentChecks.some(c =>
+                                        c.equipment_id === eq.id &&
+                                        c.task_type === type &&
                                         (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
                                     );
                                     if (!isChecked) {
@@ -1120,9 +1172,9 @@ window.testPPUserNotification = async function(userId, event) {
                     } else if (w === currentWeek) {
                         types.forEach(type => {
                             if (eq.tasks[wStr][type]) {
-                                const isChecked = currentChecks.some(c => 
-                                    c.equipment_id === eq.id && 
-                                    c.task_type === type && 
+                                const isChecked = currentChecks.some(c =>
+                                    c.equipment_id === eq.id &&
+                                    c.task_type === type &&
                                     (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
                                 );
                                 if (!isChecked) {
@@ -1151,10 +1203,25 @@ window.testPPUserNotification = async function(userId, event) {
         }
 
         const testMsg = `📅 Maintenance Prév : En attente : ${eqDetails.join(', ')} à voir dans l'app maintenance prévisionnelle.`;
+        const finalMsg = testMsg.length > 450 ? testMsg.substring(0, 447) + "..." : testMsg;
         window.showToast("Envoi de la notification réelle...");
-        
-        await api.sendNotification(u.id, testMsg, null, "dashboard.html?tab=planning-previsionnel");
-        window.showToast("Notification envoyée avec succès !");
+
+        const result = await api.sendNotification(u.id, finalMsg, null, "dashboard.html?tab=planning-previsionnel");
+        if (result && result.success === false) {
+            alert(`[Envoi Échoué]\n${result.details || 'Aucun appareil enregistré ou erreur de token.'}`);
+        } else {
+            // Send copy to users in copy
+            const copyRecipients = ppUsersList.filter(user => user.preferences?.maintenance_copy === true);
+            for (const r of copyRecipients) {
+                try {
+                    const copyMsg = `[Copie] ${u.first_name || ''} ${u.last_name || ''} a reçu : ${finalMsg}`;
+                    await api.sendNotification(r.id, copyMsg, null, "dashboard.html?tab=planning-previsionnel");
+                } catch (err) {
+                    console.error("Failed to send copy notification to:", r.email, err);
+                }
+            }
+            window.showToast("Notification envoyée avec succès !");
+        }
     } catch (e) {
         alert("Erreur lors de l'envoi de la notification : " + e.message);
     }
