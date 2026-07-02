@@ -184,7 +184,7 @@ window.renderAdminPlanningPrevisionnel = async function () {
                         <span style="font-size: 28px;">📊</span>
                     </div>
                     <div>
-                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Planning Prévisionnel</h1>
+                        <h1 style="margin: 0; font-size: 22px; font-weight: 800; color: white; letter-spacing: -0.5px;">Maintenance Prévisionnelle</h1>
                         <p style="margin: 4px 0 0 0; font-size: 13px; color: #8E8E93; font-weight: 500;">Suivi mensuel et annuel de la métrologie et de la maintenance préventive</p>
                     </div>
                 </div>
@@ -264,8 +264,12 @@ window.uploadPPExcel = async function (input) {
                 const jsonFile = new File([jsonBlob], 'planning_previsionnel_data.json');
                 await api.uploadFile(jsonFile, 'planning_previsionnel_data.json');
                 
-                window.showToast("Importation réussie !");
                 parsedPlanningData = parsed;
+
+                window.showToast("Synchronisation avec le planning normal...");
+                await window.syncAllPrevisionnelTasks(new Date().getFullYear());
+
+                window.showToast("Importation réussie !");
                 selectedTab = 'matrix';
                 window.renderAdminPlanningPrevisionnel();
             } catch (err) {
@@ -373,7 +377,7 @@ function renderPPWorkspace() {
         container.innerHTML = `
             <div style="text-align:center; padding: 60px 20px; color:#8E8E93; background:rgba(255,255,255,0.01); border-radius:20px; border: 1px dashed rgba(255,255,255,0.1); max-width: 600px; margin: 40px auto;">
                 <span style="font-size:60px; display:block; margin-bottom:20px;">📊</span>
-                <h2 style="color:white; margin-bottom:10px;">Importer un Planning Prévisionnel</h2>
+                <h2 style="color:white; margin-bottom:10px;">Importer une Maintenance Prévisionnelle</h2>
                 <p style="font-size:14px; margin-bottom:30px; max-width:400px; margin-left:auto; margin-right:auto; line-height:1.5;">
                     Veuillez importer le fichier Excel prévisionnel <strong>planning_previsionnel.xlsm</strong>. Les tâches seront automatiquement extraites et synchronisées.
                 </p>
@@ -562,30 +566,54 @@ function renderPPWorkspace() {
                     const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email;
 
                     return `
-                        <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 16px; overflow: hidden; padding: 20px; margin-bottom: 15px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+                        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                            <div style="display: grid; grid-template-columns: minmax(220px, 1.2fr) auto auto auto; align-items: center; gap: 20px;">
+                                <!-- Column 1: Info User -->
                                 <div style="display:flex; align-items:center; gap:12px;">
-                                    <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #007AFF, #00C7BE); display: flex; align-items: center; justify-content: center; font-weight:700; color:white; font-size:16px;">
+                                    <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #007AFF, #00C7BE); display: flex; align-items: center; justify-content: center; font-weight:700; color:white; font-size:16px; box-shadow: 0 4px 10px rgba(0, 122, 255, 0.25);">
                                         ${name.charAt(0).toUpperCase()}
                                     </div>
                                     <div>
                                         <h4 style="margin:0; font-size: 16px; color:white; font-weight:700;">${window.escapeHTML(name)}</h4>
-                                        <span style="font-size:12px; color:#8E8E93;">${window.escapeHTML(u.email)} ${u.secteur ? `• Secteur: ${window.escapeHTML(u.secteur)}` : ''}</span>
+                                        <span style="font-size:12px; color:#C7C7CC; font-weight: 500;">${window.escapeHTML(u.email)} ${u.secteur ? `• Secteur: ${window.escapeHTML(u.secteur)}` : ''}</span>
                                     </div>
                                 </div>
-                                <div style="display:flex; align-items:center; gap:20px;">
-                                    <div style="text-align:right;">
-                                        <span style="font-size:11px; color:#8E8E93; display:block;">Marchés affectés</span>
-                                        <span style="font-size:13px; color:#007AFF; font-weight:700;">${assignedList.length > 0 ? assignedList.join(', ') : 'Aucun'}</span>
+
+                                <!-- Column 2: Marché & Toggles -->
+                                <div style="display:flex; align-items:center; gap:15px;">
+                                    <div style="text-align:left; min-width: 90px;">
+                                        <span style="font-size:11px; color:#C7C7CC; display:block; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Marchés</span>
+                                        <span style="font-size:14px; color:#007AFF; font-weight:700;">${assignedList.length > 0 ? assignedList.join(', ') : 'Aucun'}</span>
                                     </div>
-                                    <div onclick="window.openPPTechTasksModal('${u.id}', 'overdue')" style="background: ${overdueCount > 0 ? 'rgba(255, 59, 48, 0.2)' : 'rgba(255,255,255,0.05)'}; color: ${overdueCount > 0 ? '#FF3B30' : '#8E8E93'}; border-radius: 12px; padding: 6px 12px; font-size: 12px; font-weight: 800; border: 1px solid ${overdueCount > 0 ? 'rgba(255, 59, 48, 0.3)' : 'transparent'}; cursor:pointer;" title="Cliquer pour voir les retards">
-                                        ⚠️ ${overdueCount} en retard
+                                    <div style="display:flex; flex-direction:column; gap:4px; background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                                        <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#E5E5EA; cursor:pointer; margin: 0; font-weight: 600;">
+                                            <input type="checkbox" onchange="window.toggleUserPPPreference('${u.id}', 'maintenance_planning', this.checked)" ${u.preferences?.maintenance_planning !== false ? 'checked' : ''} style="width:14px; height:14px; cursor:pointer;">
+                                            Planning
+                                        </label>
+                                        <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#E5E5EA; cursor:pointer; margin: 0; font-weight: 600;">
+                                            <input type="checkbox" onchange="window.toggleUserPPPreference('${u.id}', 'maintenance_notifications', this.checked)" ${u.preferences?.maintenance_notifications !== false ? 'checked' : ''} style="width:14px; height:14px; cursor:pointer;">
+                                            Notifications
+                                        </label>
                                     </div>
-                                    <div onclick="window.openPPTechTasksModal('${u.id}', 'pending')" style="background: rgba(255,255,255,0.05); color: white; border-radius: 12px; padding: 6px 12px; font-size: 12px; font-weight: 800; cursor:pointer;" title="Cliquer pour voir les tâches à faire">
-                                        ⏳ ${pendingCount} à faire
+                                </div>
+
+                                <!-- Column 3: Badges -->
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <div onclick="window.openPPTechTasksModal('${u.id}', 'overdue')" style="background: ${overdueCount > 0 ? 'rgba(255, 69, 58, 0.2)' : 'rgba(255,255,255,0.08)'}; color: ${overdueCount > 0 ? '#FF453A' : '#C7C7CC'}; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 700; border: 1px solid ${overdueCount > 0 ? 'rgba(255, 69, 58, 0.3)' : 'rgba(255,255,255,0.05)'}; cursor:pointer; display: flex; align-items:center; gap: 6px;" title="Cliquer pour voir les retards">
+                                        ⚠️ <span style="font-weight: 800;">${overdueCount}</span> en retard
                                     </div>
-                                    <button onclick="window.openPPUserMarketsModal('${u.id}', event)" class="btn-primary" style="background:#007AFF; border:none; padding:8px 16px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; color:white;">
+                                    <div onclick="window.openPPTechTasksModal('${u.id}', 'pending')" style="background: rgba(255,255,255,0.08); color: white; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 700; border: 1px solid rgba(255,255,255,0.05); cursor:pointer; display: flex; align-items:center; gap: 6px;" title="Cliquer pour voir les tâches à faire">
+                                        ⏳ <span style="font-weight: 800; color: white;">${pendingCount}</span> à faire
+                                    </div>
+                                </div>
+
+                                <!-- Column 4: Actions -->
+                                <div style="display:flex; align-items:center; gap:10px; justify-content: flex-end;">
+                                    <button onclick="window.openPPUserMarketsModal('${u.id}', event)" class="btn-primary" style="background:#007AFF; border:none; padding:10px 16px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; color:white; box-shadow: 0 4px 10px rgba(0, 122, 255, 0.25);">
                                         Gérer les Marchés
+                                    </button>
+                                    <button onclick="window.testPPUserNotification('${u.id}', event)" class="btn-secondary" style="border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); padding:10px 14px; border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; color:white; display:flex; align-items:center; gap:6px;" title="Tester l'envoi de notification immédiatement">
+                                        🔔 Test
                                     </button>
                                 </div>
                             </div>
@@ -715,6 +743,11 @@ window.openPPUserMarketsModal = async function (userId, event) {
                 const newVal = selected.join(',');
                 await api.updateUserProfile(u.id, u.first_name, u.last_name, u.secteur, u.societe, newVal);
                 
+                window.showToast("Synchronisation des tâches...");
+                const userPrefs = u.preferences || {};
+                const planningEnabled = userPrefs.maintenance_planning !== false;
+                await window.syncPrevisionnelTasksForUser(u.id, planningEnabled ? newVal : '', new Date().getFullYear());
+
                 window.showToast("Marchés mis à jour.");
                 closeModal('user-markets-modal');
                 await loadPPData();
@@ -848,5 +881,281 @@ window.savePPCheckFromModal = async function (eqId, week, type, checked, userId,
         window.openPPTechTasksModal(userId, filterType);
     } catch (e) {
         alert("Erreur lors de la sauvegarde : " + e.message);
+    }
+};
+
+window.syncPrevisionnelTasksForUser = async function(userId, assignedMarketsString, year) {
+    if (!year) year = new Date().getFullYear();
+
+    const startOfYear = `${year}-01-01`;
+    const endOfYear = `${year}-12-31`;
+
+    let deletedCount = 0;
+    let createdCount = 0;
+
+    // 1. Delete all existing [PREV] / [AUTO-PREV] tasks for this user in this year
+    try {
+        const existingTasks = await api.getAdminTasks(startOfYear, endOfYear);
+        const tasksToDelete = existingTasks.filter(t => t.user_id === userId && t.title && (t.title.startsWith('[AUTO-PREV]') || t.title.startsWith('[PREV]')));
+        
+        for (const t of tasksToDelete) {
+            await api.deleteAdminTask(t.id);
+            deletedCount++;
+        }
+    } catch (e) {
+        console.error("Error deleting old auto-prev tasks:", e);
+    }
+
+    // 2. Parse assigned markets
+    const assignedMarkets = (assignedMarketsString || '')
+        .split(',')
+        .map(m => m.trim().padStart(2, '0'))
+        .filter(Boolean);
+
+    console.log(`[Diagnostic] User ${userId} has assigned markets:`, assignedMarkets);
+    if (assignedMarkets.length === 0) {
+        return { deletedCount, createdCount, status: "No assigned markets" };
+    }
+
+    // 3. Load planning previsionnel data if not cached
+    if (!parsedPlanningData) {
+        try {
+            const res = await fetch(`${config.api.workerUrl}/get/planning_previsionnel_data.json`);
+            if (res.ok) {
+                parsedPlanningData = await res.json();
+            }
+        } catch (err) {
+            console.error("Failed to load previsionnel data for sync:", err);
+        }
+    }
+    if (!parsedPlanningData || !Array.isArray(parsedPlanningData)) {
+        return { deletedCount, createdCount, status: "Planning data not found or invalid" };
+    }
+
+    // Helper to get Monday date of a week
+    const getMondayOfWeek = (w, y) => {
+        const jan4 = new Date(y, 0, 4);
+        const day = jan4.getDay() || 7;
+        const mondayVal = jan4.getTime() - (day - 1) * 24 * 60 * 60 * 1000;
+        const targetMonday = new Date(mondayVal + (w - 1) * 7 * 24 * 60 * 60 * 1000);
+        const year = targetMonday.getFullYear();
+        const month = String(targetMonday.getMonth() + 1).padStart(2, '0');
+        const date = String(targetMonday.getDate()).padStart(2, '0');
+        return `${year}-${month}-${date}`;
+    };
+
+    // 4. Group tasks by (week, market_no)
+    const grouped = {};
+
+    parsedPlanningData.forEach(eq => {
+        // Extract market number from equipment ID digits (e.g. MI02... -> '02') to match assigned_markets
+        let eqMarket = "";
+        const cleanId = eq.id.toUpperCase();
+        if (cleanId.startsWith("MI")) {
+            const num = cleanId.substring(2, 4);
+            if (!isNaN(parseInt(num))) {
+                eqMarket = num.padStart(2, '0');
+            }
+        }
+        
+        if (!eqMarket || !assignedMarkets.includes(eqMarket)) return;
+
+        Object.entries(eq.tasks || {}).forEach(([weekStr, taskTypes]) => {
+            const week = parseInt(weekStr);
+            const key = `${week}_${eqMarket}`;
+            if (!grouped[key]) {
+                grouped[key] = {
+                    week,
+                    market_no: eqMarket,
+                    preventif: 0,
+                    controle: 0,
+                    metrologie: 0
+                };
+            }
+            if (taskTypes.preventif) grouped[key].preventif++;
+            if (taskTypes.controle) grouped[key].controle++;
+            if (taskTypes.metrologie) grouped[key].metrologie++;
+        });
+    });
+
+    console.log(`[Diagnostic] Grouped ${Object.keys(grouped).length} weeks for user markets.`);
+
+    // 5. Create new tasks
+    for (const g of Object.values(grouped)) {
+        if (g.preventif === 0 && g.controle === 0 && g.metrologie === 0) continue;
+
+        const mondayDate = getMondayOfWeek(g.week, year);
+        const parts = [];
+        if (g.preventif > 0) parts.push(`${g.preventif} prév`);
+        if (g.controle > 0) parts.push(`${g.controle} Controle`);
+        if (g.metrologie > 0) parts.push(`${g.metrologie} métrologie`);
+        const title = `[PREV] MI${g.market_no}, ${parts.join(' ')}`;
+
+        try {
+            await api.saveAdminTask({
+                user_id: userId,
+                title: title,
+                date: mondayDate,
+                start_time: "00:00:00",
+                end_time: "00:00:00",
+                done: false
+            });
+            createdCount++;
+        } catch (e) {
+            console.error("Error creating auto-prev task:", e);
+        }
+    }
+    return { deletedCount, createdCount, status: "Success" };
+};
+
+window.syncAllPrevisionnelTasks = async function(year) {
+    if (!year) year = new Date().getFullYear();
+    try {
+        const users = await api.listUsers(true);
+        let totalDeleted = 0;
+        let totalCreated = 0;
+        let userReports = [];
+
+        for (const u of users) {
+            const userPrefs = u.preferences || {};
+            const planningEnabled = userPrefs.maintenance_planning !== false;
+            const res = await window.syncPrevisionnelTasksForUser(u.id, planningEnabled ? u.assigned_markets : '', year);
+            totalDeleted += res.deletedCount;
+            totalCreated += res.createdCount;
+            if (res.createdCount > 0 || res.deletedCount > 0) {
+                userReports.push(`${u.first_name} ${u.last_name}: -${res.deletedCount} / +${res.createdCount} tâches (${res.status})`);
+            }
+        }
+
+        alert(`[Diagnostic Sync]\n` +
+              `Utilisateurs traités : ${users.length}\n` +
+              `Total tâches supprimées : ${totalDeleted}\n` +
+              `Total tâches créées : ${totalCreated}\n\n` +
+              `Détails :\n` + (userReports.length > 0 ? userReports.join('\n') : "Aucune modification de tâche."));
+    } catch (e) {
+        console.error("Error syncing all users previsionnel tasks:", e);
+        alert("Erreur de synchronisation globale : " + e.message);
+    }
+};
+
+window.toggleUserPPPreference = async function(userId, key, checked) {
+    try {
+        const u = ppUsersList.find(user => user.id === userId);
+        if (!u) return;
+
+        const preferences = u.preferences || {};
+        preferences[key] = checked;
+
+        window.showToast("Mise à jour des préférences...");
+        await api.updateUserProfile(u.id, u.first_name, u.last_name, u.secteur, u.societe, u.assigned_markets, preferences);
+        u.preferences = preferences;
+
+        if (key === 'maintenance_planning') {
+            const currentYear = new Date().getFullYear();
+            await window.syncPrevisionnelTasksForUser(u.id, checked ? (u.assigned_markets || '') : '', currentYear);
+        }
+        window.showToast("Préférences sauvegardées.");
+    } catch (e) {
+        alert("Erreur lors de la mise à jour des préférences : " + e.message);
+    }
+};
+
+window.testPPUserNotification = async function(userId, event) {
+    if (event) event.stopPropagation();
+    try {
+        const u = ppUsersList.find(user => user.id === userId);
+        if (!u) return;
+
+        const assignedList = (u.assigned_markets || '').split(',').map(s => s.trim().padStart(2, '0')).filter(Boolean);
+        if (assignedList.length === 0) {
+            alert("Cet utilisateur n'a aucun marché affecté.");
+            return;
+        }
+
+        // Calculate ISO Week (same algorithm as worker)
+        const getISOWeek = (date) => {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+        };
+        const currentWeek = getISOWeek(new Date()) || 1;
+
+        const userEquipments = parsedPlanningData.filter(eq => {
+            let prefix = "Sans MI";
+            const cleanId = eq.id.toUpperCase();
+            if (cleanId.startsWith("MI")) {
+                const num = cleanId.substring(2, 4);
+                if (!isNaN(parseInt(num))) prefix = num;
+            }
+            return assignedList.includes(prefix.padStart(2, '0'));
+        });
+
+        const eqDetails = [];
+        userEquipments.forEach(eq => {
+            let pCount = 0, cCount = 0, mCount = 0;
+            if (eq.tasks) {
+                Object.keys(eq.tasks).forEach(wStr => {
+                    const w = parseInt(wStr);
+                    const types = ['preventif', 'controle', 'metrologie'];
+                    if (w < currentWeek) {
+                        const uploadW = eq.upload_week || 1;
+                        if (w >= uploadW) {
+                            types.forEach(type => {
+                                if (eq.tasks[wStr][type]) {
+                                    const isChecked = currentChecks.some(c => 
+                                        c.equipment_id === eq.id && 
+                                        c.task_type === type && 
+                                        (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
+                                    );
+                                    if (!isChecked) {
+                                        if (type === 'preventif') pCount++;
+                                        if (type === 'controle') cCount++;
+                                        if (type === 'metrologie') mCount++;
+                                    }
+                                }
+                            });
+                        }
+                    } else if (w === currentWeek) {
+                        types.forEach(type => {
+                            if (eq.tasks[wStr][type]) {
+                                const isChecked = currentChecks.some(c => 
+                                    c.equipment_id === eq.id && 
+                                    c.task_type === type && 
+                                    (c.week_number === (selectedYearFilter * 100 + w) || (selectedYearFilter === 2026 && c.week_number === w))
+                                );
+                                if (!isChecked) {
+                                    if (type === 'preventif') pCount++;
+                                    if (type === 'controle') cCount++;
+                                    if (type === 'metrologie') mCount++;
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+
+            if (pCount > 0 || cCount > 0 || mCount > 0) {
+                const parts = [];
+                if (pCount > 0) parts.push(`${pCount} prév`);
+                if (cCount > 0) parts.push(`${cCount} Controle`);
+                if (mCount > 0) parts.push(`${mCount} métrologie`);
+                eqDetails.push(`${eq.id} ${eq.machine || eq.brand || 'Machine'} (${parts.join(' ')})`);
+            }
+        });
+
+        if (eqDetails.length === 0) {
+            alert("Aucune tâche en attente pour cet utilisateur (le test enverrait une notification vide).");
+            return;
+        }
+
+        const testMsg = `📅 Maintenance Prév : En attente : ${eqDetails.join(', ')} à voir dans l'app maintenance prévisionnelle.`;
+        window.showToast("Envoi de la notification réelle...");
+        
+        await api.sendNotification(u.id, testMsg, null, "dashboard.html?tab=planning-previsionnel");
+        window.showToast("Notification envoyée avec succès !");
+    } catch (e) {
+        alert("Erreur lors de l'envoi de la notification : " + e.message);
     }
 };

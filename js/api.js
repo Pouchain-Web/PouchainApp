@@ -261,7 +261,7 @@ export const api = {
         return await response.json();
     },
 
-    async updateUserProfile(id, firstName, lastName, secteur, societe, assignedMarkets) {
+    async updateUserProfile(id, firstName, lastName, secteur, societe, assignedMarkets, preferences) {
         await checkVisitor();
         const response = await fetch(`${config.api.workerUrl}/admin/users/profile`, {
             method: 'PUT',
@@ -269,7 +269,7 @@ export const api = {
                 'Content-Type': 'application/json',
                 ...(await getAuthHeaders())
             },
-            body: JSON.stringify({ id, firstName, lastName, secteur, societe, assignedMarkets })
+            body: JSON.stringify({ id, firstName, lastName, secteur, societe, assignedMarkets, preferences })
         });
 
         if (!response.ok) throw new Error(await response.text());
@@ -866,9 +866,9 @@ export const api = {
     },
 
     // --- Push Notifications ---
-    async sendNotification(userId, message, userIds = null) {
+    async sendNotification(userId, message, userIds = null, appUrl = null) {
         await checkVisitor();
-        const payload = userIds ? { userIds, message } : { userId, message };
+        const payload = userIds ? { userIds, message, appUrl } : { userId, message, appUrl };
         const response = await fetch(`${config.api.workerUrl}/admin/notifications/send`, {
             method: 'POST',
             headers: {

@@ -64,6 +64,7 @@ window.renderAdminUsers = async function () {
             const jsLastName = (u.last_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const jsEmail = (u.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const userColor = u.color ? u.color : '#FF3B30';
+            const jsPrefs = JSON.stringify(u.preferences || {}).replace(/'/g, "\\'").replace(/"/g, '&quot;');
             return `
                             <tr>
                                 <td><div style="display:flex; align-items:center; gap:8px;"><div style="width:12px; height:12px; border-radius:50%; background-color:${userColor};" title="Couleur Planning"></div> ${safeFirstName}</div></td>
