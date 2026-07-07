@@ -895,7 +895,7 @@ window.deleteCongeHistoryEntry = async function (requestId, userId, name) {
         await api.deleteCongeRequest(requestId);
         window.showToast("✅ Événement supprimé avec succès.");
         // Rafraîchir l'historique et le tableau principal
-        if (typeof window.loadAdminCongesTab === 'function') window.loadAdminCongesTab();
+        if (typeof window.renderAdminConges === 'function') window.renderAdminConges();
         window.viewUserCongeHistory(userId, name);
     } catch (err) {
         window.showToast("❌ Erreur de suppression : " + err.message);
@@ -964,7 +964,7 @@ window.openAdjustSoldeModal = function (userId, name, currentSolde) {
             modal.remove();
             window.showToast(`✅ Solde mis à jour : ${result.new_solde} jour(s)`);
             // Rafraîchir le tableau
-            if (typeof window.loadAdminCongesTab === 'function') window.loadAdminCongesTab();
+            if (typeof window.renderAdminConges === 'function') window.renderAdminConges();
         } catch (err) {
             this.disabled = false;
             this.textContent = 'Confirmer';
