@@ -577,6 +577,7 @@ window.decideRTTRequest = async function (id, action, btn) {
 window.viewUserRTTHistory = async function (userId, name) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
+    modal.id = 'rtt-history-modal';
     modal.style.zIndex = "10000";
 
     modal.innerHTML = `
@@ -704,9 +705,21 @@ window.deleteRTTHistoryEntry = async function (requestId, userId, name) {
     if (!confirm("Voulez-vous vraiment supprimer cet événement de l'historique RTT ? Cette action est irréversible.")) return;
     try {
         await api.deleteRTTRequest(requestId);
-        window.showToast("✅ Événement supprimé avec succès.");
+        
+        // Masquer/fermer la modal d'historique
+        const historyModal = document.getElementById('rtt-history-modal');
+        if (historyModal) {
+            historyModal.remove();
+        }
+
+        // Afficher la modal de confirmation
+        if (typeof window.showDeletionSuccessModal === 'function') {
+            window.showDeletionSuccessModal("Suppression réussie", "RTT");
+        } else {
+            window.showToast("✅ Événement RTT supprimé avec succès.");
+        }
+
         if (typeof window.loadAdminRTTTab === 'function') window.loadAdminRTTTab();
-        window.viewUserRTTHistory(userId, name);
     } catch (err) {
         window.showToast("❌ Erreur de suppression : " + err.message);
     }

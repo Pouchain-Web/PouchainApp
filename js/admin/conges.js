@@ -756,6 +756,7 @@ window.decideCongeRequest = async function (id, action, btn) {
 window.viewUserCongeHistory = async function (userId, name) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
+    modal.id = 'conge-history-modal';
     modal.style.zIndex = "10000";
 
     modal.innerHTML = `
@@ -887,16 +888,69 @@ window.viewUserCongeHistory = async function (userId, name) {
     }
 };
 
+if (!window.showDeletionSuccessModal) {
+    window.showDeletionSuccessModal = function (title, typeText) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.zIndex = "11000";
+        modal.style.backdropFilter = "blur(15px)";
+        modal.style.background = "rgba(0,0,0,0.6)";
+        modal.style.display = "flex";
+        modal.style.alignItems = "center";
+        modal.style.justifyContent = "center";
+        modal.style.position = "fixed";
+        modal.style.top = "0";
+        modal.style.left = "0";
+        modal.style.width = "100%";
+        modal.style.height = "100%";
+
+        modal.innerHTML = `
+            <div class="modal-box glass-panel" style="width: 420px; padding: 30px; display: flex; flex-direction: column; gap: 20px; border-radius: 24px; border: 1px solid rgba(52, 199, 89, 0.2); background: rgba(28,28,30,0.98); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; font-weight: 800; color: white; font-size: 18px; display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #34C759;">✅</span> ${window.escapeHTML(title)}
+                    </h3>
+                    <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; font-size: 22px; color: #8E8E93; cursor: pointer;">✕</button>
+                </div>
+                
+                <div style="color: #E5E5EA; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; gap: 12px;">
+                    <p>L'événement a été supprimé de l'historique avec succès. Les actions suivantes ont été exécutées :</p>
+                    <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; color: #AEAEB2;">
+                        <li><strong>Solde de ${window.escapeHTML(typeText)}</strong> : Remis à son niveau initial (jours crédités).</li>
+                        <li><strong>Planning</strong> : Les tâches associées ont été supprimées du calendrier.</li>
+                        <li><strong>Pointage</strong> : Les pointages générés pour ces dates ont été effacés.</li>
+                    </ul>
+                </div>
+
+                <div style="text-align: right; margin-top: 10px;">
+                    <button onclick="this.closest('.modal-overlay').remove()" style="background: #34C759; border: none; padding: 12px 24px; border-radius: 12px; color: white; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.2); width: 100%;">
+                        D'accord
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    };
+}
+
 window.deleteCongeHistoryEntry = async function (requestId, userId, name) {
     if (!confirm("Voulez-vous vraiment supprimer cet événement de l'historique ? Cette action est irréversible.")) {
         return;
     }
     try {
         await api.deleteCongeRequest(requestId);
-        window.showToast("✅ Événement supprimé avec succès.");
-        // Rafraîchir l'historique et le tableau principal
+        
+        // Masquer/fermer la modal d'historique
+        const historyModal = document.getElementById('conge-history-modal');
+        if (historyModal) {
+            historyModal.remove();
+        }
+
+        // Afficher la modal de confirmation
+        window.showDeletionSuccessModal("Suppression réussie", "Congés");
+
+        // Rafraîchir le tableau principal
         if (typeof window.renderAdminConges === 'function') window.renderAdminConges();
-        window.viewUserCongeHistory(userId, name);
     } catch (err) {
         window.showToast("❌ Erreur de suppression : " + err.message);
     }
