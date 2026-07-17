@@ -48,6 +48,7 @@ let ppUsersList = [];
 let selectedYearFilter = new Date().getFullYear();
 let selectedTab = 'matrix'; // 'matrix' or 'tech' or 'import'
 let adminSearchQuery = '';
+let currentExcelFileKey = 'planning_previsionnel.xlsm';
 
 window.renderAdminPlanningPrevisionnel = async function () {
     const content = document.getElementById('admin-content');
@@ -193,7 +194,7 @@ window.renderAdminPlanningPrevisionnel = async function () {
                 <div style="display: flex; gap: 10px;">
                     <button id="tab-btn-matrix" class="pp-tab-btn ${selectedTab === 'matrix' ? 'active' : ''}" onclick="window.switchPPTab('matrix')">📅 Matrice Annuelle</button>
                     <button id="tab-btn-tech" class="pp-tab-btn ${selectedTab === 'tech' ? 'active' : ''}" onclick="window.switchPPTab('tech')">👥 Suivi Techniciens</button>
-                    <button id="tab-btn-import" class="pp-tab-btn ${selectedTab === 'import' ? 'active' : ''}" onclick="window.switchPPTab('import')">📤 Importer Fichier</button>
+                    <button id="tab-btn-import" class="pp-tab-btn ${selectedTab === 'import' ? 'active' : ''}" onclick="window.switchPPTab('import')">📤 Fichier Excel (ref)</button>
                 </div>
             </div>
 
@@ -282,6 +283,31 @@ window.uploadPPExcel = async function (input) {
     }
 };
 
+window.downloadPPExcelFile = async function () {
+    try {
+        window.showToast("Préparation du téléchargement...");
+        const downloadUrl = `${config.api.workerUrl}/get/${encodeURI(currentExcelFileKey)}`;
+        const authHeaders = await api.getAuthHeaders();
+        const response = await fetch(downloadUrl, { headers: authHeaders });
+        if (!response.ok) throw new Error("Impossible de récupérer le fichier sur le serveur.");
+
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const downloadName = currentExcelFileKey.split('/').pop() || 'planning_previsionnel.xlsm';
+
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = downloadName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+        window.showToast("Téléchargement réussi !");
+    } catch (e) {
+        alert("Erreur de téléchargement : " + e.message);
+    }
+};
+
 async function loadPPData() {
     try {
         currentChecks = await api.getPlanningPrevisionnelChecks();
@@ -294,12 +320,25 @@ async function loadPPData() {
             ppUsersList = users;
         }
 
+        // Dynamically find Excel file key currently in R2 bucket
+        try {
+            const files = await api.listFiles(null, true);
+            const excelFiles = files.filter(f => f.key.toLowerCase().endsWith('.xlsm') || f.key.toLowerCase().endsWith('.xlsx'));
+            if (excelFiles.length > 0) {
+                // Sort by upload date descending (latest first)
+                excelFiles.sort((a, b) => new Date(b.uploaded) - new Date(a.uploaded));
+                currentExcelFileKey = excelFiles[0].key;
+            }
+        } catch (fileErr) {
+            console.warn("Could not list R2 files for excel download:", fileErr);
+        }
+
         if (!parsedPlanningData) {
             let res = await fetch(`${config.api.workerUrl}/get/planning_previsionnel_data.json`);
             if (res.ok) {
                 parsedPlanningData = await res.json();
             } else {
-                res = await fetch(`${config.api.workerUrl}/get/planning_previsionnel.xlsm`);
+                res = await fetch(`${config.api.workerUrl}/get/${encodeURI(currentExcelFileKey)}`);
                 if (!res.ok) {
                     selectedTab = 'import';
                     renderPPWorkspace();
@@ -374,17 +413,24 @@ function renderPPWorkspace() {
     if (!container) return;
 
     if (selectedTab === 'import') {
+        const downloadName = currentExcelFileKey.split('/').pop() || 'planning_previsionnel.xlsm';
+        const downloadUrl = `${config.api.workerUrl}/get/${encodeURI(currentExcelFileKey)}`;
         container.innerHTML = `
-            <div style="text-align:center; padding: 60px 20px; color:#8E8E93; background:rgba(255,255,255,0.01); border-radius:20px; border: 1px dashed rgba(255,255,255,0.1); max-width: 600px; margin: 40px auto;">
+            <div style="text-align:center; padding: 60px 20px; color:#8E8E93; background:rgba(255,255,255,0.01); border-radius:20px; border: 1px dashed rgba(255,255,255,0.1); max-width: 650px; margin: 40px auto;">
                 <span style="font-size:60px; display:block; margin-bottom:20px;">📊</span>
-                <h2 style="color:white; margin-bottom:10px;">Importer une Maintenance Prévisionnelle</h2>
-                <p style="font-size:14px; margin-bottom:30px; max-width:400px; margin-left:auto; margin-right:auto; line-height:1.5;">
-                    Veuillez importer le fichier Excel prévisionnel <strong>planning_previsionnel.xlsm</strong>. Les tâches seront automatiquement extraites et synchronisées.
+                <h2 style="color:white; margin-bottom:10px;">Fichier Excel (ref)</h2>
+                <p style="font-size:14px; margin-bottom:30px; max-width:480px; margin-left:auto; margin-right:auto; line-height:1.5;">
+                    Gérez le fichier Excel de référence. Actuellement détecté dans R2 : <strong>${window.escapeHTML(downloadName)}</strong>. Vous pouvez télécharger le fichier actuellement en service ou en importer un nouveau pour mettre à jour la planification.
                 </p>
-                <label class="btn-primary" style="display:inline-flex; align-items:center; gap:10px; border-radius:12px; height:46px; padding:0 24px; background:#007AFF; font-weight:700; border:none; color:white; cursor:pointer;">
-                    📥 Sélectionner le fichier (.xlsm)
-                    <input type="file" id="excel-upload-input" accept=".xlsm" style="display:none;" onchange="window.uploadPPExcel(this)">
-                </label>
+                <div style="display:flex; justify-content:center; gap:15px; flex-wrap:wrap;">
+                    <button onclick="window.downloadPPExcelFile()" style="display:inline-flex; align-items:center; gap:10px; border-radius:12px; height:46px; padding:0 24px; background:rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); font-weight:700; color:white; text-decoration:none; cursor:pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+                        📥 Télécharger le fichier actuel
+                    </button>
+                    <label class="btn-primary" style="display:inline-flex; align-items:center; gap:10px; border-radius:12px; height:46px; padding:0 24px; background:#007AFF; font-weight:700; border:none; color:white; cursor:pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+                        📤 Importer un nouveau fichier (.xlsm)
+                        <input type="file" id="excel-upload-input" accept=".xlsm" style="display:none;" onchange="window.uploadPPExcel(this)">
+                    </label>
+                </div>
             </div>
         `;
         return;

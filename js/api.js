@@ -31,8 +31,8 @@ export const api = {
         return new Promise((resolve, reject) => {
             const formData = new FormData();
             formData.append('file', file);
-            // If pathPrefix already ends with a filename (or is the full key), don't append file.name again
-            const finalKey = pathPrefix.endsWith(file.name) ? pathPrefix : (pathPrefix + file.name);
+            // If pathPrefix already ends with a filename or is the full key (does not end with a slash), don't append file.name
+            const finalKey = (pathPrefix === '' || pathPrefix.endsWith('/')) ? (pathPrefix + file.name) : pathPrefix;
             formData.append('key', finalKey);
 
             const xhr = new XMLHttpRequest();
